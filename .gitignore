@@ -41,3 +41,6 @@ Package.resolved
 *~
 .idea/
 .vscode/
+**/.claude/dispatch/
+**/.claude/log/
+**/.claude/settings.local.json
