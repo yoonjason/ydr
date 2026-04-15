@@ -1,4 +1,4 @@
-## Interface: 110200
+## Interface: 120000
 ## Title: HealGuide
 ## Notes: Boss skill-based healing reminder for healers
 ## Version: 1.0.0

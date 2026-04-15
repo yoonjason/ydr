@@ -7,7 +7,10 @@ addon.dprint = function(...)
     if DEBUG then print("|cff888888[HG]|r", ...) end
 end
 
-local eventFrame = CreateFrame("Frame", "HealGuideEventFrame", UIParent)
+-- 메인 이벤트 프레임: 부모 없이 생성 (12.0에서 UIParent 자식 + COMBAT_LOG_EVENT_UNFILTERED 조합이 FORBIDDEN 트리거)
+local eventFrame = CreateFrame("Frame")
+-- 전투 로그 전용 분리 프레임 (추가 격리)
+local clFrame    = CreateFrame("Frame")
 
 local function onAddonLoaded(name)
     if name ~= addonName then return end
@@ -47,9 +50,10 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
-eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -62,8 +66,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         onEncounterStart(...)
     elseif event == "ENCOUNTER_END" then
         onEncounterEnd()
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        onCombatLog()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         onZoneChanged()
     end

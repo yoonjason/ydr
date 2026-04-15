@@ -23,6 +23,7 @@ function MainFrame:Toggle()
         self:_ShowTab(activeTab)
         mainFrame:Show()
     end
+    -- 편집 모드 토글은 OnShow/OnHide 훅이 자동 처리
 end
 
 function MainFrame:Refresh()
@@ -69,6 +70,17 @@ function MainFrame:_Create()
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
     mainFrame:SetScript("OnDragStop",  mainFrame.StopMovingOrSizing)
+    -- 닫기 버튼(X) / ESC 경로에서도 편집 모드 해제되도록 OnHide 훅
+    mainFrame:SetScript("OnShow", function()
+        if addon.AlertFrame and addon.AlertFrame.EnterEditMode then
+            addon.AlertFrame:EnterEditMode()
+        end
+    end)
+    mainFrame:SetScript("OnHide", function()
+        if addon.AlertFrame and addon.AlertFrame.ExitEditMode then
+            addon.AlertFrame:ExitEditMode()
+        end
+    end)
     mainFrame:Hide()
 
     mainFrame.TitleText:SetText("HealGuide")
@@ -132,11 +144,13 @@ function MainFrame:_CreateStaticPopups()
         button2    = "취소",
         hasEditBox = true,
         OnShow     = function(self)
-            self.editBox:SetText(self.data and self.data.currentName or "")
-            self.editBox:HighlightText()
+            local eb = self.EditBox or self.editBox
+            eb:SetText(self.data and self.data.currentName or "")
+            eb:HighlightText()
         end,
         OnAccept   = function(self)
-            local newName = self.editBox:GetText():match("^%s*(.-)%s*$")
+            local eb = self.EditBox or self.editBox
+            local newName = eb:GetText():match("^%s*(.-)%s*$")
             local key     = self.data and self.data.dungeonKey
             if newName ~= "" and key then
                 addon.Storage:SetDungeonDisplayName(key, newName)
@@ -495,17 +509,34 @@ function MainFrame:_CreateSettingsTab(panel)
     y = y - 22
 
     panel.modeBtns = {}
-    local MODES  = { "reactive", "absolute", "hybrid" }
+    -- mode: 내부 키, label: 한글 라벨, desc: 툴팁 설명
+    local MODES = {
+        { mode = "reactive", label = "반응형",
+          desc = "보스가 스킬을 쓴 순간 내 쿨기 추천을 알림.\n실제 로그 기반이라 가장 정확하지만, 알림이 '본 뒤 반응' 타이밍입니다." },
+        { mode = "absolute", label = "절대시간",
+          desc = "전투 시작 기준 고정 오프셋으로 미리 알림.\n보스 캐스트를 기다리지 않고 선타이밍 프리캐스트 가능하지만, 패턴이 어긋나면 빗나갈 수 있음." },
+        { mode = "hybrid",   label = "혼합",
+          desc = "절대시간으로 미리 띄우고, 실제 보스 캐스트 발생 시 보정.\n선타이밍 + 정확도를 모두 취하는 권장 모드." },
+    }
     local modeXs = { 8, 130, 252 }
-    for i, mode in ipairs(MODES) do
+    for i, entry in ipairs(MODES) do
         local radioOk, btn = pcall(
             CreateFrame, "CheckButton", "HGTabModeBtn" .. i, content, "UIRadioButtonTemplate")
         if not radioOk then
             btn = CreateFrame("CheckButton", "HGTabModeBtn" .. i, content, "UICheckButtonTemplate")
         end
         btn:SetPoint("TOPLEFT", content, "TOPLEFT", modeXs[i], y + 4)
-        btn._mode = mode
-        _G["HGTabModeBtn" .. i .. "Text"]:SetText(mode)
+        btn._mode = entry.mode
+        _G["HGTabModeBtn" .. i .. "Text"]:SetText(entry.label)
+
+        -- 툴팁으로 설명 제공
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(entry.label, 1, 1, 1)
+            GameTooltip:AddLine(entry.desc, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         btn:SetScript("OnClick", function(self)
             addon.Storage:SetSetting("alertMode", self._mode)
             for _, other in ipairs(panel.modeBtns) do
@@ -591,33 +622,89 @@ function MainFrame:_OpenVoiceMenu(anchor)
         return
     end
 
-    local menuList = {}
+    -- 11.x~12.x: MenuUtil.CreateContextMenu 우선, 구버전은 EasyMenu 폴백
+    local entries = {}
     for _, v in ipairs(voices) do
         if type(v) == "table" and v.voiceID then
             local voiceID = v.voiceID
             local name    = (type(v.name) == "string" and v.name)
                 or ("Voice " .. tostring(voiceID))
-            menuList[#menuList + 1] = {
-                text         = name,
-                notCheckable = true,
-                func         = function()
-                    addon.Storage:SetSetting("ttsVoiceID", voiceID)
-                    MainFrame:_RefreshVoiceLabel()
-                end,
-            }
+            entries[#entries + 1] = { voiceID = voiceID, name = name }
         end
     end
 
-    if #menuList == 0 then
+    if #entries == 0 then
         print("|cff00ff00HealGuide|r 사용 가능한 TTS 음성이 없습니다.")
         return
     end
 
-    if not EasyMenu then
-        print("|cff00ff00HealGuide|r EasyMenu API를 사용할 수 없습니다.")
+    -- EasyMenu/MenuUtil 의존 없이 커스텀 드롭다운 프레임으로 구현 (12.0 호환성 이슈 회피)
+    MainFrame:_ShowVoiceDropdown(anchor, entries)
+end
+
+local voiceDropdown = nil
+function MainFrame:_ShowVoiceDropdown(anchor, entries)
+    if voiceDropdown and voiceDropdown:IsShown() then
+        voiceDropdown:Hide()
         return
     end
-    EasyMenu(menuList, CreateFrame("Frame", nil, anchor), "cursor", 0, 0, "MENU")
+    if not voiceDropdown then
+        voiceDropdown = CreateFrame("Frame", "HealGuideVoiceDropdown", UIParent, "BackdropTemplate")
+        voiceDropdown:SetFrameStrata("TOOLTIP")
+        voiceDropdown:EnableMouse(true)
+        if voiceDropdown.SetBackdrop then
+            voiceDropdown:SetBackdrop({
+                bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true, tileSize = 16, edgeSize = 12,
+                insets = { left = 4, right = 4, top = 4, bottom = 4 },
+            })
+        end
+        voiceDropdown:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then self:Hide() end
+        end)
+    end
+
+    -- 기존 버튼 제거
+    if voiceDropdown._buttons then
+        for _, b in ipairs(voiceDropdown._buttons) do b:Hide() end
+    end
+    voiceDropdown._buttons = {}
+
+    local ROW_H = 18
+    local PAD   = 6
+    local maxW  = 120
+
+    for i, e in ipairs(entries) do
+        local btn = CreateFrame("Button", nil, voiceDropdown)
+        btn:SetHeight(ROW_H)
+        btn:SetPoint("TOPLEFT",  voiceDropdown, "TOPLEFT",  PAD, -PAD - (i - 1) * ROW_H)
+        btn:SetPoint("TOPRIGHT", voiceDropdown, "TOPRIGHT", -PAD, -PAD - (i - 1) * ROW_H)
+
+        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.15)
+
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("LEFT", btn, "LEFT", 2, 0)
+        fs:SetJustifyH("LEFT")
+        fs:SetText(e.name)
+        local w = fs:GetStringWidth() + 20
+        if w > maxW then maxW = w end
+
+        local voiceID = e.voiceID
+        btn:SetScript("OnClick", function()
+            addon.Storage:SetSetting("ttsVoiceID", voiceID)
+            MainFrame:_RefreshVoiceLabel()
+            voiceDropdown:Hide()
+        end)
+        voiceDropdown._buttons[i] = btn
+    end
+
+    voiceDropdown:SetSize(math.min(maxW, 280), PAD * 2 + #entries * ROW_H)
+    voiceDropdown:ClearAllPoints()
+    voiceDropdown:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    voiceDropdown:Show()
 end
 
 -- ── Tab 3: 미리보기 ───────────────────────────────────────────────────────────
@@ -670,6 +757,15 @@ function MainFrame:_CreatePreviewTab(panel)
         else
             print("|cff00ff00HealGuide|r encID를 입력하세요.")
         end
+    end)
+
+    local stopBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    stopBtn:SetSize(70, 22)
+    stopBtn:SetPoint("LEFT", simBtn, "RIGHT", 6, 0)
+    stopBtn:SetText("|cffff6666중지|r")
+    stopBtn:SetScript("OnClick", function()
+        addon.EncounterEngine:Cancel()
+        print("|cff00ff00HealGuide|r 시뮬레이션 중지")
     end)
 end
 

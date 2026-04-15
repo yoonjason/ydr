@@ -34,9 +34,11 @@ function AlertFrame:Init()
     frame.nameText = nameText
 
     frame:SetMovable(true)
+    frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
-        if not addon.Storage:GetSetting("locked") then
+        -- 편집 모드(= /hg 창 열림)이거나 잠금 해제 상태면 드래그 허용
+        if self.editMode or not addon.Storage:GetSetting("locked") then
             self:StartMoving()
         end
     end)
@@ -66,6 +68,8 @@ function AlertFrame:Init()
 
     frame:SetScript("OnUpdate", function(self, dt)
         if not self:IsShown() then return end
+        -- 편집 모드에서는 페이드/펄스 건너뛰고 고정 표시
+        if self.editMode then return end
 
         -- 펄스 애니메이션 (base → pulse → base)
         if self.pulse.active then
@@ -101,7 +105,36 @@ function AlertFrame:Init()
         self:SetAlpha(remaining < 0.5 and (remaining / 0.5) or 1.0)
     end)
 
+    frame.editMode = false
     frame:Hide()
+end
+
+-- 편집 모드: /hg 창이 열렸을 때 위치 조정용 플레이스홀더로 표시
+function AlertFrame:EnterEditMode()
+    if not frame then return end
+    frame.editMode       = true
+    frame.pulse.active   = false
+    frame.fadeElapsed    = 0
+    frame.fadeDuration   = 0
+
+    local baseSize = addon.Storage:GetSetting("iconBaseSize") or 64
+    frame.icon:SetSize(baseSize, baseSize)
+    frame.icon:SetTexture(134400) -- 물음표 아이콘(플레이스홀더)
+    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    frame.nameText:SetText("|cffffcc00알림 위치 (드래그)|r")
+    frame.nameText:Show()
+    frame:SetAlpha(1.0)
+    frame:Show()
+end
+
+function AlertFrame:ExitEditMode()
+    if not frame then return end
+    frame.editMode = false
+    frame:Hide()
+end
+
+function AlertFrame:IsEditMode()
+    return frame and frame.editMode == true
 end
 
 -- B1: C_Spell.GetSpellInfo 사용 (TWW 11.2+ deprecated API 교체)
@@ -158,8 +191,9 @@ function AlertFrame:_SpeakTTS(text)
     local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
     local rate    = addon.Storage:GetSetting("ttsRate")    or 5
     local volume  = addon.Storage:GetSetting("ttsVolume")  or 100
-    pcall(C_VoiceChat.SpeakText, voiceID, text,
-        Enum.VoiceTtsDestination.LocalPlayback, rate, volume)
+    -- Enum.VoiceTtsDestination 가 제거된 클라이언트 대비 숫자 상수(1 = LocalPlayback) 폴백
+    local dest = (Enum and Enum.VoiceTtsDestination and Enum.VoiceTtsDestination.LocalPlayback) or 1
+    pcall(C_VoiceChat.SpeakText, voiceID, text, dest, rate, volume)
 end
 
 function AlertFrame:ApplyIconSize()
