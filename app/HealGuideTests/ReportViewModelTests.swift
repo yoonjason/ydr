@@ -89,7 +89,7 @@ final class ReportViewModelTests: XCTestCase {
 
     func test_fetchFight_fightNotFound_setsFailure() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.fightResult = .failure(.fightNotFound)
+        apiClient.encountersResult = .failure(.fightNotFound)
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
@@ -115,7 +115,7 @@ final class ReportViewModelTests: XCTestCase {
 
     func test_fetchFight_emptyEncounters_setsNoBossEncounters() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .success([])
+        apiClient.encountersResult = .failure(.noBossEncounters)
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
@@ -158,10 +158,10 @@ final class ReportViewModelTests: XCTestCase {
 
     func test_fetchFight_multiBoss_blocksOrderedByEncounterStart() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .success([
+        apiClient.encountersResult = .success(("Test Dungeon", [
             BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000),
             BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000)
-        ])
+        ]))
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
@@ -180,10 +180,10 @@ final class ReportViewModelTests: XCTestCase {
 
     func test_fetchFight_multiBoss_buildsMultipleBlocks() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .success([
+        apiClient.encountersResult = .success(("Test Dungeon", [
             BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000),
             BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000)
-        ])
+        ]))
         let normalizer = MockTimelineNormalizer()
         let luaGenerator = MockLuaGenerator()
         let vm = makeSUT(apiClient: apiClient, normalizer: normalizer, luaGenerator: luaGenerator)

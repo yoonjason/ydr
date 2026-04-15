@@ -29,21 +29,11 @@ final class WarcraftLogsAPIClientTests: XCTestCase {
 
     func testFetchBossFights_anchorIsBoss() async throws {
         let expected = [BossWindow(encounterID: 2599, name: "Ulgrax", startTime: 0, endTime: 10000)]
-        mock.encountersResult = .success(expected)
+        mock.encountersResult = .success(("Ulgrax the Devourer", expected))
         let result = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].encounterID, 2599)
-    }
-
-    func testFetchBossFights_dungeonWide() async throws {
-        let expected = [
-            BossWindow(encounterID: 100, name: "Boss A", startTime: 1000, endTime: 5000),
-            BossWindow(encounterID: 101, name: "Boss B", startTime: 6000, endTime: 10000),
-            BossWindow(encounterID: 102, name: "Boss C", startTime: 11000, endTime: 15000)
-        ]
-        mock.encountersResult = .success(expected)
-        let result = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
-        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result.windows.count, 1)
+        XCTAssertEqual(result.windows[0].encounterID, 2599)
+        XCTAssertEqual(result.dungeonName, "Ulgrax the Devourer")
     }
 
     func testFetchBossFights_noBossEncounters() async {

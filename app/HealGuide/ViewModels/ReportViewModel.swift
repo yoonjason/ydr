@@ -97,38 +97,21 @@ final class ReportViewModel: ObservableObject {
             return
         }
 
-        do {
-            // fight 존재 여부 사전 검증 — 결과 불필요
-            _ = try await apiClient.fetchFight(
-                reportCode: reportURL.code,
-                fightID: reportURL.fightID,
-                token: token
-            )
-        } catch let error as AppError {
-            state = .failure(error)
-            return
-        } catch {
-            state = .failure(.networkError(error.localizedDescription))
-            return
-        }
-
+        let dungeonName: String
         let bossWindows: [BossWindow]
         do {
-            bossWindows = try await apiClient.fetchEncounters(
+            let result = try await apiClient.fetchEncounters(
                 reportCode: reportURL.code,
                 fightID: reportURL.fightID,
                 token: token
             )
+            dungeonName = result.dungeonName
+            bossWindows = result.windows
         } catch let error as AppError {
             state = .failure(error)
             return
         } catch {
             state = .failure(.networkError(error.localizedDescription))
-            return
-        }
-
-        guard !bossWindows.isEmpty else {
-            state = .failure(.noBossEncounters)
             return
         }
 
@@ -191,7 +174,12 @@ final class ReportViewModel: ObservableObject {
 
         let luaText = luaGenerator.generate(
             blocks: blocks,
-            metadata: ExportMetadata(spec: selectedSpec)
+            metadata: ExportMetadata(
+                spec: selectedSpec,
+                dungeonName: dungeonName,
+                sourceURL: reportURLText,
+                generatedAt: Date()
+            )
         )
         state = .success(LuaOutput(blocks: blocks, luaText: luaText))
     }

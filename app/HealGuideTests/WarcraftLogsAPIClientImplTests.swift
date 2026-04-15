@@ -141,11 +141,12 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
 
         let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 5, token: "test-token")
 
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].encounterID, 2599)
-        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
-        XCTAssertEqual(result[0].startTime, 1000)
-        XCTAssertEqual(result[0].endTime, 181000)
+        XCTAssertEqual(result.dungeonName, "Ulgrax the Devourer")
+        XCTAssertEqual(result.windows.count, 1)
+        XCTAssertEqual(result.windows[0].encounterID, 2599)
+        XCTAssertEqual(result.windows[0].name, "Ulgrax the Devourer")
+        XCTAssertEqual(result.windows[0].startTime, 1000)
+        XCTAssertEqual(result.windows[0].endTime, 181000)
     }
 
     func testFetchEncounters_noBossEncounters_throwsNoBossEncounters() async {
@@ -225,12 +226,13 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
 
         let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 15, token: "test-token")
 
-        XCTAssertEqual(result.count, 3)
-        XCTAssertEqual(result[0].encounterID, 2334)
-        XCTAssertEqual(result[0].startTime, 520000)
-        XCTAssertEqual(result[0].endTime, 700000)
-        XCTAssertEqual(result[1].encounterID, 2335)
-        XCTAssertEqual(result[2].encounterID, 2336)
+        XCTAssertEqual(result.dungeonName, "Mechagon Workshop")
+        XCTAssertEqual(result.windows.count, 3)
+        XCTAssertEqual(result.windows[0].encounterID, 2334)
+        XCTAssertEqual(result.windows[0].startTime, 520000)
+        XCTAssertEqual(result.windows[0].endTime, 700000)
+        XCTAssertEqual(result.windows[1].encounterID, 2335)
+        XCTAssertEqual(result.windows[2].encounterID, 2336)
     }
 
     func testFetchEncounters_dungeonPulls_withTrash_filtersToOnlyBosses() async throws {
@@ -261,9 +263,9 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
 
         let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 15, token: "test-token")
 
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result[0].encounterID, 2334)
-        XCTAssertEqual(result[1].encounterID, 2335)
+        XCTAssertEqual(result.windows.count, 2)
+        XCTAssertEqual(result.windows[0].encounterID, 2334)
+        XCTAssertEqual(result.windows[1].encounterID, 2335)
     }
 
     func test_fetchEncounters_graphqlErrors_throwsNetworkError() async {

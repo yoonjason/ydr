@@ -1,6 +1,10 @@
+import Foundation
+
 struct ExportMetadata: Equatable {
     let spec: HealerSpec
-    // 향후 reportURL/generatedAt 추가 가능
+    let dungeonName: String
+    let sourceURL: String
+    let generatedAt: Date
 }
 
 struct LuaOutput: Equatable {

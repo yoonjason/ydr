@@ -8,7 +8,7 @@ enum HostilityType: String {
 
 protocol WarcraftLogsAPIClient {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
-    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> [BossWindow]
+    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> (dungeonName: String, windows: [BossWindow])
     func fetchCasts(
         reportCode: String,
         fightID: Int,
@@ -71,7 +71,7 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
-    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> [BossWindow] {
+    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> (dungeonName: String, windows: [BossWindow]) {
         let url = try graphQLURL()
 
         let query = """
@@ -125,18 +125,14 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
             throw AppError.decodingFailed
         }
 
-        if fight.encounterID > 0 {
-            return [BossWindow(
-                encounterID: fight.encounterID,
-                name: fight.name,
-                startTime: Int64(fight.startTime.rounded()),
-                endTime: Int64(fight.endTime.rounded())
-            )]
-        }
+        // M+ 던전 fight도 자체 encounterID > 0 을 가지므로 encounterID 만으로는 레이드/M+ 구분 불가.
+        // dungeonPulls 가 비어있지 않으면 M+ 던전 → 하위 보스 펄에서 추출.
+        // 비어있으면 단일 보스 fight (레이드) → 자기 자신을 윈도우로 반환.
+        let pulls = fight.dungeonPulls ?? []
+        let bossPulls = pulls.filter { $0.encounterID > 0 }
 
-        let bossWindows = (fight.dungeonPulls ?? [])
-            .filter { $0.encounterID > 0 }
-            .map { pull in
+        if !bossPulls.isEmpty {
+            let windows = bossPulls.map { pull in
                 BossWindow(
                     encounterID: pull.encounterID,
                     name: pull.name,
@@ -144,12 +140,22 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
                     endTime: Int64(pull.endTime.rounded())
                 )
             }
-
-        guard !bossWindows.isEmpty else {
-            throw AppError.noBossEncounters
+            return (dungeonName: fight.name, windows: windows)
         }
 
-        return bossWindows
+        if fight.encounterID > 0 {
+            return (
+                dungeonName: fight.name,
+                windows: [BossWindow(
+                    encounterID: fight.encounterID,
+                    name: fight.name,
+                    startTime: Int64(fight.startTime.rounded()),
+                    endTime: Int64(fight.endTime.rounded())
+                )]
+            )
+        }
+
+        throw AppError.noBossEncounters
     }
 
     func fetchCasts(
