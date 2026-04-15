@@ -27,11 +27,9 @@ function Storage:Init()
     db.encounterIndex = db.encounterIndex or {}
     db.settings       = db.settings       or {}
 
-    for k, v in pairs(DEFAULT_SETTINGS) do
-        if db.settings[k] == nil then
-            db.settings[k] = v
-        end
-    end
+    -- 마이그레이션은 DEFAULT_SETTINGS 주입 이전에 실행해야 함.
+    -- 이후에 돌리면 DEFAULT 가 새 키를 이미 채워버려 `not db.settings.alertFramePoint`
+    -- 가드가 항상 false 가 되어 구버전 위치가 유실된다.
 
     -- 구버전 framePosition → alertFramePoint 마이그레이션
     if db.settings.framePosition and not db.settings.alertFramePoint then
@@ -49,6 +47,12 @@ function Storage:Init()
         db.settings.iconBaseSize  = old
         db.settings.iconPulseSize = math.floor(old * 1.5)
         db.settings.iconSize      = nil
+    end
+
+    for k, v in pairs(DEFAULT_SETTINGS) do
+        if db.settings[k] == nil then
+            db.settings[k] = v
+        end
     end
 
     self:RebuildEncounterIndex()
