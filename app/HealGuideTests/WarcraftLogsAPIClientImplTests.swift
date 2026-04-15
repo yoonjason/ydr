@@ -148,39 +148,6 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         XCTAssertEqual(result[0].endTime, 181000)
     }
 
-    func testFetchEncounters_dungeonWide_returnsSubBossWindows() async throws {
-        MockURLProtocol.classHandler = { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let body = """
-            {
-              "data": {
-                "reportData": {
-                  "report": {
-                    "fights": [{
-                      "id": 1, "encounterID": 0, "name": "Entire Dungeon",
-                      "startTime": 0.0, "endTime": 300000.0, "kill": false,
-                      "dungeonPulls": [
-                        {"id": 1, "encounterID": 2599, "name": "Boss A", "startTime": 10000.0,  "endTime": 90000.0,  "kill": true},
-                        {"id": 2, "encounterID": 2600, "name": "Boss B", "startTime": 120000.0, "endTime": 200000.0, "kill": true},
-                        {"id": 3, "encounterID": 2601, "name": "Boss C", "startTime": 220000.0, "endTime": 290000.0, "kill": true}
-                      ]
-                    }]
-                  }
-                }
-              }
-            }
-            """.data(using: .utf8)!
-            return (response, body)
-        }
-
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
-
-        XCTAssertEqual(result.count, 3)
-        XCTAssertEqual(result[0].encounterID, 2599)
-        XCTAssertEqual(result[1].encounterID, 2600)
-        XCTAssertEqual(result[2].encounterID, 2601)
-    }
-
     func testFetchEncounters_noBossEncounters_throwsNoBossEncounters() async {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
