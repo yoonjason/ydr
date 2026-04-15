@@ -4,9 +4,9 @@ import XCTest
 final class TimelineNormalizerTests: XCTestCase {
     private let normalizer = TimelineNormalizer()
 
-    // MARK: - absolute
+    // MARK: - absolute (플레이어 캐스트의 encounterStart 기준 오프셋)
 
-    func test_absolute_empty_whenNoBossCasts() {
+    func test_absolute_empty_whenNoPlayerCasts() {
         let (absolute, _) = normalizer.normalize(
             encounterStart: 0, encounterEnd: 60_000,
             bossCasts: [], playerCasts: [], maxWindow: 30
@@ -15,25 +15,25 @@ final class TimelineNormalizerTests: XCTestCase {
     }
 
     func test_absolute_offsetRelativeToEncounterStart() {
-        let boss = CastEvent(timestamp: 5_000, spellID: 100, sourceID: 1)
+        let player = CastEvent(timestamp: 5_000, spellID: 200, sourceID: 5)
         let (absolute, _) = normalizer.normalize(
             encounterStart: 2_000, encounterEnd: 60_000,
-            bossCasts: [boss], playerCasts: [], maxWindow: 30
+            bossCasts: [], playerCasts: [player], maxWindow: 30
         )
         XCTAssertEqual(absolute.count, 1)
-        XCTAssertEqual(absolute[0].spellID, 100)
+        XCTAssertEqual(absolute[0].spellID, 200)
         XCTAssertEqual(absolute[0].offset, 3.0, accuracy: 0.001)
     }
 
-    func test_absolute_multipleBossCasts_allIncluded() {
+    func test_absolute_multiplePlayerCasts_allIncluded() {
         let casts = [
-            CastEvent(timestamp: 0, spellID: 100, sourceID: 1),
-            CastEvent(timestamp: 10_000, spellID: 101, sourceID: 1),
-            CastEvent(timestamp: 20_500, spellID: 102, sourceID: 1)
+            CastEvent(timestamp: 0, spellID: 200, sourceID: 5),
+            CastEvent(timestamp: 10_000, spellID: 201, sourceID: 5),
+            CastEvent(timestamp: 20_500, spellID: 202, sourceID: 5)
         ]
         let (absolute, _) = normalizer.normalize(
             encounterStart: 0, encounterEnd: 60_000,
-            bossCasts: casts, playerCasts: [], maxWindow: 30
+            bossCasts: [], playerCasts: casts, maxWindow: 30
         )
         XCTAssertEqual(absolute.count, 3)
         XCTAssertEqual(absolute[2].offset, 20.5, accuracy: 0.001)

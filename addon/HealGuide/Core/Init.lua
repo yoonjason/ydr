@@ -1,7 +1,7 @@
 local addonName, addon = ...
 -- S1: 전역 HealGuide 제거 — 다른 파일은 모두 local addon 참조
 
-local DEBUG = false
+local DEBUG = true
 
 addon.dprint = function(...)
     if DEBUG then print("|cff888888[HG]|r", ...) end
@@ -30,6 +30,8 @@ local function onSpecChanged()
 end
 
 local function onEncounterStart(encounterID, encounterName, difficultyID, groupSize)
+    print(string.format("|cffffff00[HG]|r ENCOUNTER_START: id=%d name=%s",
+        encounterID or -1, tostring(encounterName)))
     addon.EncounterEngine:OnEncounterStart(encounterID, encounterName)
 end
 

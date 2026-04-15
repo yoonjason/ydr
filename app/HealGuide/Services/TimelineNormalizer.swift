@@ -6,10 +6,12 @@ struct TimelineNormalizer: TimelineNormalizing {
         playerCasts: [CastEvent],
         maxWindow: Double
     ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry]) {
-        let absolute = bossCasts.map { boss in
+        // absolute: 레퍼런스 로그에서 힐러가 실제로 쓴 플레이어 캐스트의 encounterStart 기준 오프셋.
+        // 애드온이 이 오프셋에 맞춰 "해당 플레이어 스킬을 쓰라" 고 알림.
+        let absolute = playerCasts.map { player in
             AbsoluteEntry(
-                spellID: boss.spellID,
-                offset: Double(boss.timestamp - encounterStart) / 1000.0
+                spellID: player.spellID,
+                offset: Double(player.timestamp - encounterStart) / 1000.0
             )
         }
 

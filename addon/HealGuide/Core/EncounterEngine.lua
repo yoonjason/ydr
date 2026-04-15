@@ -17,22 +17,44 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
 
     if not addon.SpecMatcher:IsHealer() then
-        addon.dprint("힐러 스펙 아님, 인카운터 무시:", encounterID)
+        print("|cffff8888[HG]|r 힐러 스펙 아님, 인카운터 무시: " .. tostring(encounterID))
         return
     end
 
     local bossData, dungeonKey = addon.Storage:GetEncounterData(encounterID)
     if not bossData then
-        addon.dprint("encounterIndex 매칭 없음:", encounterID)
+        print(string.format("|cffff8888[HG]|r encounterID 매칭 없음: %d (등록된 던전에 해당 ID 없음)", encounterID))
+        -- 등록된 encounterID 목록 출력 (진단용)
+        local db = HealGuideCharDB
+        if db and db.encounterIndex then
+            local ids = {}
+            for id in pairs(db.encounterIndex) do table.insert(ids, tostring(id)) end
+            table.sort(ids)
+            print("|cffaaaaaa[HG]|r 등록된 encounterID: " .. (#ids > 0 and table.concat(ids, ", ") or "(없음)"))
+        end
         return
     end
 
     local activeSpec = addon.SpecMatcher:GetActiveSpec()
     local specData   = bossData.specs and bossData.specs[activeSpec]
     if not specData then
-        addon.dprint("스펙 데이터 없음:", activeSpec, "/ encounter:", encounterID)
+        print(string.format("|cffff8888[HG]|r 스펙 데이터 없음: 활성=%s, 등록된 키: %s",
+            tostring(activeSpec),
+            (function()
+                local keys = {}
+                if bossData.specs then
+                    for k in pairs(bossData.specs) do table.insert(keys, k) end
+                end
+                return #keys > 0 and table.concat(keys, ",") or "(없음)"
+            end)()
+        ))
         return
     end
+
+    print(string.format("|cff88ff88[HG]|r 매칭 성공: encounter=%d spec=%s timeline=%d reactions=%d",
+        encounterID, activeSpec, #(specData.timeline or {}),
+        (function() local n = 0; for _ in pairs(specData.reactions or {}) do n = n + 1 end; return n end)()
+    ))
 
     self.activeEncounterID  = encounterID
     self.activeBossData     = bossData
@@ -68,6 +90,7 @@ function EncounterEngine:ScheduleTimeline(timeline)
     if not timeline then return end
     local now       = GetTime()
     local startTime = self.encounterStartTime or now
+    local scheduled = 0
 
     for _, entry in ipairs(timeline) do
         local delay = entry.offset - (now - startTime)
@@ -77,8 +100,10 @@ function EncounterEngine:ScheduleTimeline(timeline)
                 self:TriggerAlert(spellID, "absolute")
             end)
             table.insert(self.pendingTimers, t)
+            scheduled = scheduled + 1
         end
     end
+    print(string.format("|cff88ff88[HG]|r absolute 타이머 %d개 예약", scheduled))
 end
 
 function EncounterEngine:OnCombatLog(
@@ -95,6 +120,10 @@ function EncounterEngine:OnCombatLog(
 
     local bossSpellID = ...
     local reactions   = self.activeSpecData.reactions
+    -- 디버그: 보스가 캐스트 한 모든 주문 로그
+    print(string.format("|cffaaaaff[HG-CL]|r boss cast: name=%s spellID=%s matched=%s",
+        tostring(sourceName), tostring(bossSpellID),
+        (reactions and reactions[bossSpellID]) and "YES" or "NO"))
     if not reactions or not reactions[bossSpellID] then return end
 
     for _, entry in ipairs(reactions[bossSpellID]) do
