@@ -57,7 +57,11 @@ function Bridge:OnEventAdded(eventInfo)
     if not engine or not engine.activeSpecData then return end
 
     local reactions = engine.activeSpecData.reactions
-    if not reactions or not reactions[bossSpellID] then
+    local leadIns   = engine.activeSpecData.leadIns
+    local hasReactions = reactions and reactions[bossSpellID]
+    local hasLeadIns   = leadIns and leadIns[bossSpellID]
+
+    if not hasReactions and not hasLeadIns then
         print(string.format("|cffaaaaaa[HG-NT]|r native event spellID=%d duration=%.1f (매핑 없음)",
             bossSpellID, duration))
         return
@@ -72,26 +76,48 @@ function Bridge:OnEventAdded(eventInfo)
     local leadTime = addon.Storage:GetSetting("leadTime") or 0
     local scheduledCount = 0
 
-    for _, entry in ipairs(reactions[bossSpellID]) do
-        local playerSpellID = entry.spellID
-        local reactionDelay = entry.delay or 0
-
-        -- 핵심: duration 은 "보스 캐스트까지 남은 초". 반응 delay 를 더하고 leadTime 빼면
-        -- "지금으로부터 몇 초 뒤에 플레이어 쿨기를 써야 하는가".
-        local schedule = duration + reactionDelay - leadTime
-        if schedule > 0 then
-            local t = C_Timer.NewTimer(schedule, function()
-                engine:TriggerAlert(playerSpellID, "native")
-            end)
-            table.insert(engine.pendingTimers, t)
-            scheduledCount = scheduledCount + 1
-        else
-            -- 너무 늦었음(이미 지나감) → 즉시 실행
-            engine:TriggerAlert(playerSpellID, "native-immediate")
-            scheduledCount = scheduledCount + 1
+    -- leadIns: 보스 캐스트 이전 램프 시퀀스 (offset 음수)
+    -- 예: duration=10, offset=-8 → 10 + (-8) - leadTime = 2 - leadTime 뒤에 예약
+    if hasLeadIns then
+        for _, entry in ipairs(leadIns[bossSpellID]) do
+            local playerSpellID = entry.spellID
+            local leadOffset    = entry.offset or 0  -- 음수
+            local schedule      = duration + leadOffset - leadTime
+            if schedule > 0 then
+                local t = C_Timer.NewTimer(schedule, function()
+                    engine:TriggerAlert(playerSpellID, "leadIn")
+                end)
+                table.insert(engine.pendingTimers, t)
+                scheduledCount = scheduledCount + 1
+            elseif schedule > -0.5 then
+                -- 이미 거의 지났으면 즉시 표시 (램프 후반부)
+                engine:TriggerAlert(playerSpellID, "leadIn-immediate")
+                scheduledCount = scheduledCount + 1
+            end
+            -- schedule < -0.5: 너무 늦음, 스킵
         end
     end
 
-    print(string.format("|cff88ff88[HG-NT]|r boss spellID=%d duration=%.1f → %d개 플레이어 알림 예약 (lead=%.1f)",
-        bossSpellID, duration, scheduledCount, leadTime))
+    -- reactions: 보스 캐스트 이후 반응 시퀀스
+    if hasReactions then
+        for _, entry in ipairs(reactions[bossSpellID]) do
+            local playerSpellID = entry.spellID
+            local reactionDelay = entry.delay or 0
+            local schedule = duration + reactionDelay - leadTime
+            if schedule > 0 then
+                local t = C_Timer.NewTimer(schedule, function()
+                    engine:TriggerAlert(playerSpellID, "native")
+                end)
+                table.insert(engine.pendingTimers, t)
+                scheduledCount = scheduledCount + 1
+            else
+                engine:TriggerAlert(playerSpellID, "native-immediate")
+                scheduledCount = scheduledCount + 1
+            end
+        end
+    end
+
+    print(string.format("|cff88ff88[HG-NT]|r boss spellID=%d duration=%.1f → %d개 알림 예약 (lead=%.1f, leadIns=%s reactions=%s)",
+        bossSpellID, duration, scheduledCount, leadTime,
+        hasLeadIns and "Y" or "N", hasReactions and "Y" or "N"))
 end

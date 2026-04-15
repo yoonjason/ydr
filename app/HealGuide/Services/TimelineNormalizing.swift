@@ -5,5 +5,5 @@ protocol TimelineNormalizing {
         bossCasts: [CastEvent],
         playerCasts: [CastEvent],
         maxWindow: Double
-    ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry])
+    ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry], leadIns: [LeadInEntry])
 }

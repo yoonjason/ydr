@@ -91,6 +91,7 @@ function Storage:AddDungeon(importData)
                 [importData.spec] = {
                     timeline  = bossData.timeline  or {},
                     reactions = bossData.reactions or {},
+                    leadIns   = bossData.leadIns   or {},
                 },
             },
         }
@@ -117,6 +118,7 @@ function Storage:UpdateDungeon(dungeonKey, importData)
         dungeon.bosses[encounterID].specs[importData.spec] = {
             timeline  = bossData.timeline  or {},
             reactions = bossData.reactions or {},
+            leadIns   = bossData.leadIns   or {},
         }
     end
 

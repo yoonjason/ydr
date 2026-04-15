@@ -112,6 +112,27 @@ function ImportParser:Parse(input)
                 end
             end
         end
+        if boss.leadIns ~= nil then
+            if type(boss.leadIns) ~= "table" then
+                return nil, "leadIns가 테이블이 아닙니다: " .. tostring(encID)
+            end
+            for bossSpell, entries in pairs(boss.leadIns) do
+                if type(bossSpell) ~= "number" then
+                    return nil, "leadIns 키가 숫자가 아닙니다: " .. tostring(bossSpell)
+                end
+                if type(entries) ~= "table" then
+                    return nil, "leadIns 항목이 테이블이 아닙니다"
+                end
+                for i, entry in ipairs(entries) do
+                    if type(entry.spellID) ~= "number" then
+                        return nil, string.format("leadIns[%d].spellID 가 숫자가 아닙니다", i)
+                    end
+                    if type(entry.offset) ~= "number" then
+                        return nil, string.format("leadIns[%d].offset 이 숫자가 아닙니다", i)
+                    end
+                end
+            end
+        end
     end
 
     return result, nil

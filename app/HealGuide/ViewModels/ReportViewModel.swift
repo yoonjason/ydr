@@ -256,7 +256,7 @@ final class ReportViewModel: ObservableObject {
                         // 선택된 주문만 필터
                         let filteredPlayerCasts = playerCasts.filter { includedSpellIDs.contains($0.spellID) }
 
-                        let (absolute, reactions) = self.normalizer.normalize(
+                        let (absolute, reactions, leadIns) = self.normalizer.normalize(
                             encounterStart: window.startTime,
                             encounterEnd: window.endTime,
                             bossCasts: bossCasts,
@@ -269,7 +269,8 @@ final class ReportViewModel: ObservableObject {
                             name: window.name,
                             duration: duration,
                             absolute: absolute,
-                            reactions: reactions
+                            reactions: reactions,
+                            leadIns: leadIns
                         )
                         return (window.startTime, block, observedSpellIDs)
                     }

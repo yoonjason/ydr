@@ -40,6 +40,21 @@ struct LuaGenerator: LuaGenerating {
                 lines.append("        },")
             }
             lines.append("      },")
+            // leadIns: 보스 캐스트 이전 15초 램프 시퀀스 (offset 음수)
+            lines.append("      leadIns = {")
+            var leadGrouped: [Int: [LeadInEntry]] = [:]
+            for lead in block.leadIns {
+                leadGrouped[lead.bossAbilityID, default: []].append(lead)
+            }
+            for bossID in leadGrouped.keys.sorted() {
+                lines.append("        [\(bossID)] = {")
+                for lead in leadGrouped[bossID, default: []] {
+                    let offsetStr = String(format: "%.1f", lead.offset)
+                    lines.append("          { spellID = \(lead.playerSpellID), offset = \(offsetStr) },")
+                }
+                lines.append("        },")
+            }
+            lines.append("      },")
             lines.append("    },")
         }
 

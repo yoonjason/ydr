@@ -24,9 +24,17 @@ final class LuaGeneratorTests: XCTestCase {
         name: String = "Emberdawn",
         duration: Double = 180.0,
         absolute: [AbsoluteEntry] = [],
-        reactions: [ReactionEntry] = []
+        reactions: [ReactionEntry] = [],
+        leadIns: [LeadInEntry] = []
     ) -> EncounterBlock {
-        EncounterBlock(encounterID: encounterID, name: name, duration: duration, absolute: absolute, reactions: reactions)
+        EncounterBlock(
+            encounterID: encounterID,
+            name: name,
+            duration: duration,
+            absolute: absolute,
+            reactions: reactions,
+            leadIns: leadIns
+        )
     }
 
     // MARK: - 최상위 구조
