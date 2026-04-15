@@ -90,10 +90,11 @@ function EncounterEngine:ScheduleTimeline(timeline)
     if not timeline then return end
     local now       = GetTime()
     local startTime = self.encounterStartTime or now
+    local leadTime  = addon.Storage:GetSetting("leadTime") or 0
     local scheduled = 0
 
     for _, entry in ipairs(timeline) do
-        local delay = entry.offset - (now - startTime)
+        local delay = entry.offset - (now - startTime) - leadTime
         if delay > 0 then
             local spellID = entry.spellID
             local t = C_Timer.NewTimer(delay, function()
@@ -103,7 +104,7 @@ function EncounterEngine:ScheduleTimeline(timeline)
             scheduled = scheduled + 1
         end
     end
-    print(string.format("|cff88ff88[HG]|r absolute 타이머 %d개 예약", scheduled))
+    print(string.format("|cff88ff88[HG]|r absolute 타이머 %d개 예약 (lead=%.1fs)", scheduled, leadTime))
 end
 
 function EncounterEngine:OnCombatLog(
@@ -126,9 +127,10 @@ function EncounterEngine:OnCombatLog(
         (reactions and reactions[bossSpellID]) and "YES" or "NO"))
     if not reactions or not reactions[bossSpellID] then return end
 
+    local leadTime = addon.Storage:GetSetting("leadTime") or 0
     for _, entry in ipairs(reactions[bossSpellID]) do
         local playerSpellID = entry.spellID
-        local delay         = entry.delay or 0
+        local delay         = math.max(0, (entry.delay or 0) - leadTime)
         local t = C_Timer.NewTimer(delay, function()
             self:TriggerAlert(playerSpellID, "reactive")
         end)

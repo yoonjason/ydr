@@ -150,6 +150,14 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         else
             print("|cff00ff00HealGuide|r 사용법: /hg sound <on|off>")
         end
+    elseif cmd == "lead" then
+        local n = tonumber(args)
+        if n and n >= 0 and n <= 5 then
+            addon.Storage:SetSetting("leadTime", n)
+            print(string.format("|cff00ff00HealGuide|r 리드 타임: %.1f초 (다음 인카운터부터 반영)", n))
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg lead <0.0-5.0>")
+        end
     elseif cmd == "label" then
         if args == "on" then
             addon.Storage:SetSetting("showSpellName", true)
@@ -163,7 +171,7 @@ SlashCmdList["HEALGUIDE"] = function(msg)
     else
         print("|cff00ff00HealGuide|r 명령어: /hg, /hg import, /hg test <encID>, " ..
               "/hg lock, /hg mode <reactive|absolute|hybrid>, " ..
-              "/hg size <32-128>, /hg pulse <48-160>, " ..
+              "/hg size <32-128>, /hg pulse <48-160>, /hg lead <0.0-5.0>, " ..
               "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>")
     end
 end

@@ -15,6 +15,7 @@ local DEFAULT_SETTINGS = {
     ttsVoiceID      = 0,
     ttsRate         = 5,
     ttsVolume       = 100,
+    leadTime        = 1.5,  -- 모든 알림을 N초 앞당김 (반응 시간 확보)
 }
 
 function Storage:Init()
