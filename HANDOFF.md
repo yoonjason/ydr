@@ -9,24 +9,32 @@
 - 푸시 상태: `origin/main` 동기화됨
 - uncommitted 변경: 이 HANDOFF + S-new-3 TTS 패치 (MainFrame.lua) — 다음 커밋에 포함
 
-## 집 PC 최초 세팅 (3단계)
+## 집 PC 최초 세팅
+
+집 PC 의 프로젝트 경로는 이 Mac 과 다를 수 있으므로, `~/.claude/projects/` 아래 디렉터리 이름을 **현재 작업 디렉터리에서 동적으로 유도**합니다. Claude Code 는 슬래시(`/`) 를 대시(`-`) 로 치환한 이름으로 프로젝트 디렉터리를 만듭니다.
 
 ```sh
 # 1. 리포지토리 가져오기
 git clone https://github.com/yoonjason/ydr.git     # 또는 git pull
 cd ydr
 
-# 2. 메모리 심링크 1회 생성 (최초 1회만)
-#    아래 경로는 이 Mac 의 경로. 집 PC 프로젝트 경로가 다르면
-#    ~/.claude/projects/- 뒤의 디렉터리 이름도 슬래시를 대시로 변환한 새 경로가 됩니다.
-#    예: /Users/foo/work/ydr → ~/.claude/projects/-Users-foo-work-ydr/memory
-mkdir -p ~/.claude/projects/-Users-bradley-Documents-yegonseok2-ydr
-ln -s "$(pwd)/.claude/memory" \
-  ~/.claude/projects/-Users-bradley-Documents-yegonseok2-ydr/memory
+# 2. 메모리 심링크 1회 생성 (프로젝트 루트에서 실행)
+PROJECT_DIR="$(pwd)"
+ENCODED="$(echo "$PROJECT_DIR" | sed 's|/|-|g')"  # /Users/foo/ydr → -Users-foo-ydr
+TARGET="$HOME/.claude/projects/$ENCODED"
+mkdir -p "$TARGET"
+# 이미 memory 폴더/심링크가 있으면 백업 후 교체
+if [ -e "$TARGET/memory" ] || [ -L "$TARGET/memory" ]; then
+  mv "$TARGET/memory" "$TARGET/memory.bak.$(date +%s)"
+fi
+ln -s "$PROJECT_DIR/.claude/memory" "$TARGET/memory"
+ls -la "$TARGET/memory"   # 심링크 확인
 
 # 3. Claude Code 시작
 claude
 ```
+
+> 주의: Claude Code 를 먼저 한 번이라도 실행했다면 `$TARGET` 디렉터리가 이미 존재하고 내부에 세션 로그가 쌓여 있을 수 있습니다. 스크립트는 기존 `memory` 를 `memory.bak.<timestamp>` 로 백업하므로 안전합니다.
 
 첫 프롬프트에 "HANDOFF.md 읽고 이어가자" 로 시작하면 됩니다.
 
