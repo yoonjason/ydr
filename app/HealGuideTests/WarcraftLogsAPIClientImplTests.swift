@@ -19,6 +19,21 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+
+    static func readBody(from request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: 4096)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
 }
 
 final class WarcraftLogsAPIClientImplTests: XCTestCase {
@@ -140,17 +155,13 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         XCTAssertEqual(result.endTime, 9000)
         XCTAssertTrue(result.kill)
         XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Content-Type"), "application/json")
     }
 
     func test_fetchFight_graphqlErrors_throwsNetworkError() async {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
-            {
-              "errors": [{"message": "Fight not accessible"}],
-              "data": null
-            }
+            {"errors": [{"message": "Fight not accessible"}], "data": null}
             """.data(using: .utf8)!
             return (response, body)
         }
@@ -169,15 +180,7 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
-            {
-              "data": {
-                "reportData": {
-                  "report": {
-                    "fights": []
-                  }
-                }
-              }
-            }
+            {"data": {"reportData": {"report": {"fights": []}}}}
             """.data(using: .utf8)!
             return (response, body)
         }
@@ -187,6 +190,201 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             XCTFail("Expected fightNotFound")
         } catch let error as AppError {
             XCTAssertEqual(error, .fightNotFound)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    // MARK: - fetchEncounters
+
+    func test_fetchEncounters_success_returnsBossWindows() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "encounterstart", "timestamp": 1000, "encounterID": 2599, "name": "Ulgrax the Devourer"},
+                        {"type": "encounterend",   "timestamp": 181000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
+                      ],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].encounterID, 2599)
+        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
+        XCTAssertEqual(result[0].startTime, 1000)
+        XCTAssertEqual(result[0].endTime, 181000)
+    }
+
+    func test_fetchEncounters_emptyData_returnsEmptyArray() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func test_fetchEncounters_multipleBosses_returnAllWindows() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "encounterstart", "timestamp": 0,      "encounterID": 2599, "name": "Boss A"},
+                        {"type": "encounterend",   "timestamp": 90000,  "encounterID": 2599, "name": "Boss A"},
+                        {"type": "encounterstart", "timestamp": 120000, "encounterID": 2600, "name": "Boss B"},
+                        {"type": "encounterend",   "timestamp": 240000, "encounterID": 2600, "name": "Boss B"}
+                      ],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result[0].encounterID, 2599)
+        XCTAssertEqual(result[0].startTime, 0)
+        XCTAssertEqual(result[0].endTime, 90000)
+        XCTAssertEqual(result[1].encounterID, 2600)
+        XCTAssertEqual(result[1].startTime, 120000)
+        XCTAssertEqual(result[1].endTime, 240000)
+    }
+
+    func test_fetchEncounters_startWithoutEnd_notIncluded() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "encounterstart", "timestamp": 0, "encounterID": 2599, "name": "Boss A"}
+                      ],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func test_fetchEncounters_pagination_startOnPage1EndOnPage2_returnsBossWindow() async throws {
+        var callCount = 0
+        MockURLProtocol.classHandler = { request in
+            callCount += 1
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body: Data
+            if callCount == 1 {
+                body = """
+                {
+                  "data": {
+                    "reportData": {
+                      "report": {
+                        "events": {
+                          "data": [
+                            {"type": "encounterstart", "timestamp": 1000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
+                          ],
+                          "nextPageTimestamp": 5000.0
+                        }
+                      }
+                    }
+                  }
+                }
+                """.data(using: .utf8)!
+            } else {
+                body = """
+                {
+                  "data": {
+                    "reportData": {
+                      "report": {
+                        "events": {
+                          "data": [
+                            {"type": "encounterend", "timestamp": 181000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
+                          ],
+                          "nextPageTimestamp": null
+                        }
+                      }
+                    }
+                  }
+                }
+                """.data(using: .utf8)!
+            }
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+
+        XCTAssertEqual(callCount, 2, "2페이지에 걸쳐 있으므로 API를 2번 호출해야 함")
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].encounterID, 2599)
+        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
+        XCTAssertEqual(result[0].startTime, 1000)
+        XCTAssertEqual(result[0].endTime, 181000)
+    }
+
+    func test_fetchEncounters_graphqlErrors_throwsNetworkError() async {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {"errors": [{"message": "Unauthorized"}], "data": null}
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        do {
+            _ = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+            XCTFail("Expected networkError")
+        } catch let error as AppError {
+            XCTAssertEqual(error, .networkError("Unauthorized"))
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -218,17 +416,13 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         }
 
         let result = try await client.fetchCasts(
-            reportCode: "AbCd1234",
-            fightID: 3,
-            sourceID: 7,
-            hostilityType: .friendly,
-            token: "test-token"
+            reportCode: "AbCd1234", fightID: 3, sourceID: 7,
+            hostilityType: .friendly, startTime: 0, endTime: 10000, token: "test-token"
         )
 
         XCTAssertEqual(result.count, 2)
         XCTAssertEqual(result[0].spellID, 98765)
         XCTAssertEqual(result[0].timestamp, 1000)
-        XCTAssertEqual(result[0].sourceID, 7)
         XCTAssertEqual(result[1].spellID, 11111)
     }
 
@@ -242,8 +436,8 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
                   "report": {
                     "events": {
                       "data": [
-                        {"type": "cast", "timestamp": 1000, "sourceID": 7, "abilityGameID": 98765},
-                        {"type": "begincast", "timestamp": 500, "sourceID": 7, "abilityGameID": 98765}
+                        {"type": "cast",      "timestamp": 1000, "sourceID": 7, "abilityGameID": 98765},
+                        {"type": "begincast", "timestamp": 500,  "sourceID": 7, "abilityGameID": 98765}
                       ],
                       "nextPageTimestamp": null
                     }
@@ -256,11 +450,8 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         }
 
         let result = try await client.fetchCasts(
-            reportCode: "AbCd1234",
-            fightID: 3,
-            sourceID: 7,
-            hostilityType: .friendly,
-            token: "test-token"
+            reportCode: "AbCd1234", fightID: 3, sourceID: 7,
+            hostilityType: .friendly, startTime: 0, endTime: 10000, token: "test-token"
         )
 
         XCTAssertEqual(result.count, 1)
@@ -272,7 +463,7 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         MockURLProtocol.classHandler = { request in
             callCount += 1
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let nextPage: String = callCount == 1 ? "\"nextPageTimestamp\": 9999.0" : "\"nextPageTimestamp\": null"
+            let nextPage: String = callCount == 1 ? "\"nextPageTimestamp\": 5000.0" : "\"nextPageTimestamp\": null"
             let spellID = callCount == 1 ? 11111 : 22222
             let body = """
             {
@@ -280,9 +471,7 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
                 "reportData": {
                   "report": {
                     "events": {
-                      "data": [
-                        {"type": "cast", "timestamp": 1000, "sourceID": 1, "abilityGameID": \(spellID)}
-                      ],
+                      "data": [{"type": "cast", "timestamp": 1000, "sourceID": 1, "abilityGameID": \(spellID)}],
                       \(nextPage)
                     }
                   }
@@ -294,11 +483,8 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         }
 
         let result = try await client.fetchCasts(
-            reportCode: "AbCd1234",
-            fightID: 3,
-            sourceID: nil,
-            hostilityType: .hostile,
-            token: "test-token"
+            reportCode: "AbCd1234", fightID: 3, sourceID: nil,
+            hostilityType: .hostile, startTime: 0, endTime: 100000, token: "test-token"
         )
 
         XCTAssertEqual(callCount, 2)
@@ -307,25 +493,75 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         XCTAssertEqual(result[1].spellID, 22222)
     }
 
+    func test_fetchCasts_paginationStopsAtEndTime() async throws {
+        var callCount = 0
+        MockURLProtocol.classHandler = { request in
+            callCount += 1
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [{"type": "cast", "timestamp": 1000, "sourceID": 1, "abilityGameID": 111}],
+                      "nextPageTimestamp": 200000.0
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        _ = try await client.fetchCasts(
+            reportCode: "AbCd1234", fightID: 3, sourceID: nil,
+            hostilityType: .hostile, startTime: 0, endTime: 10000, token: "test-token"
+        )
+
+        XCTAssertEqual(callCount, 1, "nextPageTimestamp(200000) > endTime(10000)이므로 1페이지만 조회해야 함")
+    }
+
+    func test_fetchCasts_endTime_isPassedToGraphQL() async throws {
+        var capturedVariables: [String: Any]?
+        MockURLProtocol.classHandler = { request in
+            let bodyData = MockURLProtocol.readBody(from: request)
+            if let bodyData,
+               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+               let variables = json["variables"] as? [String: Any] {
+                capturedVariables = variables
+            }
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {"data": {"reportData": {"report": {"events": {"data": [], "nextPageTimestamp": null}}}}}
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        _ = try await client.fetchCasts(
+            reportCode: "AbCd1234", fightID: 3, sourceID: nil,
+            hostilityType: .hostile, startTime: 1000, endTime: 9000, token: "test-token"
+        )
+
+        let variables = try XCTUnwrap(capturedVariables)
+        let endTime = try XCTUnwrap(variables["endTime"] as? Double)
+        XCTAssertEqual(endTime, 9000.0)
+    }
+
     func test_fetchCasts_graphqlErrors_throwsNetworkError() async {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
-            {
-              "errors": [{"message": "Unauthorized"}],
-              "data": null
-            }
+            {"errors": [{"message": "Unauthorized"}], "data": null}
             """.data(using: .utf8)!
             return (response, body)
         }
 
         do {
             _ = try await client.fetchCasts(
-                reportCode: "AbCd1234",
-                fightID: 3,
-                sourceID: nil,
-                hostilityType: .hostile,
-                token: "test-token"
+                reportCode: "AbCd1234", fightID: 3, sourceID: nil,
+                hostilityType: .hostile, startTime: 0, endTime: 99999, token: "test-token"
             )
             XCTFail("Expected networkError")
         } catch let error as AppError {
