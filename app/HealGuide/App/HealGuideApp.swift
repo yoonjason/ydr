@@ -4,7 +4,7 @@ import SwiftUI
 struct HealGuideApp: App {
     @StateObject private var viewModel = ReportViewModel(
         urlParser: URLParser(),
-        keychain: KeychainWrapper(),
+        keychain: FileCredentialStore(),
         apiClient: WarcraftLogsAPIClientImpl(),
         normalizer: TimelineNormalizer(),
         luaGenerator: LuaGenerator(),
