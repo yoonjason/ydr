@@ -7,10 +7,12 @@ final class KeychainWrapperTests: XCTestCase {
     override func setUp() {
         super.setUp()
         keychain.delete()
+        keychain.deleteClientID()
     }
 
     override func tearDown() {
         keychain.delete()
+        keychain.deleteClientID()
         super.tearDown()
     }
 
@@ -34,5 +36,28 @@ final class KeychainWrapperTests: XCTestCase {
     func test_emptyStringSave_loadsEmpty() throws {
         try keychain.save("")
         XCTAssertEqual(keychain.load(), "")
+    }
+
+    func test_saveClientIDAndLoad_returnsStored() throws {
+        try keychain.saveClientID("my-client-id")
+        XCTAssertEqual(keychain.loadClientID(), "my-client-id")
+    }
+
+    func test_saveClientIDAndDelete_returnsNil() throws {
+        try keychain.saveClientID("my-client-id")
+        keychain.deleteClientID()
+        XCTAssertNil(keychain.loadClientID())
+    }
+
+    func test_clientIDAndSecret_storedIndependently() throws {
+        try keychain.save("my-secret")
+        try keychain.saveClientID("my-client-id")
+
+        XCTAssertEqual(keychain.load(), "my-secret")
+        XCTAssertEqual(keychain.loadClientID(), "my-client-id")
+
+        keychain.delete()
+        XCTAssertNil(keychain.load())
+        XCTAssertEqual(keychain.loadClientID(), "my-client-id")
     }
 }
