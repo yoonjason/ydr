@@ -552,12 +552,14 @@ function MainFrame:_RefreshVoiceLabel()
     local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
     local label   = "음성 #" .. voiceID
 
+    -- C_VoiceChat.GetTtsVoices() 반환 구조는 클라이언트 버전별로 차이 가능.
+    -- 필드명(voiceID/name) 접근을 pcall 로 감싸서 에러 시 기본 라벨 유지.
     if C_VoiceChat and C_VoiceChat.GetTtsVoices then
-        local voices = C_VoiceChat.GetTtsVoices()
-        if voices then
+        local ok, voices = pcall(C_VoiceChat.GetTtsVoices)
+        if ok and type(voices) == "table" then
             for _, v in ipairs(voices) do
-                if v.voiceID == voiceID then
-                    label = v.name or label
+                if type(v) == "table" and v.voiceID == voiceID then
+                    if type(v.name) == "string" then label = v.name end
                     break
                 end
             end
@@ -583,26 +585,38 @@ function MainFrame:_OpenVoiceMenu(anchor)
         return
     end
 
-    local voices = C_VoiceChat.GetTtsVoices()
-    if not voices or #voices == 0 then
-        print("|cff00ff00HealGuide|r TTS 음성 목록이 비어있습니다.")
+    local ok, voices = pcall(C_VoiceChat.GetTtsVoices)
+    if not ok or type(voices) ~= "table" or #voices == 0 then
+        print("|cff00ff00HealGuide|r TTS 음성 목록이 비어있거나 API 호출에 실패했습니다.")
         return
     end
 
     local menuList = {}
     for _, v in ipairs(voices) do
-        local voiceID = v.voiceID
-        local name    = v.name or ("Voice " .. tostring(voiceID))
-        menuList[#menuList + 1] = {
-            text         = name,
-            notCheckable = true,
-            func         = function()
-                addon.Storage:SetSetting("ttsVoiceID", voiceID)
-                MainFrame:_RefreshVoiceLabel()
-            end,
-        }
+        if type(v) == "table" and v.voiceID then
+            local voiceID = v.voiceID
+            local name    = (type(v.name) == "string" and v.name)
+                or ("Voice " .. tostring(voiceID))
+            menuList[#menuList + 1] = {
+                text         = name,
+                notCheckable = true,
+                func         = function()
+                    addon.Storage:SetSetting("ttsVoiceID", voiceID)
+                    MainFrame:_RefreshVoiceLabel()
+                end,
+            }
+        end
     end
 
+    if #menuList == 0 then
+        print("|cff00ff00HealGuide|r 사용 가능한 TTS 음성이 없습니다.")
+        return
+    end
+
+    if not EasyMenu then
+        print("|cff00ff00HealGuide|r EasyMenu API를 사용할 수 없습니다.")
+        return
+    end
     EasyMenu(menuList, CreateFrame("Frame", nil, anchor), "cursor", 0, 0, "MENU")
 end
 
