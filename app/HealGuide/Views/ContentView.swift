@@ -17,8 +17,7 @@ struct ContentView: View {
             Section("인증") {
                 TextField("Client ID", text: $viewModel.clientID)
                     .textFieldStyle(.roundedBorder)
-                SecureField("Client Secret", text: $viewModel.clientSecret)
-                    .textFieldStyle(.roundedBorder)
+                secretField
             }
             Section {
                 Button("데이터 가져오기") {
@@ -31,8 +30,28 @@ struct ContentView: View {
             }
         }
         .padding()
-        .frame(minWidth: 520, minHeight: 480)
+        .frame(minWidth: 520, minHeight: 540)
         .onAppear { viewModel.onAppear() }
+    }
+
+    @ViewBuilder
+    private var secretField: some View {
+        HStack {
+            if viewModel.isSecretVisible {
+                TextField("Client Secret", text: $viewModel.clientSecret)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                SecureField("Client Secret", text: $viewModel.clientSecret)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Button {
+                viewModel.isSecretVisible.toggle()
+            } label: {
+                Image(systemName: viewModel.isSecretVisible ? "eye.slash" : "eye")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     @ViewBuilder
@@ -43,11 +62,23 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         case .fetching:
             ProgressView("가져오는 중...")
-        case .success(let meta):
-            VStack(alignment: .leading, spacing: 4) {
-                Text("보스: \(meta.name)").font(.headline)
-                Text("Encounter ID: \(meta.encounterID)")
-                    .foregroundStyle(.secondary)
+        case .success(let output):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Lua 생성 완료 (\(output.entryCount)개 항목)")
+                        .font(.headline)
+                    Spacer()
+                    Button("클립보드에 복사") {
+                        viewModel.copyToClipboard()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                ScrollView {
+                    TextEditor(text: .constant(output.luaText))
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 200)
+                }
+                .frame(maxHeight: 300)
             }
         case .failure(let error):
             Text(error.errorDescription ?? "알 수 없는 오류가 발생했습니다.")
@@ -60,6 +91,9 @@ struct ContentView: View {
     ContentView(viewModel: ReportViewModel(
         urlParser: URLParser(),
         keychain: MockKeychain(),
-        apiClient: MockWarcraftLogsAPIClient()
+        apiClient: MockWarcraftLogsAPIClient(),
+        normalizer: TimelineNormalizer(),
+        luaGenerator: LuaGenerator(),
+        pasteboard: MockPasteboard()
     ))
 }

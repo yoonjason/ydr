@@ -191,4 +191,147 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    // MARK: - fetchCasts
+
+    func test_fetchCasts_success_returnsCastEvents() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "cast", "timestamp": 1000, "sourceID": 7, "abilityGameID": 98765},
+                        {"type": "cast", "timestamp": 5000, "sourceID": 7, "abilityGameID": 11111}
+                      ],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchCasts(
+            reportCode: "AbCd1234",
+            fightID: 3,
+            sourceID: 7,
+            hostilityType: .friendly,
+            token: "test-token"
+        )
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result[0].spellID, 98765)
+        XCTAssertEqual(result[0].timestamp, 1000)
+        XCTAssertEqual(result[0].sourceID, 7)
+        XCTAssertEqual(result[1].spellID, 11111)
+    }
+
+    func test_fetchCasts_filtersNonCastEvents() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "cast", "timestamp": 1000, "sourceID": 7, "abilityGameID": 98765},
+                        {"type": "begincast", "timestamp": 500, "sourceID": 7, "abilityGameID": 98765}
+                      ],
+                      "nextPageTimestamp": null
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchCasts(
+            reportCode: "AbCd1234",
+            fightID: 3,
+            sourceID: 7,
+            hostilityType: .friendly,
+            token: "test-token"
+        )
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].spellID, 98765)
+    }
+
+    func test_fetchCasts_pagination_fetchesAllPages() async throws {
+        var callCount = 0
+        MockURLProtocol.classHandler = { request in
+            callCount += 1
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let nextPage: String = callCount == 1 ? "\"nextPageTimestamp\": 9999.0" : "\"nextPageTimestamp\": null"
+            let spellID = callCount == 1 ? 11111 : 22222
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "events": {
+                      "data": [
+                        {"type": "cast", "timestamp": 1000, "sourceID": 1, "abilityGameID": \(spellID)}
+                      ],
+                      \(nextPage)
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchCasts(
+            reportCode: "AbCd1234",
+            fightID: 3,
+            sourceID: nil,
+            hostilityType: .hostile,
+            token: "test-token"
+        )
+
+        XCTAssertEqual(callCount, 2)
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result[0].spellID, 11111)
+        XCTAssertEqual(result[1].spellID, 22222)
+    }
+
+    func test_fetchCasts_graphqlErrors_throwsNetworkError() async {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "errors": [{"message": "Unauthorized"}],
+              "data": null
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        do {
+            _ = try await client.fetchCasts(
+                reportCode: "AbCd1234",
+                fightID: 3,
+                sourceID: nil,
+                hostilityType: .hostile,
+                token: "test-token"
+            )
+            XCTFail("Expected networkError")
+        } catch let error as AppError {
+            XCTAssertEqual(error, .networkError("Unauthorized"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
 }
