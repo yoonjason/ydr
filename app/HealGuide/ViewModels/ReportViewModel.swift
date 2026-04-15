@@ -97,9 +97,9 @@ final class ReportViewModel: ObservableObject {
             return
         }
 
-        let fightMeta: FightMeta
         do {
-            fightMeta = try await apiClient.fetchFight(
+            // fight 존재 여부 사전 검증 — 결과 불필요
+            _ = try await apiClient.fetchFight(
                 reportCode: reportURL.code,
                 fightID: reportURL.fightID,
                 token: token
@@ -112,25 +112,13 @@ final class ReportViewModel: ObservableObject {
             return
         }
 
-        let playerCasts: [CastEvent]
-        let bossCasts: [CastEvent]
+        let bossWindows: [BossWindow]
         do {
-            async let playerFetch = apiClient.fetchCasts(
+            bossWindows = try await apiClient.fetchEncounters(
                 reportCode: reportURL.code,
                 fightID: reportURL.fightID,
-                sourceID: reportURL.sourceID,
-                hostilityType: .friendly,
                 token: token
             )
-            async let bossFetch = apiClient.fetchCasts(
-                reportCode: reportURL.code,
-                fightID: reportURL.fightID,
-                sourceID: nil,
-                hostilityType: .hostile,
-                token: token
-            )
-            playerCasts = try await playerFetch
-            bossCasts = try await bossFetch
         } catch let error as AppError {
             state = .failure(error)
             return
@@ -139,18 +127,72 @@ final class ReportViewModel: ObservableObject {
             return
         }
 
-        let entries = normalizer.normalize(
-            playerCasts: playerCasts,
-            bossCasts: bossCasts,
-            windowSeconds: 30.0
-        )
+        guard !bossWindows.isEmpty else {
+            state = .failure(.noBossEncounters)
+            return
+        }
 
-        let output = luaGenerator.generate(
-            entries: entries,
-            spec: selectedSpec,
-            encounterID: fightMeta.encounterID
-        )
+        var blocks: [EncounterBlock] = []
+        do {
+            var results: [(startTime: Int64, block: EncounterBlock)] = []
+            try await withThrowingTaskGroup(of: (Int64, EncounterBlock).self) { group in
+                for window in bossWindows {
+                    group.addTask {
+                        async let playerFetch = self.apiClient.fetchCasts(
+                            reportCode: reportURL.code,
+                            fightID: reportURL.fightID,
+                            sourceID: reportURL.sourceID,
+                            hostilityType: .friendly,
+                            startTime: window.startTime,
+                            endTime: window.endTime,
+                            token: token
+                        )
+                        async let bossFetch = self.apiClient.fetchCasts(
+                            reportCode: reportURL.code,
+                            fightID: reportURL.fightID,
+                            sourceID: nil,
+                            hostilityType: .hostile,
+                            startTime: window.startTime,
+                            endTime: window.endTime,
+                            token: token
+                        )
+                        let (playerCasts, bossCasts) = try await (playerFetch, bossFetch)
 
-        state = .success(output)
+                        let (absolute, reactions) = self.normalizer.normalize(
+                            encounterStart: window.startTime,
+                            encounterEnd: window.endTime,
+                            bossCasts: bossCasts,
+                            playerCasts: playerCasts,
+                            maxWindow: 30.0
+                        )
+                        let duration = Double(window.endTime - window.startTime) / 1000.0
+                        let block = EncounterBlock(
+                            encounterID: window.encounterID,
+                            name: window.name,
+                            duration: duration,
+                            absolute: absolute,
+                            reactions: reactions
+                        )
+                        return (window.startTime, block)
+                    }
+                }
+                for try await result in group {
+                    results.append((startTime: result.0, block: result.1))
+                }
+            }
+            blocks = results.sorted { $0.startTime < $1.startTime }.map { $0.block }
+        } catch let error as AppError {
+            state = .failure(error)
+            return
+        } catch {
+            state = .failure(.networkError(error.localizedDescription))
+            return
+        }
+
+        let luaText = luaGenerator.generate(
+            blocks: blocks,
+            metadata: ExportMetadata(spec: selectedSpec)
+        )
+        state = .success(LuaOutput(blocks: blocks, luaText: luaText))
     }
 }

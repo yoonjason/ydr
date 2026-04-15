@@ -4,7 +4,6 @@ import XCTest
 @MainActor
 final class ReportViewModelTests: XCTestCase {
     private let validURL = "https://www.warcraftlogs.com/reports/AbCd1234#fight=3&source=7"
-    private let mockOutput = LuaOutput(luaText: "-- mock lua", entryCount: 0)
 
     private func makeSUT(
         keychain: MockKeychain = MockKeychain(),
@@ -101,6 +100,32 @@ final class ReportViewModelTests: XCTestCase {
         XCTAssertEqual(vm.state, .failure(.fightNotFound))
     }
 
+    func test_fetchFight_encountersFailure_setsFailure() async {
+        let apiClient = MockWarcraftLogsAPIClient()
+        apiClient.encountersResult = .failure(.networkError("encounters failed"))
+        let vm = makeSUT(apiClient: apiClient)
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.fetchFight()
+
+        XCTAssertEqual(vm.state, .failure(.networkError("encounters failed")))
+    }
+
+    func test_fetchFight_emptyEncounters_setsNoBossEncounters() async {
+        let apiClient = MockWarcraftLogsAPIClient()
+        apiClient.encountersResult = .success([])
+        let vm = makeSUT(apiClient: apiClient)
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.fetchFight()
+
+        XCTAssertEqual(vm.state, .failure(.noBossEncounters))
+    }
+
     func test_fetchFight_castsFailure_setsFailure() async {
         let apiClient = MockWarcraftLogsAPIClient()
         apiClient.castsResult = .failure(.networkError("casts failed"))
@@ -116,7 +141,7 @@ final class ReportViewModelTests: XCTestCase {
 
     func test_fetchFight_success_setsSuccessWithLuaOutput() async {
         let luaGenerator = MockLuaGenerator()
-        luaGenerator.result = mockOutput
+        luaGenerator.result = "-- generated lua"
         let vm = makeSUT(luaGenerator: luaGenerator)
         vm.reportURLText = validURL
         vm.clientID = "id"
@@ -124,7 +149,55 @@ final class ReportViewModelTests: XCTestCase {
 
         await vm.fetchFight()
 
-        XCTAssertEqual(vm.state, .success(mockOutput))
+        if case .success(let output) = vm.state {
+            XCTAssertEqual(output.luaText, "-- generated lua")
+        } else {
+            XCTFail("Expected success, got \(vm.state)")
+        }
+    }
+
+    func test_fetchFight_multiBoss_blocksOrderedByEncounterStart() async {
+        let apiClient = MockWarcraftLogsAPIClient()
+        apiClient.encountersResult = .success([
+            BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000),
+            BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000)
+        ])
+        let vm = makeSUT(apiClient: apiClient)
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.fetchFight()
+
+        guard case .success(let output) = vm.state else {
+            XCTFail("Expected success, got \(vm.state)")
+            return
+        }
+        XCTAssertEqual(output.blocks.count, 2)
+        XCTAssertEqual(output.blocks[0].encounterID, 2599, "startTime 0인 Boss A가 먼저 와야 함")
+        XCTAssertEqual(output.blocks[1].encounterID, 2600, "startTime 20000인 Boss B가 나중에 와야 함")
+    }
+
+    func test_fetchFight_multiBoss_buildsMultipleBlocks() async {
+        let apiClient = MockWarcraftLogsAPIClient()
+        apiClient.encountersResult = .success([
+            BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000),
+            BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000)
+        ])
+        let normalizer = MockTimelineNormalizer()
+        let luaGenerator = MockLuaGenerator()
+        let vm = makeSUT(apiClient: apiClient, normalizer: normalizer, luaGenerator: luaGenerator)
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.fetchFight()
+
+        if case .success(let output) = vm.state {
+            XCTAssertEqual(output.blockCount, 2)
+        } else {
+            XCTFail("Expected success, got \(vm.state)")
+        }
     }
 
     func test_fetchFight_success_savesSecretToKeychain() async {
@@ -190,7 +263,7 @@ final class ReportViewModelTests: XCTestCase {
         }
     }
 
-    func test_copyToClipboard_whenSuccess_writesToPasteboard() {
+    func test_copyToClipboard_whenIdle_doesNothing() {
         let pasteboard = MockPasteboard()
         let vm = ReportViewModel(
             urlParser: URLParser(),
@@ -200,8 +273,6 @@ final class ReportViewModelTests: XCTestCase {
             luaGenerator: MockLuaGenerator(),
             pasteboard: pasteboard
         )
-        // success 상태 직접 설정 불가(private(set))이므로 상태를 우회 테스트
-        // 실제로는 copyToClipboard가 idle 상태에서 아무것도 안 하는 것을 확인
         vm.copyToClipboard()
         XCTAssertTrue(pasteboard.writtenStrings.isEmpty)
     }
