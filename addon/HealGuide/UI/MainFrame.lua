@@ -408,6 +408,19 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.pulseSl = pulseSl
     y = y - 50
 
+    -- ── 리드 타임 ────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "리드 타임 (알림 앞당김)", 8, y)
+    y = y - 22
+
+    local leadSl = self:_MakeSlider("HGTabLeadSl", "리드 타임 (초)", 0, 5, 0.1, content, y)
+    leadSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val * 10 + 0.5) / 10  -- 0.1 단위 반올림
+        _G[self:GetName() .. "Text"]:SetText(string.format("%s: %.1fs", self._labelText, val))
+        addon.Storage:SetSetting("leadTime", val)
+    end)
+    panel.leadSl = leadSl
+    y = y - 50
+
     baseSl:SetScript("OnValueChanged", function(self, val)
         val = math.floor(val)
         _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
@@ -562,6 +575,7 @@ function MainFrame:_RefreshSettings()
 
     panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
     panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
+    panel.leadSl:SetValue(s:GetSetting("leadTime")  or 1.5)
     panel.rateSl:SetValue(s:GetSetting("ttsRate")   or 5)
     panel.volSl:SetValue(s:GetSetting("ttsVolume")  or 100)
 
