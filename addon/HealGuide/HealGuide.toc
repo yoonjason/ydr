@@ -1,9 +1,16 @@
 ## Interface: 110200
 ## Title: HealGuide
 ## Notes: Boss skill-based healing reminder for healers
-## Version: 0.1.0
+## Version: 1.0.0
 ## Author: yeongseok
-## SavedVariables: HealGuideDB
+## SavedVariablesPerCharacter: HealGuideCharDB
 
-Data.lua
-Main.lua
+Data/DungeonMappings.lua
+Core/Init.lua
+Core/Storage.lua
+Core/SpecMatcher.lua
+Core/ImportParser.lua
+Core/EncounterEngine.lua
+UI/AlertFrame.lua
+UI/ImportDialog.lua
+UI/MainFrame.lua
