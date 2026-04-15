@@ -18,6 +18,9 @@ local function onAddonLoaded(name)
     addon.SpecMatcher:Init()
     addon.AlertFrame:Init()
     addon.MainFrame:Init()
+    if addon.EncounterTimelineBridge and addon.EncounterTimelineBridge.Init then
+        addon.EncounterTimelineBridge:Init()
+    end
     print("|cff00ff00HealGuide|r 로드 완료. /hg 로 설정")
 end
 

@@ -84,6 +84,9 @@ function EncounterEngine:Cancel()
     self.activeSpecData     = nil
     self.encounterStartTime = nil
     self.cachedAlertMode    = nil
+    if addon.EncounterTimelineBridge then
+        addon.EncounterTimelineBridge:Reset()
+    end
 end
 
 function EncounterEngine:ScheduleTimeline(timeline)

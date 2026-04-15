@@ -11,6 +11,7 @@ Core/Storage.lua
 Core/SpecMatcher.lua
 Core/ImportParser.lua
 Core/EncounterEngine.lua
+Core/EncounterTimelineBridge.lua
 UI/AlertFrame.lua
 UI/ImportDialog.lua
 UI/MainFrame.lua
