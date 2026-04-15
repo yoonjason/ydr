@@ -24,29 +24,39 @@ on run argv
           set a4 to (split horizontally with default profile of col2)
           set a5 to (split horizontally with default profile of a3)
           set a6 to (split horizontally with default profile of a4)
+          set a7 to (split horizontally with default profile of a5)
+          set a8 to (split horizontally with default profile of a6)
           tell agentCol1
-          set name to "PM"
-          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh PM"
-          end tell
-          tell col2
           set name to "ux-designer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh ux-designer"
           end tell
-          tell a3
+          tell col2
           set name to "ios-engineer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh ios-engineer"
           end tell
-          tell a4
+          tell a3
           set name to "backend-engineer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh backend-engineer"
           end tell
-          tell a5
+          tell a4
           set name to "qa-engineer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh qa-engineer"
           end tell
-          tell a6
+          tell a5
           set name to "code-reviewer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh code-reviewer"
+          end tell
+          tell a6
+          set name to "tech-writer"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh tech-writer"
+          end tell
+          tell a7
+          set name to "analyst"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh analyst"
+          end tell
+          tell a8
+          set name to "security-auditor"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh security-auditor"
           end tell
 
 
