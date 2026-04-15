@@ -124,6 +124,22 @@ function EncounterEngine:OnCombatLog(
 
     local bossSpellID = ...
     local reactions   = self.activeSpecData.reactions
+
+    -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.
+    -- Bridge.scheduledBossSpells[id] 에 타임스탬프가 있으면 ENCOUNTER_TIMELINE_EVENT_ADDED
+    -- 가 먼저 도착해서 leadIns/reactions 를 이미 걸었다는 뜻. 여기서 또 거는 건 중복.
+    -- 윈도우 30s: 같은 보스가 같은 스킬을 반복 시전할 때 네이티브가 매번 ADDED 를 다시
+    -- 쏘며 타임스탬프를 갱신하므로 윈도우 안에 항상 들어옴.
+    local bridge = addon.EncounterTimelineBridge
+    if bridge and bossSpellID then
+        local lastNative = bridge.scheduledBossSpells and bridge.scheduledBossSpells[bossSpellID]
+        if lastNative and (GetTime() - lastNative) < 30 then
+            print(string.format("|cffaaaaff[HG-CL]|r boss cast spellID=%s → 네이티브 예약 존재, 스킵",
+                tostring(bossSpellID)))
+            return
+        end
+    end
+
     -- 디버그: 보스가 캐스트 한 모든 주문 로그
     print(string.format("|cffaaaaff[HG-CL]|r boss cast: name=%s spellID=%s matched=%s",
         tostring(sourceName), tostring(bossSpellID),
