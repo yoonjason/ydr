@@ -2,15 +2,16 @@ local addonName, addon = ...
 addon.EncounterEngine = {}
 local EncounterEngine = addon.EncounterEngine
 
--- COMBAT_LOG sourceFlags: 반응 적대 비트
-local HOSTILE_FLAG = COMBATLOG_OBJECT_REACTION_HOSTILE or 0x00000040
+-- N1: fallback 제거 — TWW에서 COMBATLOG_OBJECT_REACTION_HOSTILE 는 항상 정의됨
+local HOSTILE_FLAG = COMBATLOG_OBJECT_REACTION_HOSTILE
 
 EncounterEngine.activeEncounterID  = nil
 EncounterEngine.activeBossData     = nil
 EncounterEngine.activeSpecData     = nil
 EncounterEngine.encounterStartTime = nil
+EncounterEngine.cachedAlertMode    = nil   -- N2: OnEncounterStart 시 1회 캐싱
 EncounterEngine.pendingTimers      = {}
-EncounterEngine.recentAlerts       = {}  -- hybrid 디듀프: spellID → timestamp
+EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → timestamp
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -37,11 +38,11 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self.activeBossData     = bossData
     self.activeSpecData     = specData
     self.encounterStartTime = GetTime()
+    self.cachedAlertMode    = addon.Storage:GetSetting("alertMode")  -- N2
 
-    local alertMode = addon.Storage:GetSetting("alertMode")
-    addon.dprint("ENCOUNTER_START", encounterName, "모드:", alertMode, "스펙:", activeSpec)
+    addon.dprint("ENCOUNTER_START", encounterName, "모드:", self.cachedAlertMode, "스펙:", activeSpec)
 
-    if alertMode == "absolute" or alertMode == "hybrid" then
+    if self.cachedAlertMode == "absolute" or self.cachedAlertMode == "hybrid" then
         self:ScheduleTimeline(specData.timeline)
     end
 end
@@ -52,7 +53,7 @@ end
 
 function EncounterEngine:Cancel()
     for _, t in ipairs(self.pendingTimers) do
-        if t.Cancel then t:Cancel() end
+        if t and t.Cancel then t:Cancel() end
     end
     self.pendingTimers      = {}
     self.recentAlerts       = {}
@@ -60,6 +61,7 @@ function EncounterEngine:Cancel()
     self.activeBossData     = nil
     self.activeSpecData     = nil
     self.encounterStartTime = nil
+    self.cachedAlertMode    = nil
 end
 
 function EncounterEngine:ScheduleTimeline(timeline)
@@ -88,12 +90,12 @@ function EncounterEngine:OnCombatLog(
     if subevent ~= "SPELL_CAST_START" and subevent ~= "SPELL_CAST_SUCCESS" then return end
     if bit.band(sourceFlags, HOSTILE_FLAG) == 0 then return end
 
+    -- N2: 캐시된 alertMode 사용 (핫 패스 Storage 접근 회피)
+    if self.cachedAlertMode == "absolute" then return end
+
     local bossSpellID = ...
     local reactions   = self.activeSpecData.reactions
     if not reactions or not reactions[bossSpellID] then return end
-
-    local alertMode = addon.Storage:GetSetting("alertMode")
-    if alertMode == "absolute" then return end  -- absolute 모드는 반응 알림 없음
 
     for _, entry in ipairs(reactions[bossSpellID]) do
         local playerSpellID = entry.spellID
@@ -106,7 +108,7 @@ function EncounterEngine:OnCombatLog(
 end
 
 function EncounterEngine:TriggerAlert(spellID, source)
-    local alertMode = addon.Storage:GetSetting("alertMode")
+    local alertMode = self.cachedAlertMode or addon.Storage:GetSetting("alertMode")
 
     -- hybrid 모드: 1.5초 내 동일 spellID 디듀프
     if alertMode == "hybrid" then
@@ -121,13 +123,12 @@ function EncounterEngine:TriggerAlert(spellID, source)
 
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
     addon.AlertFrame:ShowAlert(spellID)
-
-    if addon.Storage:GetSetting("soundEnabled") then
-        PlaySound(888)
-    end
 end
 
 function EncounterEngine:OnZoneChanged()
+    -- S4: 전투 중(인카운터 활성)이면 zone 토스트 skip
+    if self.activeEncounterID then return end
+
     local _, instanceType = GetInstanceInfo()
     if instanceType == "none" or instanceType == "pvp" or instanceType == "arena" then return end
 
@@ -173,15 +174,15 @@ function EncounterEngine:TestEncounter(encounterID)
     print(string.format("|cff00ff00HealGuide|r 테스트 시작: encounter=%d spec=%s timeline=%d",
         encounterID, activeSpec, #timeline))
 
-    -- timeline 항목을 2초 간격으로 연속 표시
+    -- B2: C_Timer.NewTimer 로 교체, pendingTimers 에 등록 → 스펙 스왑 시 취소 가능
     for i, entry in ipairs(timeline) do
         local spellID = entry.spellID
-        C_Timer.After(i * 2.0, function()
+        local t = C_Timer.NewTimer(i * 2.0, function()
             self:TriggerAlert(spellID, "test")
         end)
+        table.insert(self.pendingTimers, t)
     end
 
-    -- reactions 에서 최대 3개 샘플
     local rCount = 0
     local base   = #timeline * 2.0
     for _, entries in pairs(reactions) do
@@ -189,9 +190,10 @@ function EncounterEngine:TestEncounter(encounterID)
         for _, entry in ipairs(entries) do
             rCount = rCount + 1
             local spellID = entry.spellID
-            C_Timer.After(base + rCount * 2.0, function()
+            local t = C_Timer.NewTimer(base + rCount * 2.0, function()
                 self:TriggerAlert(spellID, "test-reaction")
             end)
+            table.insert(self.pendingTimers, t)
         end
         if rCount >= 3 then break end
     end

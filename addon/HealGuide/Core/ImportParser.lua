@@ -10,7 +10,7 @@ local DANGEROUS_PATTERNS = {
     "dofile%s*%(", "debug%s*%.", "load%s*%(", "loadstring%s*%(",
     "setfenv%s*%(", "getfenv%s*%(", "rawset%s*%(", "rawget%s*%(",
     "coroutine%s*%.", "function%s+%w", "function%s*%(",
-    "while%s+", "repeat%s+", "goto%s+",
+    "while%s+", "repeat%s+", "goto%s+", "for%s+",
 }
 
 local VALID_SPECS = {
@@ -31,7 +31,6 @@ function ImportParser:Parse(input)
         return nil, string.format("입력값이 너무 큽니다 (최대 %dMB).", MAX_LENGTH / (1024 * 1024))
     end
 
-    -- 소문자로 변환해 패턴 검사 (for 루프 패턴은 원문으로도 확인)
     local lower = input:lower()
     for _, pattern in ipairs(DANGEROUS_PATTERNS) do
         if lower:find(pattern) then
@@ -39,7 +38,6 @@ function ImportParser:Parse(input)
         end
     end
 
-    -- loadstring 으로 파싱
     local fn, err = loadstring(input)
     if not fn then
         return nil, "파싱 오류: " .. tostring(err)
@@ -57,7 +55,6 @@ function ImportParser:Parse(input)
         return nil, "결과가 테이블이 아닙니다."
     end
 
-    -- 필수 필드 검증
     if result.version ~= 1 then
         return nil, "버전 불일치: version=1 이어야 합니다."
     end
@@ -74,7 +71,6 @@ function ImportParser:Parse(input)
         return nil, "bosses 가 누락되었습니다."
     end
 
-    -- bosses 내부 구조 최소 검증
     for encID, boss in pairs(result.bosses) do
         if type(encID) ~= "number" then
             return nil, "bosses 키가 숫자가 아닙니다: " .. tostring(encID)
@@ -82,11 +78,39 @@ function ImportParser:Parse(input)
         if type(boss) ~= "table" then
             return nil, "boss 항목이 테이블이 아닙니다: " .. tostring(encID)
         end
-        if boss.timeline ~= nil and type(boss.timeline) ~= "table" then
-            return nil, "timeline이 테이블이 아닙니다: " .. tostring(encID)
+        if boss.timeline ~= nil then
+            if type(boss.timeline) ~= "table" then
+                return nil, "timeline이 테이블이 아닙니다: " .. tostring(encID)
+            end
+            for i, entry in ipairs(boss.timeline) do
+                if type(entry.spellID) ~= "number" then
+                    return nil, string.format("timeline[%d].spellID 가 숫자가 아닙니다 (encID=%d)", i, encID)
+                end
+                if type(entry.offset) ~= "number" then
+                    return nil, string.format("timeline[%d].offset 이 숫자가 아닙니다 (encID=%d)", i, encID)
+                end
+            end
         end
-        if boss.reactions ~= nil and type(boss.reactions) ~= "table" then
-            return nil, "reactions가 테이블이 아닙니다: " .. tostring(encID)
+        if boss.reactions ~= nil then
+            if type(boss.reactions) ~= "table" then
+                return nil, "reactions가 테이블이 아닙니다: " .. tostring(encID)
+            end
+            for bossSpell, entries in pairs(boss.reactions) do
+                if type(bossSpell) ~= "number" then
+                    return nil, "reactions 키가 숫자가 아닙니다: " .. tostring(bossSpell)
+                end
+                if type(entries) ~= "table" then
+                    return nil, "reactions 항목이 테이블이 아닙니다"
+                end
+                for i, entry in ipairs(entries) do
+                    if type(entry.spellID) ~= "number" then
+                        return nil, string.format("reactions[%d].spellID 가 숫자가 아닙니다", i)
+                    end
+                    if type(entry.delay) ~= "number" then
+                        return nil, string.format("reactions[%d].delay 가 숫자가 아닙니다", i)
+                    end
+                end
+            end
         end
     end
 

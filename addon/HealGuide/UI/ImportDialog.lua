@@ -2,7 +2,7 @@ local addonName, addon = ...
 addon.ImportDialog = {}
 local ImportDialog = addon.ImportDialog
 
-local dialog          = nil
+local dialog           = nil
 local targetDungeonKey = nil  -- nil=신규, 문자열=갱신 대상
 
 function ImportDialog:Open(dungeonKey)
@@ -34,33 +34,37 @@ function ImportDialog:_Create()
 
     dialog.TitleText:SetText("HealGuide — Import")
 
-    -- 안내 텍스트
     local hint = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     hint:SetPoint("TOPLEFT", dialog.InsetBg, "TOPLEFT", 8, -8)
     hint:SetText("Mac 앱에서 복사한 import 문자열을 붙여넣으세요:")
 
-    -- 스크롤 EditBox
     local scrollFrame = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT",     hint,            "BOTTOMLEFT",  0,   -6)
-    scrollFrame:SetPoint("BOTTOMRIGHT", dialog.InsetBg, "BOTTOMRIGHT", -26,  40)
+    scrollFrame:SetPoint("TOPLEFT",     hint,           "BOTTOMLEFT",  0,   -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", dialog.InsetBg, "BOTTOMRIGHT", -26, 40)
 
     local editBox = CreateFrame("EditBox", "HealGuideImportEditBox", scrollFrame)
     editBox:SetMultiLine(true)
     editBox:SetAutoFocus(false)
     editBox:SetFontObject(ChatFontNormal)
-    editBox:SetWidth(scrollFrame:GetWidth())
     editBox:SetScript("OnEscapePressed", function() dialog:Hide() end)
     scrollFrame:SetScrollChild(editBox)
     dialog.editBox = editBox
 
-    -- 상태 메시지
+    -- S3: ScrollFrame 레이아웃 확정 후 width 적용 (GetWidth()가 0 반환하는 타이밍 방어)
+    scrollFrame:SetScript("OnSizeChanged", function(sf, w)
+        editBox:SetWidth(w)
+    end)
+    local initialWidth = scrollFrame:GetWidth()
+    if initialWidth > 0 then
+        editBox:SetWidth(initialWidth)
+    end
+
     local statusText = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statusText:SetPoint("BOTTOMLEFT",  dialog.InsetBg, "BOTTOMLEFT",  8,   8)
     statusText:SetPoint("BOTTOMRIGHT", dialog.InsetBg, "BOTTOMRIGHT", -90, 8)
     statusText:SetJustifyH("LEFT")
     dialog.statusText = statusText
 
-    -- 등록 버튼
     local importBtn = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
     importBtn:SetSize(80, 22)
     importBtn:SetPoint("BOTTOMRIGHT", dialog.InsetBg, "BOTTOMRIGHT", -4, 6)
@@ -69,7 +73,6 @@ function ImportDialog:_Create()
         ImportDialog:_DoImport()
     end)
 
-    -- 취소 버튼
     local cancelBtn = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
     cancelBtn:SetSize(80, 22)
     cancelBtn:SetPoint("RIGHT", importBtn, "LEFT", -4, 0)

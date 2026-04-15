@@ -1,5 +1,5 @@
 local addonName, addon = ...
-HealGuide = addon
+-- S1: 전역 HealGuide 제거 — 다른 파일은 모두 local addon 참조
 
 local DEBUG = false
 
@@ -73,7 +73,7 @@ SLASH_HEALGUIDE1 = "/hg"
 SlashCmdList["HEALGUIDE"] = function(msg)
     msg = (msg or ""):match("^%s*(.-)%s*$")
     local cmd, args = msg:match("^(%S+)%s*(.*)")
-    cmd = cmd or ""
+    cmd  = cmd  or ""
     args = args or ""
 
     if cmd == "" then
@@ -89,6 +89,10 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         end
     elseif cmd == "lock" then
         addon.AlertFrame:ToggleLock()
+        -- 설정 탭이 열려 있으면 체크박스 동기화
+        if addon.MainFrame._RefreshSettings then
+            addon.MainFrame:_RefreshSettings()
+        end
     elseif cmd == "mode" then
         local mode = args:match("^(%S+)")
         if mode == "reactive" or mode == "absolute" or mode == "hybrid" then
@@ -97,7 +101,65 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         else
             print("|cff00ff00HealGuide|r 사용법: /hg mode <reactive|absolute|hybrid>")
         end
+    elseif cmd == "size" then
+        local n = tonumber(args)
+        if n and n >= 32 and n <= 128 then
+            n = math.floor(n)
+            addon.Storage:SetSetting("iconBaseSize", n)
+            local pulse = addon.Storage:GetSetting("iconPulseSize") or 96
+            if pulse < n then
+                addon.Storage:SetSetting("iconPulseSize", n)
+            end
+            addon.AlertFrame:ApplyIconSize()
+            print("|cff00ff00HealGuide|r 기본 크기: " .. n)
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg size <32-128>")
+        end
+    elseif cmd == "pulse" then
+        local n = tonumber(args)
+        local base = addon.Storage:GetSetting("iconBaseSize") or 64
+        if n and n >= 48 and n <= 160 and n >= base then
+            n = math.floor(n)
+            addon.Storage:SetSetting("iconPulseSize", n)
+            addon.AlertFrame:ApplyIconSize()
+            print("|cff00ff00HealGuide|r 확대 크기: " .. n)
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg pulse <48-160> (기본 크기 이상)")
+        end
+    elseif cmd == "tts" then
+        if args == "on" then
+            addon.Storage:SetSetting("ttsEnabled", true)
+            print("|cff00ff00HealGuide|r TTS: ON")
+        elseif args == "off" then
+            addon.Storage:SetSetting("ttsEnabled", false)
+            print("|cff00ff00HealGuide|r TTS: OFF")
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg tts <on|off>")
+        end
+    elseif cmd == "sound" then
+        if args == "on" then
+            addon.Storage:SetSetting("soundEnabled", true)
+            print("|cff00ff00HealGuide|r 사운드: ON")
+        elseif args == "off" then
+            addon.Storage:SetSetting("soundEnabled", false)
+            print("|cff00ff00HealGuide|r 사운드: OFF")
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg sound <on|off>")
+        end
+    elseif cmd == "label" then
+        if args == "on" then
+            addon.Storage:SetSetting("showSpellName", true)
+            print("|cff00ff00HealGuide|r 스킬명 표시: ON")
+        elseif args == "off" then
+            addon.Storage:SetSetting("showSpellName", false)
+            print("|cff00ff00HealGuide|r 스킬명 표시: OFF")
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg label <on|off>")
+        end
     else
-        print("|cff00ff00HealGuide|r 명령어: /hg, /hg import, /hg test <encID>, /hg lock, /hg mode <reactive|absolute|hybrid>")
+        print("|cff00ff00HealGuide|r 명령어: /hg, /hg import, /hg test <encID>, " ..
+              "/hg lock, /hg mode <reactive|absolute|hybrid>, " ..
+              "/hg size <32-128>, /hg pulse <48-160>, " ..
+              "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>")
     end
 end

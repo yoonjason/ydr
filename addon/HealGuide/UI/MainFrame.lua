@@ -2,7 +2,15 @@ local addonName, addon = ...
 addon.MainFrame = {}
 local MainFrame = addon.MainFrame
 
-local mainFrame = nil
+local mainFrame    = nil
+local tabs         = {}
+local activeTab    = 1
+
+local TAB_DATA     = 1
+local TAB_SETTINGS = 2
+local TAB_PREVIEW  = 3
+
+-- ── Public API ───────────────────────────────────────────────────────────────
 
 function MainFrame:Init()
     self:_Create()
@@ -12,14 +20,48 @@ function MainFrame:Toggle()
     if mainFrame:IsShown() then
         mainFrame:Hide()
     else
-        self:Refresh()
+        self:_ShowTab(activeTab)
         mainFrame:Show()
     end
 end
 
+function MainFrame:Refresh()
+    if not mainFrame then return end
+    self:_RefreshDataTab()
+end
+
+function MainFrame:UpdateCoordLabel(x, y)
+    local st = tabs[TAB_SETTINGS]
+    if st and st.coordLabel then
+        st.coordLabel:SetText(string.format("위치: %.0f, %.0f", x, y))
+    end
+end
+
+-- ── Tab management ───────────────────────────────────────────────────────────
+
+function MainFrame:_ShowTab(idx)
+    activeTab = idx
+    for i, panel in ipairs(tabs) do
+        if i == idx then
+            panel:Show()
+            panel.tabBtn:LockHighlight()
+        else
+            panel:Hide()
+            panel.tabBtn:UnlockHighlight()
+        end
+    end
+    if idx == TAB_DATA then
+        self:_RefreshDataTab()
+    elseif idx == TAB_SETTINGS then
+        self:_RefreshSettings()
+    end
+end
+
+-- ── Frame creation ───────────────────────────────────────────────────────────
+
 function MainFrame:_Create()
     mainFrame = CreateFrame("Frame", "HealGuideMainFrame", UIParent, "BasicFrameTemplateWithInset")
-    mainFrame:SetSize(540, 500)
+    mainFrame:SetSize(560, 520)
     mainFrame:SetPoint("CENTER")
     mainFrame:SetFrameStrata("HIGH")
     mainFrame:SetMovable(true)
@@ -30,83 +72,121 @@ function MainFrame:_Create()
     mainFrame:Hide()
 
     mainFrame.TitleText:SetText("HealGuide")
+    mainFrame._dungeonBlocks = {}
 
-    -- 헤더: 캐릭터 / 스펙 정보
-    local headerText = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    headerText:SetPoint("TOPLEFT", mainFrame.InsetBg, "TOPLEFT", 8, -8)
-    mainFrame.headerText = headerText
+    self:_CreateStaticPopups()
 
-    -- 던전 목록 스크롤 영역
-    local scrollFrame = CreateFrame("ScrollFrame", nil, mainFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT",     headerText,      "BOTTOMLEFT",  0,   -8)
-    scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame.InsetBg, "BOTTOMRIGHT", -26, 40)
-    mainFrame.scrollFrame = scrollFrame
+    local inset    = mainFrame.InsetBg
+    local tabNames = { "데이터", "설정", "미리보기" }
+    local tabBtns  = {}
+
+    for i, name in ipairs(tabNames) do
+        local btn = CreateFrame("Button", nil, mainFrame, "GameMenuButtonTemplate")
+        btn:SetSize(94, 22)
+        if i == 1 then
+            btn:SetPoint("TOPLEFT", inset, "TOPLEFT", 4, -4)
+        else
+            btn:SetPoint("LEFT", tabBtns[i - 1], "RIGHT", 2, 0)
+        end
+        btn:SetText(name)
+        tabBtns[i] = btn
+
+        local panel = CreateFrame("Frame", nil, mainFrame)
+        panel:SetPoint("TOPLEFT",     inset, "TOPLEFT",     4, -30)
+        panel:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -4,  4)
+        panel:Hide()
+        panel.tabBtn = btn
+        tabs[i] = panel
+
+        local idx = i
+        btn:SetScript("OnClick", function() MainFrame:_ShowTab(idx) end)
+    end
+
+    self:_CreateDataTab(tabs[TAB_DATA])
+    self:_CreateSettingsTab(tabs[TAB_SETTINGS])
+    self:_CreatePreviewTab(tabs[TAB_PREVIEW])
+    self:_ShowTab(TAB_DATA)
+end
+
+function MainFrame:_CreateStaticPopups()
+    StaticPopupDialogs["HEALGUIDE_CONFIRM_DELETE"] = {
+        text          = "던전을 삭제하시겠습니까?",
+        button1       = "삭제",
+        button2       = "취소",
+        OnAccept      = function(self)
+            local key = self.data and self.data.dungeonKey
+            if key then
+                addon.Storage:RemoveDungeon(key)
+                MainFrame:Refresh()
+            end
+        end,
+        timeout        = 0,
+        whileDead      = true,
+        hideOnEscape   = true,
+        preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["HEALGUIDE_RENAME"] = {
+        text       = "새 이름을 입력하세요:",
+        button1    = "확인",
+        button2    = "취소",
+        hasEditBox = true,
+        OnShow     = function(self)
+            self.editBox:SetText(self.data and self.data.currentName or "")
+            self.editBox:HighlightText()
+        end,
+        OnAccept   = function(self)
+            local newName = self.editBox:GetText():match("^%s*(.-)%s*$")
+            local key     = self.data and self.data.dungeonKey
+            if newName ~= "" and key then
+                addon.Storage:SetDungeonDisplayName(key, newName)
+                MainFrame:Refresh()
+            end
+        end,
+        timeout        = 0,
+        whileDead      = true,
+        hideOnEscape   = true,
+        preferredIndex = 3,
+    }
+end
+
+-- ── Tab 1: 데이터 ─────────────────────────────────────────────────────────────
+
+function MainFrame:_CreateDataTab(panel)
+    local headerText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    headerText:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -4)
+    panel.headerText = headerText
+
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT",     headerText, "BOTTOMLEFT", 0,   -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", panel,      "BOTTOMRIGHT", -26, 34)
+    panel.scrollFrame = scrollFrame
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(scrollFrame:GetWidth() or 480)
+    content:SetWidth(scrollFrame:GetWidth() or 490)
     content:SetHeight(1)
     scrollFrame:SetScrollChild(content)
-    mainFrame.content = content
+    panel.content = content
 
-    -- 하단 버튼 바
-    local importBtn = CreateFrame("Button", nil, mainFrame, "GameMenuButtonTemplate")
-    importBtn:SetSize(130, 22)
-    importBtn:SetPoint("BOTTOMLEFT", mainFrame.InsetBg, "BOTTOMLEFT", 4, 6)
+    local importBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    importBtn:SetSize(140, 22)
+    importBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 4, 4)
     importBtn:SetText("+ 새 던전 import")
     importBtn:SetScript("OnClick", function()
         addon.ImportDialog:Open()
     end)
-
-    local modeLabel = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    modeLabel:SetPoint("LEFT", importBtn, "RIGHT", 10, 0)
-    modeLabel:SetText("모드:")
-
-    local modeBtn = CreateFrame("Button", nil, mainFrame, "GameMenuButtonTemplate")
-    modeBtn:SetSize(90, 22)
-    modeBtn:SetPoint("LEFT", modeLabel, "RIGHT", 4, 0)
-    mainFrame.modeBtn = modeBtn
-
-    local MODES = { "reactive", "absolute", "hybrid" }
-    modeBtn:SetScript("OnClick", function()
-        local current = addon.Storage:GetSetting("alertMode")
-        local idx = 1
-        for i, m in ipairs(MODES) do
-            if m == current then idx = i; break end
-        end
-        local next = MODES[(idx % #MODES) + 1]
-        addon.Storage:SetSetting("alertMode", next)
-        modeBtn:SetText(next)
-    end)
-
-    local settingsBtn = CreateFrame("Button", nil, mainFrame, "GameMenuButtonTemplate")
-    settingsBtn:SetSize(36, 22)
-    settingsBtn:SetPoint("LEFT", modeBtn, "RIGHT", 4, 0)
-    settingsBtn:SetText("⚙")
-    settingsBtn:SetScript("OnClick", function()
-        MainFrame:_OpenSettings()
-    end)
 end
 
--- 메인 Refresh: 전체 던전 목록을 재구성
-function MainFrame:Refresh()
-    if not mainFrame then return end
+function MainFrame:_RefreshDataTab()
+    local panel = tabs[TAB_DATA]
+    if not panel then return end
 
     local spec     = addon.SpecMatcher:GetActiveSpec() or "비힐러"
     local charName = UnitName("player") or "?"
-    mainFrame.headerText:SetText(charName .. "  —  " .. spec)
-    mainFrame.modeBtn:SetText(addon.Storage:GetSetting("alertMode"))
+    panel.headerText:SetText(charName .. "  —  " .. spec)
 
-    -- 기존 content 자식 프레임 제거
-    local content = mainFrame.content
-    local children = { content:GetChildren() }
-    for _, child in ipairs(children) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-
-    -- 던전 목록 정렬 (importedAt 오래된 순)
-    local dungeons    = addon.Storage:GetDungeons()
-    local sortedKeys  = {}
+    local dungeons   = addon.Storage:GetDungeons()
+    local sortedKeys = {}
     for k in pairs(dungeons) do
         table.insert(sortedKeys, k)
     end
@@ -114,19 +194,81 @@ function MainFrame:Refresh()
         return (dungeons[a].importedAt or 0) < (dungeons[b].importedAt or 0)
     end)
 
-    local yOffset   = -4
-    local totalWidth = content:GetWidth() or 480
+    local content    = panel.content
+    local blocks     = mainFrame._dungeonBlocks
+    local totalWidth = content:GetWidth() or 490
+    local usedKeys   = {}
+    local yOffset    = -4
 
     for _, dungeonKey in ipairs(sortedKeys) do
-        local rowH = self:_CreateDungeonBlock(content, dungeonKey, dungeons[dungeonKey], yOffset, totalWidth)
+        usedKeys[dungeonKey] = true
+        local dungeon = dungeons[dungeonKey]
+
+        local block = blocks[dungeonKey]
+        if not block then
+            block = self:_CreateDungeonBlockFrame(content)
+            blocks[dungeonKey] = block
+        end
+
+        local rowH = self:_UpdateDungeonBlock(block, dungeonKey, dungeon, totalWidth)
+        block:ClearAllPoints()
+        block:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
+        block:Show()
         yOffset = yOffset - rowH - 4
+    end
+
+    -- 삭제된 던전 블록 숨기기 (B3: 프레임 풀, GC 대상 아님)
+    for key, block in pairs(blocks) do
+        if not usedKeys[key] then
+            block:Hide()
+        end
     end
 
     content:SetHeight(math.abs(yOffset) + 10)
 end
 
--- 던전 블록 1개 생성, 소비한 높이 반환
-function MainFrame:_CreateDungeonBlock(parent, dungeonKey, dungeon, yOffset, width)
+function MainFrame:_CreateDungeonBlockFrame(parent)
+    local block = CreateFrame("Frame", nil, parent)
+    block._bossRows = {}
+
+    local bg = block:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.5)
+
+    local toggleBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
+    toggleBtn:SetSize(40, 20)
+    toggleBtn:SetPoint("TOPLEFT", block, "TOPLEFT", 4, -4)
+    block.toggleBtn = toggleBtn
+
+    local nameText = block:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameText:SetPoint("LEFT",  toggleBtn, "RIGHT", 6, 0)
+    nameText:SetPoint("RIGHT", block,     "RIGHT", 160, 0)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetWordWrap(false)
+    block.nameText = nameText
+
+    local renameBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
+    renameBtn:SetSize(66, 20)
+    renameBtn:SetPoint("TOPRIGHT", block, "TOPRIGHT", -112, -4)
+    renameBtn:SetText("이름변경")
+    block.renameBtn = renameBtn
+
+    local refreshBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
+    refreshBtn:SetSize(40, 20)
+    refreshBtn:SetPoint("LEFT", renameBtn, "RIGHT", 2, 0)
+    refreshBtn:SetText("갱신")
+    block.refreshBtn = refreshBtn
+
+    local deleteBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
+    deleteBtn:SetSize(40, 20)
+    deleteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 2, 0)
+    deleteBtn:SetText("|cffff4444삭제|r")
+    block.deleteBtn = deleteBtn
+
+    return block
+end
+
+function MainFrame:_UpdateDungeonBlock(block, dungeonKey, dungeon, totalWidth)
     local HEADER_H = 28
     local BOSS_H   = 20
 
@@ -134,97 +276,65 @@ function MainFrame:_CreateDungeonBlock(parent, dungeonKey, dungeon, yOffset, wid
     for _ in pairs(dungeon.bosses) do bossCount = bossCount + 1 end
 
     local totalH = HEADER_H + bossCount * BOSS_H
+    block:SetSize(totalWidth, totalH)
 
-    local block = CreateFrame("Frame", nil, parent)
-    block:SetSize(width, totalH)
-    block:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
-
-    -- 배경 (짝수/홀수 구분 없이 단일 색상)
-    local bg = block:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.05, 0.5)
-
-    -- ON/OFF 토글
-    local toggleBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
-    toggleBtn:SetSize(40, 20)
-    toggleBtn:SetPoint("TOPLEFT", block, "TOPLEFT", 4, -4)
-    toggleBtn:SetText(dungeon.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r")
-    toggleBtn:SetScript("OnClick", function()
+    block.toggleBtn:SetText(dungeon.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r")
+    block.toggleBtn:SetScript("OnClick", function()
         addon.Storage:SetDungeonEnabled(dungeonKey, not dungeon.enabled)
         MainFrame:Refresh()
     end)
 
-    -- 던전 이름
-    local nameText = block:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameText:SetPoint("LEFT",  toggleBtn, "RIGHT", 6, 0)
-    nameText:SetPoint("RIGHT", block,     "RIGHT", 160, 0)
-    nameText:SetJustifyH("LEFT")
-    nameText:SetWordWrap(false)
     local label = dungeon.displayName
     if dungeon.originalName ~= dungeon.displayName then
         label = label .. " |cff888888(" .. dungeon.originalName .. ")|r"
     end
-    nameText:SetText(label)
+    block.nameText:SetText(label)
 
-    -- 이름 변경
-    local renameBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
-    renameBtn:SetSize(66, 20)
-    renameBtn:SetPoint("TOPRIGHT", block, "TOPRIGHT", -112, -4)
-    renameBtn:SetText("이름변경")
-    renameBtn:SetScript("OnClick", function()
-        self:_OpenRenameDialog(dungeonKey, dungeon.displayName)
+    block.renameBtn:SetScript("OnClick", function()
+        StaticPopup_Show("HEALGUIDE_RENAME", nil, nil,
+            { dungeonKey = dungeonKey, currentName = dungeon.displayName })
     end)
 
-    -- 갱신
-    local refreshBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
-    refreshBtn:SetSize(40, 20)
-    refreshBtn:SetPoint("LEFT", renameBtn, "RIGHT", 2, 0)
-    refreshBtn:SetText("갱신")
-    refreshBtn:SetScript("OnClick", function()
+    block.refreshBtn:SetScript("OnClick", function()
         addon.ImportDialog:Open(dungeonKey)
     end)
 
-    -- 삭제
-    local deleteBtn = CreateFrame("Button", nil, block, "GameMenuButtonTemplate")
-    deleteBtn:SetSize(40, 20)
-    deleteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 2, 0)
-    deleteBtn:SetText("|cffff4444삭제|r")
-    deleteBtn:SetScript("OnClick", function()
-        StaticPopupDialogs["HEALGUIDE_CONFIRM_DELETE"] = {
-            text    = "\"" .. dungeon.displayName .. "\" 를 삭제하시겠습니까?",
-            button1 = "삭제",
-            button2 = "취소",
-            OnAccept = function()
-                addon.Storage:RemoveDungeon(dungeonKey)
-                MainFrame:Refresh()
-            end,
-            timeout       = 0,
-            whileDead     = true,
-            hideOnEscape  = true,
-            preferredIndex = 3,
-        }
-        StaticPopup_Show("HEALGUIDE_CONFIRM_DELETE")
+    block.deleteBtn:SetScript("OnClick", function()
+        StaticPopup_Show("HEALGUIDE_CONFIRM_DELETE", nil, nil, { dungeonKey = dungeonKey })
     end)
 
-    -- 보스 목록 (들여쓰기)
-    local bossY = -HEADER_H
+    for _, row in ipairs(block._bossRows) do
+        row:Hide()
+    end
+
+    local rowIdx = 0
+    local bossY  = -HEADER_H
     for encounterID, boss in pairs(dungeon.bosses) do
-        local bossRow = CreateFrame("Frame", nil, block)
-        bossRow:SetSize(width - 20, BOSS_H)
+        rowIdx = rowIdx + 1
+        local bossRow = block._bossRows[rowIdx]
+        if not bossRow then
+            bossRow = CreateFrame("Frame", nil, block)
+            bossRow:SetHeight(BOSS_H)
+            local bossText = bossRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bossText:SetPoint("LEFT", bossRow, "LEFT", 0, 0)
+            bossRow.bossText = bossText
+            block._bossRows[rowIdx] = bossRow
+        end
+
+        bossRow:SetWidth(totalWidth - 20)
+        bossRow:ClearAllPoints()
         bossRow:SetPoint("TOPLEFT", block, "TOPLEFT", 20, bossY)
+        bossRow:Show()
 
         local specList = {}
         if boss.specs then
-            for s in pairs(boss.specs) do
-                table.insert(specList, s)
-            end
+            for s in pairs(boss.specs) do table.insert(specList, s) end
             table.sort(specList)
         end
-        local specStr = #specList > 0 and (" |cff888888[" .. table.concat(specList, ", ") .. "]|r") or ""
-
-        local bossText = bossRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        bossText:SetPoint("LEFT", bossRow, "LEFT", 0, 0)
-        bossText:SetText("|cffaaaaaa" .. (boss.name or "?") .. "|r  " .. encounterID .. specStr)
+        local specStr = #specList > 0
+            and (" |cff888888[" .. table.concat(specList, ", ") .. "]|r") or ""
+        bossRow.bossText:SetText(
+            "|cffaaaaaa" .. (boss.name or "?") .. "|r  " .. encounterID .. specStr)
 
         bossY = bossY - BOSS_H
     end
@@ -232,33 +342,355 @@ function MainFrame:_CreateDungeonBlock(parent, dungeonKey, dungeon, yOffset, wid
     return totalH
 end
 
-function MainFrame:_OpenRenameDialog(dungeonKey, currentName)
-    StaticPopupDialogs["HEALGUIDE_RENAME"] = {
-        text         = "새 이름을 입력하세요:",
-        button1      = "확인",
-        button2      = "취소",
-        hasEditBox   = true,
-        OnShow       = function(self)
-            self.editBox:SetText(currentName)
-            self.editBox:HighlightText()
-        end,
-        OnAccept     = function(self)
-            local newName = self.editBox:GetText():match("^%s*(.-)%s*$")
-            if newName ~= "" then
-                addon.Storage:SetDungeonDisplayName(dungeonKey, newName)
-                MainFrame:Refresh()
+-- ── Tab 2: 설정 ───────────────────────────────────────────────────────────────
+
+function MainFrame:_CreateSettingsTab(panel)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0,  0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -26, 0)
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetWidth(scrollFrame:GetWidth() or 460)
+    content:SetHeight(1)
+    scrollFrame:SetScrollChild(content)
+    panel.content = content
+
+    local y = -8
+
+    -- ── 알림 위치 ────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "알림 위치", 8, y)
+    y = y - 22
+
+    local lockCB = self:_MakeCheckbox("HGTabLockCB", "알림창 잠금", content, 8, y)
+    lockCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("locked", self:GetChecked() and true or false)
+    end)
+    panel.lockCB = lockCB
+
+    local resetBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    resetBtn:SetSize(88, 20)
+    resetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 150, y - 2)
+    resetBtn:SetText("위치 초기화")
+    resetBtn:SetScript("OnClick", function()
+        addon.AlertFrame:ResetPosition()
+    end)
+
+    local coordLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    coordLabel:SetPoint("LEFT", resetBtn, "RIGHT", 10, 0)
+    coordLabel:SetText("위치: 0, 200")
+    panel.coordLabel = coordLabel
+
+    y = y - 32
+
+    -- ── 알림 크기 ────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "알림 크기 (펄스)", 8, y)
+    y = y - 22
+
+    local baseSl = self:_MakeSlider("HGTabBaseSl", "기본 크기", 32, 128, 1, content, y)
+    panel.baseSl = baseSl
+    y = y - 50
+
+    local pulseSl = self:_MakeSlider("HGTabPulseSl", "확대 크기", 48, 160, 1, content, y)
+    panel.pulseSl = pulseSl
+    y = y - 50
+
+    baseSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("iconBaseSize", val)
+        local pulse = addon.Storage:GetSetting("iconPulseSize") or 96
+        if pulse < val then
+            addon.Storage:SetSetting("iconPulseSize", val)
+            pulseSl:SetValue(val)
+        end
+        addon.AlertFrame:ApplyIconSize()
+    end)
+
+    pulseSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        local base = addon.Storage:GetSetting("iconBaseSize") or 64
+        if val < base then
+            self:SetValue(base)
+            return
+        end
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("iconPulseSize", val)
+        addon.AlertFrame:ApplyIconSize()
+    end)
+
+    -- ── 알림 표현 ────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "알림 표현", 8, y)
+    y = y - 22
+
+    local soundCB = self:_MakeCheckbox("HGTabSoundCB", "사운드 재생", content, 8, y)
+    soundCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("soundEnabled", self:GetChecked() and true or false)
+    end)
+    panel.soundCB = soundCB
+
+    local labelCB = self:_MakeCheckbox("HGTabLabelCB", "스킬명 표시", content, 150, y)
+    labelCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("showSpellName", self:GetChecked() and true or false)
+    end)
+    panel.labelCB = labelCB
+
+    local ttsCB = self:_MakeCheckbox("HGTabTTSCB", "TTS 읽기", content, 292, y)
+    ttsCB:SetScript("OnClick", function(self)
+        local enabled = self:GetChecked() and true or false
+        addon.Storage:SetSetting("ttsEnabled", enabled)
+        MainFrame:_UpdateTTSGroupState()
+    end)
+    panel.ttsCB = ttsCB
+
+    y = y - 32
+
+    -- ── TTS 세부 (show/hide 그룹) ────────────────────────────────────────────
+    local ttsGroup = CreateFrame("Frame", nil, content)
+    ttsGroup:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    ttsGroup:SetPoint("RIGHT",   content, "RIGHT",   0, 0)
+    panel.ttsGroup = ttsGroup
+
+    local gy = -4
+    self:_MakeSectionLabel(ttsGroup, "TTS 세부", 8, gy)
+    gy = gy - 22
+
+    local voiceLabel = ttsGroup:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    voiceLabel:SetPoint("TOPLEFT", ttsGroup, "TOPLEFT", 8, gy)
+    voiceLabel:SetText("TTS 음성: —")
+    panel.voiceLabel = voiceLabel
+
+    local voicePickBtn = CreateFrame("Button", nil, ttsGroup, "GameMenuButtonTemplate")
+    voicePickBtn:SetSize(80, 20)
+    voicePickBtn:SetPoint("LEFT", voiceLabel, "RIGHT", 8, 0)
+    voicePickBtn:SetText("선택 ▾")
+    voicePickBtn:SetScript("OnClick", function(btn)
+        MainFrame:_OpenVoiceMenu(btn)
+    end)
+    gy = gy - 28
+
+    local rateSl = self:_MakeSlider("HGTabRateSl", "TTS 속도", 0, 10, 1, ttsGroup, gy)
+    rateSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("ttsRate", val)
+    end)
+    panel.rateSl = rateSl
+    gy = gy - 50
+
+    local volSl = self:_MakeSlider("HGTabVolSl", "TTS 볼륨", 0, 100, 1, ttsGroup, gy)
+    volSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("ttsVolume", val)
+    end)
+    panel.volSl = volSl
+    gy = gy - 50
+
+    local ttsGroupH = math.abs(gy) + 8
+    ttsGroup:SetHeight(ttsGroupH)
+    y = y - ttsGroupH - 4
+
+    -- ── 알림 모드 ────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "알림 모드", 8, y)
+    y = y - 22
+
+    panel.modeBtns = {}
+    local MODES  = { "reactive", "absolute", "hybrid" }
+    local modeXs = { 8, 130, 252 }
+    for i, mode in ipairs(MODES) do
+        local radioOk, btn = pcall(
+            CreateFrame, "CheckButton", "HGTabModeBtn" .. i, content, "UIRadioButtonTemplate")
+        if not radioOk then
+            btn = CreateFrame("CheckButton", "HGTabModeBtn" .. i, content, "UICheckButtonTemplate")
+        end
+        btn:SetPoint("TOPLEFT", content, "TOPLEFT", modeXs[i], y + 4)
+        btn._mode = mode
+        _G["HGTabModeBtn" .. i .. "Text"]:SetText(mode)
+        btn:SetScript("OnClick", function(self)
+            addon.Storage:SetSetting("alertMode", self._mode)
+            for _, other in ipairs(panel.modeBtns) do
+                other:SetChecked(other._mode == self._mode)
             end
-        end,
-        timeout       = 0,
-        whileDead     = true,
-        hideOnEscape  = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("HEALGUIDE_RENAME")
+        end)
+        panel.modeBtns[i] = btn
+    end
+    y = y - 30
+
+    content:SetHeight(math.abs(y) + 16)
 end
 
-function MainFrame:_OpenSettings()
-    -- 간단한 설정 토글 (사운드)
+function MainFrame:_RefreshSettings()
+    local panel = tabs[TAB_SETTINGS]
+    if not panel then return end
+    local s = addon.Storage
+
+    panel.lockCB:SetChecked(s:GetSetting("locked") and true or false)
+    panel.soundCB:SetChecked(s:GetSetting("soundEnabled") and true or false)
+    panel.labelCB:SetChecked(s:GetSetting("showSpellName") and true or false)
+    panel.ttsCB:SetChecked(s:GetSetting("ttsEnabled") and true or false)
+
+    panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
+    panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
+    panel.rateSl:SetValue(s:GetSetting("ttsRate")   or 5)
+    panel.volSl:SetValue(s:GetSetting("ttsVolume")  or 100)
+
+    local pos = s:GetSetting("alertFramePoint") or { x = 0, y = 200 }
+    panel.coordLabel:SetText(string.format("위치: %.0f, %.0f", pos.x or 0, pos.y or 200))
+
+    local mode = s:GetSetting("alertMode")
+    for _, btn in ipairs(panel.modeBtns) do
+        btn:SetChecked(btn._mode == mode)
+    end
+
+    self:_RefreshVoiceLabel()
+    self:_UpdateTTSGroupState()
+end
+
+function MainFrame:_RefreshVoiceLabel()
+    local panel = tabs[TAB_SETTINGS]
+    if not panel then return end
+    local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
+    local label   = "음성 #" .. voiceID
+
+    if C_VoiceChat and C_VoiceChat.GetTtsVoices then
+        local voices = C_VoiceChat.GetTtsVoices()
+        if voices then
+            for _, v in ipairs(voices) do
+                if v.voiceID == voiceID then
+                    label = v.name or label
+                    break
+                end
+            end
+        end
+    end
+
+    panel.voiceLabel:SetText("TTS 음성: " .. label)
+end
+
+function MainFrame:_UpdateTTSGroupState()
+    local panel = tabs[TAB_SETTINGS]
+    if not panel then return end
+    if addon.Storage:GetSetting("ttsEnabled") then
+        panel.ttsGroup:Show()
+    else
+        panel.ttsGroup:Hide()
+    end
+end
+
+function MainFrame:_OpenVoiceMenu(anchor)
+    if not C_VoiceChat or not C_VoiceChat.GetTtsVoices then
+        print("|cff00ff00HealGuide|r TTS 음성 API를 사용할 수 없습니다.")
+        return
+    end
+
+    local voices = C_VoiceChat.GetTtsVoices()
+    if not voices or #voices == 0 then
+        print("|cff00ff00HealGuide|r TTS 음성 목록이 비어있습니다.")
+        return
+    end
+
+    local menuList = {}
+    for _, v in ipairs(voices) do
+        local voiceID = v.voiceID
+        local name    = v.name or ("Voice " .. tostring(voiceID))
+        menuList[#menuList + 1] = {
+            text         = name,
+            notCheckable = true,
+            func         = function()
+                addon.Storage:SetSetting("ttsVoiceID", voiceID)
+                MainFrame:_RefreshVoiceLabel()
+            end,
+        }
+    end
+
+    EasyMenu(menuList, CreateFrame("Frame", nil, anchor), "cursor", 0, 0, "MENU")
+end
+
+-- ── Tab 3: 미리보기 ───────────────────────────────────────────────────────────
+
+function MainFrame:_CreatePreviewTab(panel)
+    local y = -12
+
+    local desc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, y)
+    desc:SetText("현재 설정(크기/펄스/사운드/TTS)을 그대로 시연합니다.")
+    y = y - 24
+
+    local alertBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    alertBtn:SetSize(140, 26)
+    alertBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, y)
+    alertBtn:SetText("알림 테스트")
+    alertBtn:SetScript("OnClick", function()
+        addon.AlertFrame:ShowReminder(17)  -- Power Word: Shield
+    end)
+    y = y - 40
+
+    local sep = panel:CreateTexture(nil, "BACKGROUND")
+    sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT",  panel, "TOPLEFT",  0, y)
+    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, y)
+    sep:SetColorTexture(0.3, 0.3, 0.3, 1)
+    y = y - 14
+
+    local simDesc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    simDesc:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, y)
+    simDesc:SetText("보스 시뮬레이션 (/hg test <encID> 와 동일)")
+    y = y - 24
+
+    local encInput = CreateFrame("EditBox", "HGEncIDInput", panel, "InputBoxTemplate")
+    encInput:SetSize(120, 20)
+    encInput:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, y)
+    encInput:SetAutoFocus(false)
+    encInput:SetNumeric(true)
+    encInput:SetMaxLetters(8)
+    panel.encInput = encInput
+
+    local simBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    simBtn:SetSize(90, 22)
+    simBtn:SetPoint("LEFT", encInput, "RIGHT", 8, 0)
+    simBtn:SetText("시뮬레이션")
+    simBtn:SetScript("OnClick", function()
+        local encID = tonumber(encInput:GetText())
+        if encID then
+            addon.EncounterEngine:TestEncounter(encID)
+        else
+            print("|cff00ff00HealGuide|r encID를 입력하세요.")
+        end
+    end)
+end
+
+-- ── Helpers ───────────────────────────────────────────────────────────────────
+
+function MainFrame:_MakeSectionLabel(parent, text, x, y)
+    local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    lbl:SetText("|cffaaaaaa" .. text .. "|r")
+    return lbl
+end
+
+function MainFrame:_MakeCheckbox(name, label, parent, x, y)
+    local cb = CreateFrame("CheckButton", name, parent, "UICheckButtonTemplate")
+    cb:SetSize(24, 24)
+    cb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    _G[name .. "Text"]:SetText(label)
+    return cb
+end
+
+function MainFrame:_MakeSlider(name, labelText, minV, maxV, step, parent, y)
+    local sl = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+    sl:SetWidth(420)
+    sl:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    sl:SetMinMaxValues(minV, maxV)
+    sl:SetValueStep(step)
+    sl:SetObeyStepOnDrag(true)
+    _G[name .. "Low"]:SetText(tostring(minV))
+    _G[name .. "High"]:SetText(tostring(maxV))
+    _G[name .. "Text"]:SetText(labelText .. ": " .. minV)
+    sl._labelText = labelText
+    return sl
+end
+
+function MainFrame:_ToggleSound()
     local sound = addon.Storage:GetSetting("soundEnabled")
     addon.Storage:SetSetting("soundEnabled", not sound)
     print("|cff00ff00HealGuide|r 사운드: " .. (not sound and "ON" or "OFF"))

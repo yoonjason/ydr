@@ -3,26 +3,51 @@ addon.Storage = {}
 local Storage = addon.Storage
 
 local DEFAULT_SETTINGS = {
-    soundEnabled = true,
-    alertMode    = "reactive",
-    framePosition = { x = 0, y = 200 },
-    displaySeconds = 2.0,
-    locked = false,
+    soundEnabled    = true,
+    alertMode       = "reactive",
+    alertFramePoint = { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 },
+    displaySeconds  = 2.0,
+    locked          = false,
+    showSpellName   = false,
+    iconBaseSize    = 64,
+    iconPulseSize   = 96,
+    ttsEnabled      = false,
+    ttsVoiceID      = 0,
+    ttsRate         = 5,
+    ttsVolume       = 100,
 }
 
 function Storage:Init()
     HealGuideCharDB = HealGuideCharDB or {}
     local db = HealGuideCharDB
 
-    db.version      = db.version      or 1
-    db.dungeons     = db.dungeons     or {}
+    db.version        = db.version        or 1
+    db.dungeons       = db.dungeons       or {}
     db.encounterIndex = db.encounterIndex or {}
-    db.settings     = db.settings     or {}
+    db.settings       = db.settings       or {}
 
     for k, v in pairs(DEFAULT_SETTINGS) do
         if db.settings[k] == nil then
             db.settings[k] = v
         end
+    end
+
+    -- 구버전 framePosition → alertFramePoint 마이그레이션
+    if db.settings.framePosition and not db.settings.alertFramePoint then
+        local old = db.settings.framePosition
+        db.settings.alertFramePoint = {
+            point = "CENTER", relPoint = "CENTER",
+            x = old.x or 0, y = old.y or 200,
+        }
+        db.settings.framePosition = nil
+    end
+
+    -- 구버전 iconSize → iconBaseSize / iconPulseSize 마이그레이션
+    if db.settings.iconSize ~= nil then
+        local old = db.settings.iconSize
+        db.settings.iconBaseSize  = old
+        db.settings.iconPulseSize = math.floor(old * 1.5)
+        db.settings.iconSize      = nil
     end
 
     self:RebuildEncounterIndex()
@@ -44,8 +69,6 @@ function Storage:RebuildEncounterIndex()
     end
 end
 
--- importData: validated table from ImportParser
--- 같은 dungeonKey가 없으면 신규 생성. 스펙은 덮어씌우지 않고 병합.
 function Storage:AddDungeon(importData)
     local db = HealGuideCharDB
     local dungeonKey = importData.dungeonName .. "_" .. tostring(time())
@@ -77,7 +100,6 @@ function Storage:AddDungeon(importData)
     return dungeonKey
 end
 
--- 기존 dungeonKey 에 새 스펙 데이터를 병합 (갱신)
 function Storage:UpdateDungeon(dungeonKey, importData)
     local db = HealGuideCharDB
     local dungeon = db.dungeons[dungeonKey]
@@ -138,7 +160,6 @@ function Storage:GetDungeon(dungeonKey)
     return HealGuideCharDB.dungeons[dungeonKey]
 end
 
--- encounterID 로 보스 데이터 + 소속 dungeonKey 반환
 function Storage:GetEncounterData(encounterID)
     local db = HealGuideCharDB
     local entry = db.encounterIndex[encounterID]
