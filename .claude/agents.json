@@ -46,7 +46,8 @@
         "MVVM",
         "Combine",
         "async",
-        "Xcode"
+        "Xcode",
+        "RxSwift"
       ],
       "scope" : "global"
     },
@@ -123,7 +124,7 @@
     },
     {
       "description" : "기술 문서 작성 전문가. README, API 문서, CHANGELOG, 설계 문서를 작성한다. 독자(개발자\/사용자)에 맞는 어조와 수준으로 쓴다. 코드 예시와 다이어그램을 적극 활용하고, 불필요한 과장은 피한다. 한국어\/영어 모두 자연스럽게 다룬다.",
-      "enabled" : true,
+      "enabled" : false,
       "model" : "sonnet",
       "name" : "tech-writer",
       "patterns" : [
@@ -168,7 +169,7 @@
     },
     {
       "description" : "프로덕트 데이터 분석가 역할. 지표 설계(KPI, North Star Metric), 퍼널 분석, A\/B 테스트 설계, 리텐션\/코호트 분석을 다룬다. 데이터 기반 의사결정을 지원하며, 통계적으로 유의미한 해석을 제공한다.",
-      "enabled" : true,
+      "enabled" : false,
       "model" : "sonnet",
       "name" : "analyst",
       "patterns" : [
