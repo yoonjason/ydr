@@ -7,6 +7,7 @@ enum AppError: LocalizedError, Equatable {
     case networkError(String)
     case fightNotFound
     case noBossEncounters
+    case noHealers
     case decodingFailed
     case keychainError(OSStatus)
 
@@ -24,6 +25,8 @@ enum AppError: LocalizedError, Equatable {
             return "해당 전투를 찾을 수 없습니다."
         case .noBossEncounters:
             return "보스 조우를 찾을 수 없습니다. 전투에 보스가 포함돼 있는지 확인해 주세요."
+        case .noHealers:
+            return "이 전투에서 힐러를 찾을 수 없습니다. 힐러가 포함된 전투인지 확인해 주세요."
         case .decodingFailed:
             return "데이터 파싱에 실패했습니다."
         case .keychainError(let status):

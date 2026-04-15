@@ -5,6 +5,9 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
         [BossWindow(encounterID: 2599, name: "Mock Boss", startTime: 0, endTime: 10000)]
     ))
     var castsResult: Result<[CastEvent], AppError> = .success([])
+    var playerDetailsResult: Result<[HealerCandidate], AppError> = .success([
+        HealerCandidate(id: 330, name: "MockHealer", className: "Priest", specName: "Discipline", server: nil)
+    ])
 
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String {
         try tokenResult.get()
@@ -13,6 +16,10 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
     func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> (dungeonName: String, windows: [BossWindow]) {
         let (name, windows) = try encountersResult.get()
         return (dungeonName: name, windows: windows)
+    }
+
+    func fetchPlayerDetails(reportCode: String, fightID: Int, token: String) async throws -> [HealerCandidate] {
+        try playerDetailsResult.get()
     }
 
     func fetchCasts(

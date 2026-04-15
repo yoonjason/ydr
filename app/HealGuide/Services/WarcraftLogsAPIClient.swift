@@ -9,6 +9,7 @@ enum HostilityType: String {
 protocol WarcraftLogsAPIClient {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
     func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> (dungeonName: String, windows: [BossWindow])
+    func fetchPlayerDetails(reportCode: String, fightID: Int, token: String) async throws -> [HealerCandidate]
     func fetchCasts(
         reportCode: String,
         fightID: Int,
@@ -156,6 +157,52 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
 
         throw AppError.noBossEncounters
+    }
+
+    func fetchPlayerDetails(reportCode: String, fightID: Int, token: String) async throws -> [HealerCandidate] {
+        let url = try graphQLURL()
+
+        let query = """
+        query($code: String!, $fightIDs: [Int]!) {
+          reportData {
+            report(code: $code) {
+              playerDetails(fightIDs: $fightIDs)
+            }
+          }
+        }
+        """
+
+        let body = GraphQLRequest(
+            query: query,
+            variables: ["code": .string(reportCode), "fightIDs": .intArray([fightID])]
+        )
+        let request = try buildRequest(url: url, body: body, token: token)
+        let (data, response) = try await perform(request)
+        try validate(response: response)
+
+        do {
+            let decoded = try JSONDecoder().decode(GraphQLResponse<PlayerDetailsQueryData>.self, from: data)
+            if let errors = decoded.errors, !errors.isEmpty {
+                throw AppError.networkError(errors[0].message)
+            }
+            let healers = decoded.data?.reportData?.report?.playerDetails?.data?.playerDetails?.healers ?? []
+            let mapped = healers.map { dto -> HealerCandidate in
+                let specName = dto.specs?.first?.spec ?? ""
+                return HealerCandidate(
+                    id: dto.id,
+                    name: dto.name,
+                    className: dto.type,
+                    specName: specName,
+                    server: dto.server
+                )
+            }
+            return mapped
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("PlayerDetails decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
     }
 
     func fetchCasts(
@@ -411,4 +458,46 @@ private struct RawEventPayload: Decodable {
     let timestamp: Int64
     let sourceID: Int?
     let abilityGameID: Int?
+}
+
+// MARK: - playerDetails
+
+private struct PlayerDetailsQueryData: Decodable {
+    let reportData: PlayerDetailsReportData?
+}
+
+private struct PlayerDetailsReportData: Decodable {
+    let report: PlayerDetailsReport?
+}
+
+private struct PlayerDetailsReport: Decodable {
+    let playerDetails: PlayerDetailsWrapper?
+}
+
+// WCL 의 playerDetails 는 JSON 스칼라지만 내부에 { data: { playerDetails: {...} } } 가 한번 더 감싸여 반환된다.
+private struct PlayerDetailsWrapper: Decodable {
+    let data: PlayerDetailsInnerWrapper?
+}
+
+private struct PlayerDetailsInnerWrapper: Decodable {
+    let playerDetails: PlayerDetailsRoles?
+}
+
+private struct PlayerDetailsRoles: Decodable {
+    let healers: [PlayerActorDTO]?
+    let tanks: [PlayerActorDTO]?
+    let dps: [PlayerActorDTO]?
+}
+
+private struct PlayerActorDTO: Decodable {
+    let id: Int
+    let name: String
+    let type: String  // class name (e.g. "Priest")
+    let server: String?
+    let specs: [PlayerSpecDTO]?
+}
+
+private struct PlayerSpecDTO: Decodable {
+    let spec: String  // e.g. "Discipline"
+    let role: String? // "healer" / "tank" / "dps"
 }
