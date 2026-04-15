@@ -21,6 +21,17 @@ final class ReportViewModelTests: XCTestCase {
         )
     }
 
+    // 힐러 자동 선택(URL source 일치) → 기본적으로 spellSelection 단계까지 진행되게 하는 헬퍼
+    private func makeClientWithMatchingHealer(sourceID: Int = 7) -> MockWarcraftLogsAPIClient {
+        let client = MockWarcraftLogsAPIClient()
+        client.playerDetailsResult = .success([
+            HealerCandidate(id: sourceID, name: "TestPriest", className: "Priest", specName: "Discipline", server: nil)
+        ])
+        return client
+    }
+
+    // MARK: - onAppear
+
     func test_onAppear_loadsSecretFromKeychain() {
         let keychain = MockKeychain()
         keychain.stored = "saved-secret"
@@ -52,29 +63,39 @@ final class ReportViewModelTests: XCTestCase {
         XCTAssertEqual(vm.clientID, "manual-id")
     }
 
-    func test_fetchFight_invalidURL_setsFailureInvalidURL() async {
+    // MARK: - detectHealers 실패 케이스
+
+    func test_detectHealers_invalidURL_setsFailureInvalidURL() async {
         let vm = makeSUT()
         vm.reportURLText = "not-a-valid-url"
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.invalidURL))
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .invalidURL)
+        } else {
+            XCTFail("expected .failure(.invalidURL)")
+        }
     }
 
-    func test_fetchFight_emptyCredentials_setsFailureAuth() async {
+    func test_detectHealers_emptyCredentials_setsFailureAuth() async {
         let vm = makeSUT()
         vm.reportURLText = validURL
         vm.clientID = ""
         vm.clientSecret = ""
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.authenticationFailed))
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .authenticationFailed)
+        } else {
+            XCTFail("expected failure authenticationFailed")
+        }
     }
 
-    func test_fetchFight_authFailure_setsFailure() async {
+    func test_detectHealers_authFailure_setsFailure() async {
         let apiClient = MockWarcraftLogsAPIClient()
         apiClient.tokenResult = .failure(.authenticationFailed)
         let vm = makeSUT(apiClient: apiClient)
@@ -82,186 +103,181 @@ final class ReportViewModelTests: XCTestCase {
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.authenticationFailed))
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .authenticationFailed)
+        } else {
+            XCTFail("expected failure authenticationFailed")
+        }
     }
 
-    func test_fetchFight_fightNotFound_setsFailure() async {
+    func test_detectHealers_noHealers_setsFailureNoHealers() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .failure(.fightNotFound)
+        apiClient.playerDetailsResult = .success([])
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.fightNotFound))
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .noHealers)
+        } else {
+            XCTFail("expected .noHealers")
+        }
     }
 
-    func test_fetchFight_encountersFailure_setsFailure() async {
-        let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .failure(.networkError("encounters failed"))
+    // MARK: - detectHealers 성공 케이스
+
+    func test_detectHealers_urlSourceMatches_advancesToSpellSelection() async {
+        let apiClient = makeClientWithMatchingHealer(sourceID: 7)
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.networkError("encounters failed")))
+        if case .spellSelection(let healer) = vm.state {
+            XCTAssertEqual(healer.id, 7)
+            XCTAssertFalse(vm.selectedSpellIDs.isEmpty)
+        } else {
+            XCTFail("expected .spellSelection, got \(vm.state)")
+        }
     }
 
-    func test_fetchFight_emptyEncounters_setsNoBossEncounters() async {
+    func test_detectHealers_urlSourceNotMatches_advancesToHealerSelection() async {
         let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .failure(.noBossEncounters)
+        apiClient.playerDetailsResult = .success([
+            HealerCandidate(id: 999, name: "Other", className: "Priest", specName: "Discipline", server: nil)
+        ])
         let vm = makeSUT(apiClient: apiClient)
+        vm.reportURLText = validURL  // source=7
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.detectHealers()
+
+        if case .healerSelection(let healers, _) = vm.state {
+            XCTAssertEqual(healers.count, 1)
+            XCTAssertEqual(vm.selectedHealerID, 999)
+        } else {
+            XCTFail("expected .healerSelection")
+        }
+    }
+
+    // MARK: - generate 플로우
+
+    func test_generate_afterSpellSelection_setsSuccess() async {
+        let luaGenerator = MockLuaGenerator()
+        luaGenerator.result = "-- generated lua"
+        let apiClient = makeClientWithMatchingHealer(sourceID: 7)
+        let vm = makeSUT(apiClient: apiClient, luaGenerator: luaGenerator)
         vm.reportURLText = validURL
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()  // advances to spellSelection
+        await vm.generate()
 
-        XCTAssertEqual(vm.state, .failure(.noBossEncounters))
+        if case .success(let output, _) = vm.state {
+            XCTAssertEqual(output.luaText, "-- generated lua")
+        } else {
+            XCTFail("expected success, got \(vm.state)")
+        }
     }
 
-    func test_fetchFight_castsFailure_setsFailure() async {
-        let apiClient = MockWarcraftLogsAPIClient()
+    func test_generate_castsFailure_setsFailure() async {
+        let apiClient = makeClientWithMatchingHealer(sourceID: 7)
         apiClient.castsResult = .failure(.networkError("casts failed"))
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
+        await vm.generate()
 
-        XCTAssertEqual(vm.state, .failure(.networkError("casts failed")))
-    }
-
-    func test_fetchFight_success_setsSuccessWithLuaOutput() async {
-        let luaGenerator = MockLuaGenerator()
-        luaGenerator.result = "-- generated lua"
-        let vm = makeSUT(luaGenerator: luaGenerator)
-        vm.reportURLText = validURL
-        vm.clientID = "id"
-        vm.clientSecret = "secret"
-
-        await vm.fetchFight()
-
-        if case .success(let output) = vm.state {
-            XCTAssertEqual(output.luaText, "-- generated lua")
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .networkError("casts failed"))
         } else {
-            XCTFail("Expected success, got \(vm.state)")
+            XCTFail("expected failure")
         }
     }
 
-    func test_fetchFight_multiBoss_blocksOrderedByEncounterStart() async {
-        let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .success(("Test Dungeon", [
-            BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000),
-            BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000)
-        ]))
+    func test_generate_uncheckAll_blocksHaveNoReactions() async {
+        let apiClient = makeClientWithMatchingHealer(sourceID: 7)
+        apiClient.castsResult = .success([
+            CastEvent(timestamp: 1000, spellID: 33206, sourceID: 7)  // 고통 억제
+        ])
         let vm = makeSUT(apiClient: apiClient)
         vm.reportURLText = validURL
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
+        vm.uncheckAllSpells()
+        await vm.generate()
 
-        guard case .success(let output) = vm.state else {
-            XCTFail("Expected success, got \(vm.state)")
-            return
-        }
-        XCTAssertEqual(output.blocks.count, 2)
-        XCTAssertEqual(output.blocks[0].encounterID, 2599, "startTime 0인 Boss A가 먼저 와야 함")
-        XCTAssertEqual(output.blocks[1].encounterID, 2600, "startTime 20000인 Boss B가 나중에 와야 함")
-    }
-
-    func test_fetchFight_multiBoss_buildsMultipleBlocks() async {
-        let apiClient = MockWarcraftLogsAPIClient()
-        apiClient.encountersResult = .success(("Test Dungeon", [
-            BossWindow(encounterID: 2599, name: "Boss A", startTime: 0, endTime: 10000),
-            BossWindow(encounterID: 2600, name: "Boss B", startTime: 20000, endTime: 30000)
-        ]))
-        let normalizer = MockTimelineNormalizer()
-        let luaGenerator = MockLuaGenerator()
-        let vm = makeSUT(apiClient: apiClient, normalizer: normalizer, luaGenerator: luaGenerator)
-        vm.reportURLText = validURL
-        vm.clientID = "id"
-        vm.clientSecret = "secret"
-
-        await vm.fetchFight()
-
-        if case .success(let output) = vm.state {
-            XCTAssertEqual(output.blockCount, 2)
+        if case .success(let output, _) = vm.state {
+            XCTAssertEqual(output.reactionCount, 0, "전체 해제 후 reactions 비어있어야 함")
         } else {
-            XCTFail("Expected success, got \(vm.state)")
+            XCTFail("expected success")
         }
     }
 
-    func test_fetchFight_success_savesSecretToKeychain() async {
-        let keychain = MockKeychain()
-        let vm = makeSUT(keychain: keychain)
-        vm.reportURLText = validURL
-        vm.clientID = "id"
-        vm.clientSecret = "my-secret"
+    // MARK: - fightLast 에러
 
-        await vm.fetchFight()
-
-        XCTAssertEqual(keychain.stored, "my-secret")
-    }
-
-    func test_fetchFight_success_savesClientIDToKeychain() async {
-        let keychain = MockKeychain()
-        let vm = makeSUT(keychain: keychain)
-        vm.reportURLText = validURL
-        vm.clientID = "my-client-id"
-        vm.clientSecret = "secret"
-
-        await vm.fetchFight()
-
-        XCTAssertEqual(keychain.storedClientID, "my-client-id")
-    }
-
-    func test_fetchFight_fightLast_setsFailureFightSelectionRequired() async {
+    func test_detectHealers_fightLast_setsFailureFightSelectionRequired() async {
         let vm = makeSUT()
         vm.reportURLText = "https://www.warcraftlogs.com/reports/AbCd1234#fight=last&source=7"
         vm.clientID = "id"
         vm.clientSecret = "secret"
 
-        await vm.fetchFight()
+        await vm.detectHealers()
 
-        XCTAssertEqual(vm.state, .failure(.fightSelectionRequired))
-    }
-
-    func test_fetchFight_keychainSaveFails_stillSucceeds() async {
-        let keychain = MockKeychain()
-        keychain.shouldThrowOnSave = true
-        let vm = makeSUT(keychain: keychain)
-        vm.reportURLText = validURL
-        vm.clientID = "id"
-        vm.clientSecret = "secret"
-
-        await vm.fetchFight()
-
-        if case .success = vm.state { } else { XCTFail("expected success, got \(vm.state)") }
-    }
-
-    func test_fetchFight_whileFetching_secondCallIsIgnored() async {
-        let vm = makeSUT()
-        vm.reportURLText = validURL
-        vm.clientID = "id"
-        vm.clientSecret = "secret"
-
-        let task = Task { await vm.fetchFight() }
-        await vm.fetchFight()
-        await task.value
-
-        if case .success = vm.state { } else if case .failure = vm.state { } else {
-            XCTFail("unexpected idle state after fetch")
+        if case .failure(let e) = vm.state {
+            XCTAssertEqual(e, .fightSelectionRequired)
+        } else {
+            XCTFail("expected fightSelectionRequired")
         }
     }
+
+    // MARK: - Keychain
+
+    func test_detectHealers_success_savesCredentialsToKeychain() async {
+        let keychain = MockKeychain()
+        let apiClient = makeClientWithMatchingHealer()
+        let vm = makeSUT(keychain: keychain, apiClient: apiClient)
+        vm.reportURLText = validURL
+        vm.clientID = "my-client-id"
+        vm.clientSecret = "my-secret"
+
+        await vm.detectHealers()
+
+        XCTAssertEqual(keychain.stored, "my-secret")
+        XCTAssertEqual(keychain.storedClientID, "my-client-id")
+    }
+
+    func test_detectHealers_keychainSaveFails_stillProceeds() async {
+        let keychain = MockKeychain()
+        keychain.shouldThrowOnSave = true
+        let apiClient = makeClientWithMatchingHealer()
+        let vm = makeSUT(keychain: keychain, apiClient: apiClient)
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+
+        await vm.detectHealers()
+
+        if case .spellSelection = vm.state { } else {
+            XCTFail("expected spellSelection even with keychain save failure")
+        }
+    }
+
+    // MARK: - 기타
 
     func test_copyToClipboard_whenIdle_doesNothing() {
         let pasteboard = MockPasteboard()
@@ -280,5 +296,19 @@ final class ReportViewModelTests: XCTestCase {
     func test_isSecretVisible_defaultFalse() {
         let vm = makeSUT()
         XCTAssertFalse(vm.isSecretVisible)
+    }
+
+    func test_resetToIdle_clearsState() async {
+        let vm = makeSUT(apiClient: makeClientWithMatchingHealer())
+        vm.reportURLText = validURL
+        vm.clientID = "id"
+        vm.clientSecret = "secret"
+        await vm.detectHealers()
+
+        vm.resetToIdle()
+
+        if case .idle = vm.state { } else { XCTFail("expected idle") }
+        XCTAssertNil(vm.selectedHealerID)
+        XCTAssertTrue(vm.selectedSpellIDs.isEmpty)
     }
 }
