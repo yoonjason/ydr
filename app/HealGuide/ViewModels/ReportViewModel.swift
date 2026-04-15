@@ -14,10 +14,28 @@ final class ReportViewModel: ObservableObject {
     }
 
     @Published var reportURLText: String = ""
-    @Published var clientID: String = ""
-    @Published var clientSecret: String = ""
+    @Published var clientID: String = "" {
+        didSet { persistClientID() }
+    }
+    @Published var clientSecret: String = "" {
+        didSet { persistClientSecret() }
+    }
     @Published var isSecretVisible: Bool = false
     @Published private(set) var state: ViewState = .idle
+
+    private var suppressPersist: Bool = false
+
+    private func persistClientID() {
+        guard !suppressPersist, !clientID.isEmpty else { return }
+        do { try keychain.saveClientID(clientID) }
+        catch { logger.error("persist clientID failed: \(error)") }
+    }
+
+    private func persistClientSecret() {
+        guard !suppressPersist, !clientSecret.isEmpty else { return }
+        do { try keychain.save(clientSecret) }
+        catch { logger.error("persist secret failed: \(error)") }
+    }
 
     // 힐러 선택 / 주문 선택 상태
     @Published var selectedHealerID: Int?
@@ -55,6 +73,8 @@ final class ReportViewModel: ObservableObject {
     }
 
     func onAppear() {
+        suppressPersist = true
+        defer { suppressPersist = false }
         if clientSecret.isEmpty, let secret = keychain.load() {
             clientSecret = secret
         }

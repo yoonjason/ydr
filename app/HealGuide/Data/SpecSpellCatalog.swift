@@ -45,7 +45,7 @@ enum SpecSpellCatalog {
         SpellEntry(id: 585,    nameKR: "성스러운 일격",         nameEN: "Smite"),
         SpellEntry(id: 589,    nameKR: "어둠의 권능: 고통",     nameEN: "Shadow Word: Pain"),
         SpellEntry(id: 8092,   nameKR: "정신 분열",             nameEN: "Mind Blast"),
-        SpellEntry(id: 47540,  nameKR: "참회",                  nameEN: "Penance"),
+        SpellEntry(id: 47540,  nameKR: "회개",                  nameEN: "Penance"),
         SpellEntry(id: 527,    nameKR: "정화",                  nameEN: "Purify"),
         SpellEntry(id: 21562,  nameKR: "신의 권능: 인내",       nameEN: "Power Word: Fortitude"),
         SpellEntry(id: 212036, nameKR: "대규모 부활",           nameEN: "Mass Resurrection"),
@@ -71,7 +71,7 @@ enum SpecSpellCatalog {
         SpellEntry(id: 33206,  nameKR: "고통 억제",             nameEN: "Pain Suppression"),
         SpellEntry(id: 62618,  nameKR: "신의 권능: 방벽",       nameEN: "Power Word: Barrier"),
         SpellEntry(id: 421434, nameKR: "궁극의 참회",           nameEN: "Ultimate Penitence"),
-        SpellEntry(id: 246287, nameKR: "복음",                  nameEN: "Evangelism"),
+        SpellEntry(id: 246287, nameKR: "사도",                  nameEN: "Evangelism"),
         SpellEntry(id: 34433,  nameKR: "어둠의 친구",           nameEN: "Shadowfiend"),
         SpellEntry(id: 123040, nameKR: "정신 지배자",           nameEN: "Mindbender"),
 
