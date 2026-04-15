@@ -10,7 +10,9 @@ struct URLParser: URLParsing {
             throw AppError.invalidURL
         }
 
-        guard urlComponents.host == "www.warcraftlogs.com" else {
+        // www.warcraftlogs.com / ko.warcraftlogs.com / fr.warcraftlogs.com 등 로케일 서브도메인 허용
+        guard let host = urlComponents.host,
+              host == "warcraftlogs.com" || host.hasSuffix(".warcraftlogs.com") else {
             throw AppError.invalidURL
         }
 

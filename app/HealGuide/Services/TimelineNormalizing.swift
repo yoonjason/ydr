@@ -1,3 +1,9 @@
 protocol TimelineNormalizing {
-    func normalize(playerCasts: [CastEvent], bossCasts: [CastEvent], windowSeconds: Double) -> [TimelineEntry]
+    func normalize(
+        encounterStart: Int64,
+        encounterEnd: Int64,
+        bossCasts: [CastEvent],
+        playerCasts: [CastEvent],
+        maxWindow: Double
+    ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry])
 }

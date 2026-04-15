@@ -1,20 +1,32 @@
 struct TimelineNormalizer: TimelineNormalizing {
-    func normalize(playerCasts: [CastEvent], bossCasts: [CastEvent], windowSeconds: Double) -> [TimelineEntry] {
-        let windowMs = Int64(windowSeconds * 1000)
-        var entries: [TimelineEntry] = []
+    func normalize(
+        encounterStart: Int64,
+        encounterEnd: Int64,
+        bossCasts: [CastEvent],
+        playerCasts: [CastEvent],
+        maxWindow: Double
+    ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry]) {
+        let absolute = bossCasts.map { boss in
+            AbsoluteEntry(
+                spellID: boss.spellID,
+                offset: Double(boss.timestamp - encounterStart) / 1000.0
+            )
+        }
 
-        for bossCast in bossCasts {
-            let windowEnd = bossCast.timestamp + windowMs
-            for playerCast in playerCasts where playerCast.timestamp >= bossCast.timestamp && playerCast.timestamp <= windowEnd {
-                let delay = Double(playerCast.timestamp - bossCast.timestamp) / 1000.0
-                entries.append(TimelineEntry(
-                    bossSpellID: bossCast.spellID,
-                    playerSpellID: playerCast.spellID,
-                    delay: delay
+        let maxWindowMs = Int64(maxWindow * 1000)
+        var reactions: [ReactionEntry] = []
+        for boss in bossCasts {
+            let windowEnd = boss.timestamp + maxWindowMs
+            for player in playerCasts
+            where player.timestamp >= boss.timestamp && player.timestamp <= windowEnd {
+                reactions.append(ReactionEntry(
+                    bossAbilityID: boss.spellID,
+                    playerSpellID: player.spellID,
+                    delay: Double(player.timestamp - boss.timestamp) / 1000.0
                 ))
             }
         }
 
-        return entries
+        return (absolute, reactions)
     }
 }

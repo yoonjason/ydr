@@ -65,7 +65,7 @@ struct ContentView: View {
         case .success(let output):
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Lua 생성 완료 (\(output.entryCount)개 항목)")
+                    Text("Lua 생성 완료 (보스 \(output.blockCount) / 타임라인 \(output.timelineCount) / 반응 \(output.reactionCount))")
                         .font(.headline)
                     Spacer()
                     Button("클립보드에 복사") {

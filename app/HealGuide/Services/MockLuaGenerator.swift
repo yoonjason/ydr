@@ -1,7 +1,7 @@
 final class MockLuaGenerator: LuaGenerating {
-    var result: LuaOutput = LuaOutput(luaText: "-- mock lua", entryCount: 0)
+    var result: String = "-- mock lua"
 
-    func generate(entries: [TimelineEntry], spec: HealerSpec, encounterID: Int) -> LuaOutput {
+    func generate(blocks: [EncounterBlock], metadata: ExportMetadata) -> String {
         result
     }
 }

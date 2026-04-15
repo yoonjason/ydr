@@ -1,7 +1,13 @@
 final class MockTimelineNormalizer: TimelineNormalizing {
-    var result: [TimelineEntry] = []
+    var result: (absolute: [AbsoluteEntry], reactions: [ReactionEntry]) = ([], [])
 
-    func normalize(playerCasts: [CastEvent], bossCasts: [CastEvent], windowSeconds: Double) -> [TimelineEntry] {
+    func normalize(
+        encounterStart: Int64,
+        encounterEnd: Int64,
+        bossCasts: [CastEvent],
+        playerCasts: [CastEvent],
+        maxWindow: Double
+    ) -> (absolute: [AbsoluteEntry], reactions: [ReactionEntry]) {
         result
     }
 }

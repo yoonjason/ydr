@@ -1,3 +1,3 @@
 protocol LuaGenerating {
-    func generate(entries: [TimelineEntry], spec: HealerSpec, encounterID: Int) -> LuaOutput
+    func generate(blocks: [EncounterBlock], metadata: ExportMetadata) -> String
 }
