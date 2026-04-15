@@ -1,3 +1,4 @@
 - [Phase 1 SVS 잔여 개선](phase1_svs_pending.md) — 2026-04-15 Phase 1 SVS 완료 후 차기 반영 대기 중인 SUGGESTION/NITS와 다음 슬라이스(CastEvents→Lua) 후보
 - [Phase 3 애드온 구현 완료](phase3_addon_handoff.md) — 2026-04-15 WoW 애드온 9파일 구현 + 커밋 76ebd05. code-reviewer 진행 중, 인게임 실기 테스트 미실시
 - [Phase 4 착수 대기 (P1)](phase4_next_work.md) — 2026-04-15 다음 세션에서 AceDB 프로파일 + LibSharedMedia 테마/사운드 착수 예정. 실기 테스트 선행 필수
+- [2026-04-15 핸드오프](handoff_20260415.md) — Plan B + U1/U2/U3 완료. 잔여: 실기 검증 → U2.5 중복 방지 → 디버그 로그 정리. 다른 PC 에서 이어받기 가능
