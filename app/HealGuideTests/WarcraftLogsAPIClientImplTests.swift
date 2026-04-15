@@ -118,12 +118,38 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Basic \(expectedBase64)")
     }
 
-    // MARK: - fetchFight
+    // MARK: - fetchEncounters
 
-    func test_fetchFight_success_returnsFightMeta() async throws {
-        var capturedRequest: URLRequest?
+    func testFetchEncounters_anchorIsBoss_returnsSingleBossWindow() async throws {
         MockURLProtocol.classHandler = { request in
-            capturedRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "fights": [
+                      {"id": 5, "encounterID": 2599, "name": "Ulgrax the Devourer", "startTime": 1000.0, "endTime": 181000.0, "kill": true}
+                    ]
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 5, token: "test-token")
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].encounterID, 2599)
+        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
+        XCTAssertEqual(result[0].startTime, 1000)
+        XCTAssertEqual(result[0].endTime, 181000)
+    }
+
+    func testFetchEncounters_dungeonWide_returnsSubBossWindows() async throws {
+        MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
             {
@@ -131,12 +157,13 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
                 "reportData": {
                   "report": {
                     "fights": [{
-                      "id": 5,
-                      "encounterID": 2599,
-                      "name": "Ulgrax the Devourer",
-                      "startTime": 1000.0,
-                      "endTime": 9000.0,
-                      "kill": true
+                      "id": 1, "encounterID": 0, "name": "Entire Dungeon",
+                      "startTime": 0.0, "endTime": 300000.0, "kill": false,
+                      "dungeonPulls": [
+                        {"id": 1, "encounterID": 2599, "name": "Boss A", "startTime": 10000.0,  "endTime": 90000.0,  "kill": true},
+                        {"id": 2, "encounterID": 2600, "name": "Boss B", "startTime": 120000.0, "endTime": 200000.0, "kill": true},
+                        {"id": 3, "encounterID": 2601, "name": "Boss C", "startTime": 220000.0, "endTime": 290000.0, "kill": true}
+                      ]
                     }]
                   }
                 }
@@ -146,37 +173,46 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             return (response, body)
         }
 
-        let result = try await client.fetchFight(reportCode: "AbCd1234", fightID: 5, token: "test-token")
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
 
-        XCTAssertEqual(result.id, 5)
-        XCTAssertEqual(result.encounterID, 2599)
-        XCTAssertEqual(result.name, "Ulgrax the Devourer")
-        XCTAssertEqual(result.startTime, 1000)
-        XCTAssertEqual(result.endTime, 9000)
-        XCTAssertTrue(result.kill)
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
+        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result[0].encounterID, 2599)
+        XCTAssertEqual(result[1].encounterID, 2600)
+        XCTAssertEqual(result[2].encounterID, 2601)
     }
 
-    func test_fetchFight_graphqlErrors_throwsNetworkError() async {
+    func testFetchEncounters_noBossEncounters_throwsNoBossEncounters() async {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
-            {"errors": [{"message": "Fight not accessible"}], "data": null}
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "fights": [{
+                      "id": 1, "encounterID": 0, "name": "Entire Dungeon",
+                      "startTime": 0.0, "endTime": 300000.0, "kill": false,
+                      "dungeonPulls": []
+                    }]
+                  }
+                }
+              }
+            }
             """.data(using: .utf8)!
             return (response, body)
         }
 
         do {
-            _ = try await client.fetchFight(reportCode: "AbCd1234", fightID: 5, token: "test-token")
-            XCTFail("Expected networkError")
+            _ = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
+            XCTFail("Expected noBossEncounters")
         } catch let error as AppError {
-            XCTAssertEqual(error, .networkError("Fight not accessible"))
+            XCTAssertEqual(error, .noBossEncounters)
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
     }
 
-    func test_fetchFight_emptyFights_throwsFightNotFound() async {
+    func testFetchEncounters_fightNotFound_throwsFightNotFound() async {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
@@ -186,7 +222,7 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         }
 
         do {
-            _ = try await client.fetchFight(reportCode: "AbCd1234", fightID: 99, token: "test-token")
+            _ = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 99, token: "test-token")
             XCTFail("Expected fightNotFound")
         } catch let error as AppError {
             XCTAssertEqual(error, .fightNotFound)
@@ -195,9 +231,7 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
         }
     }
 
-    // MARK: - fetchEncounters
-
-    func test_fetchEncounters_success_returnsBossWindows() async throws {
+    func testFetchEncounters_dungeonPulls_threeBosses_returnsThreeBossWindows() async throws {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
@@ -205,13 +239,15 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
               "data": {
                 "reportData": {
                   "report": {
-                    "events": {
-                      "data": [
-                        {"type": "encounterstart", "timestamp": 1000, "encounterID": 2599, "name": "Ulgrax the Devourer"},
-                        {"type": "encounterend",   "timestamp": 181000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
-                      ],
-                      "nextPageTimestamp": null
-                    }
+                    "fights": [{
+                      "id": 15, "encounterID": 0, "name": "Mechagon Workshop",
+                      "startTime": 500000.0, "endTime": 3200000.0, "kill": true,
+                      "dungeonPulls": [
+                        {"id": 1, "encounterID": 2334, "name": "HK-8 Aerial Oppression Unit", "startTime": 520000.0, "endTime": 700000.0, "kill": true},
+                        {"id": 2, "encounterID": 2335, "name": "Tussle Tonks", "startTime": 1000000.0, "endTime": 1200000.0, "kill": true},
+                        {"id": 3, "encounterID": 2336, "name": "King Gobbamak", "startTime": 2800000.0, "endTime": 3100000.0, "kill": true}
+                      ]
+                    }]
                   }
                 }
               }
@@ -220,16 +256,17 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             return (response, body)
         }
 
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 15, token: "test-token")
 
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].encounterID, 2599)
-        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
-        XCTAssertEqual(result[0].startTime, 1000)
-        XCTAssertEqual(result[0].endTime, 181000)
+        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result[0].encounterID, 2334)
+        XCTAssertEqual(result[0].startTime, 520000)
+        XCTAssertEqual(result[0].endTime, 700000)
+        XCTAssertEqual(result[1].encounterID, 2335)
+        XCTAssertEqual(result[2].encounterID, 2336)
     }
 
-    func test_fetchEncounters_emptyData_returnsEmptyArray() async throws {
+    func testFetchEncounters_dungeonPulls_withTrash_filtersToOnlyBosses() async throws {
         MockURLProtocol.classHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = """
@@ -237,10 +274,16 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
               "data": {
                 "reportData": {
                   "report": {
-                    "events": {
-                      "data": [],
-                      "nextPageTimestamp": null
-                    }
+                    "fights": [{
+                      "id": 15, "encounterID": 0, "name": "Mechagon Workshop",
+                      "startTime": 500000.0, "endTime": 3200000.0, "kill": true,
+                      "dungeonPulls": [
+                        {"id": 1, "encounterID": 0,    "name": "Trash",                         "startTime": 500000.0, "endTime": 519000.0,  "kill": false},
+                        {"id": 2, "encounterID": 2334, "name": "HK-8 Aerial Oppression Unit",   "startTime": 520000.0, "endTime": 700000.0,  "kill": true},
+                        {"id": 3, "encounterID": 0,    "name": "Trash",                         "startTime": 701000.0, "endTime": 999000.0,  "kill": false},
+                        {"id": 4, "encounterID": 2335, "name": "Tussle Tonks",                  "startTime": 1000000.0, "endTime": 1200000.0, "kill": true}
+                      ]
+                    }]
                   }
                 }
               }
@@ -249,126 +292,11 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             return (response, body)
         }
 
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
-
-        XCTAssertTrue(result.isEmpty)
-    }
-
-    func test_fetchEncounters_multipleBosses_returnAllWindows() async throws {
-        MockURLProtocol.classHandler = { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let body = """
-            {
-              "data": {
-                "reportData": {
-                  "report": {
-                    "events": {
-                      "data": [
-                        {"type": "encounterstart", "timestamp": 0,      "encounterID": 2599, "name": "Boss A"},
-                        {"type": "encounterend",   "timestamp": 90000,  "encounterID": 2599, "name": "Boss A"},
-                        {"type": "encounterstart", "timestamp": 120000, "encounterID": 2600, "name": "Boss B"},
-                        {"type": "encounterend",   "timestamp": 240000, "encounterID": 2600, "name": "Boss B"}
-                      ],
-                      "nextPageTimestamp": null
-                    }
-                  }
-                }
-              }
-            }
-            """.data(using: .utf8)!
-            return (response, body)
-        }
-
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
+        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 15, token: "test-token")
 
         XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result[0].encounterID, 2599)
-        XCTAssertEqual(result[0].startTime, 0)
-        XCTAssertEqual(result[0].endTime, 90000)
-        XCTAssertEqual(result[1].encounterID, 2600)
-        XCTAssertEqual(result[1].startTime, 120000)
-        XCTAssertEqual(result[1].endTime, 240000)
-    }
-
-    func test_fetchEncounters_startWithoutEnd_notIncluded() async throws {
-        MockURLProtocol.classHandler = { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let body = """
-            {
-              "data": {
-                "reportData": {
-                  "report": {
-                    "events": {
-                      "data": [
-                        {"type": "encounterstart", "timestamp": 0, "encounterID": 2599, "name": "Boss A"}
-                      ],
-                      "nextPageTimestamp": null
-                    }
-                  }
-                }
-              }
-            }
-            """.data(using: .utf8)!
-            return (response, body)
-        }
-
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
-
-        XCTAssertTrue(result.isEmpty)
-    }
-
-    func test_fetchEncounters_pagination_startOnPage1EndOnPage2_returnsBossWindow() async throws {
-        var callCount = 0
-        MockURLProtocol.classHandler = { request in
-            callCount += 1
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let body: Data
-            if callCount == 1 {
-                body = """
-                {
-                  "data": {
-                    "reportData": {
-                      "report": {
-                        "events": {
-                          "data": [
-                            {"type": "encounterstart", "timestamp": 1000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
-                          ],
-                          "nextPageTimestamp": 5000.0
-                        }
-                      }
-                    }
-                  }
-                }
-                """.data(using: .utf8)!
-            } else {
-                body = """
-                {
-                  "data": {
-                    "reportData": {
-                      "report": {
-                        "events": {
-                          "data": [
-                            {"type": "encounterend", "timestamp": 181000, "encounterID": 2599, "name": "Ulgrax the Devourer"}
-                          ],
-                          "nextPageTimestamp": null
-                        }
-                      }
-                    }
-                  }
-                }
-                """.data(using: .utf8)!
-            }
-            return (response, body)
-        }
-
-        let result = try await client.fetchEncounters(reportCode: "AbCd1234", fightID: 3, token: "test-token")
-
-        XCTAssertEqual(callCount, 2, "2페이지에 걸쳐 있으므로 API를 2번 호출해야 함")
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].encounterID, 2599)
-        XCTAssertEqual(result[0].name, "Ulgrax the Devourer")
-        XCTAssertEqual(result[0].startTime, 1000)
-        XCTAssertEqual(result[0].endTime, 181000)
+        XCTAssertEqual(result[0].encounterID, 2334)
+        XCTAssertEqual(result[1].encounterID, 2335)
     }
 
     func test_fetchEncounters_graphqlErrors_throwsNetworkError() async {

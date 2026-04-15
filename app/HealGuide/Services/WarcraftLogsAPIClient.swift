@@ -8,7 +8,6 @@ enum HostilityType: String {
 
 protocol WarcraftLogsAPIClient {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
-    func fetchFight(reportCode: String, fightID: Int, token: String) async throws -> FightMeta
     func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> [BossWindow]
     func fetchCasts(
         reportCode: String,
@@ -72,7 +71,7 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
-    func fetchFight(reportCode: String, fightID: Int, token: String) async throws -> FightMeta {
+    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> [BossWindow] {
         let url = try graphQLURL()
 
         let query = """
@@ -86,6 +85,14 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
                 startTime
                 endTime
                 kill
+                dungeonPulls {
+                  id
+                  encounterID
+                  name
+                  startTime
+                  endTime
+                  kill
+                }
               }
             }
           }
@@ -101,96 +108,48 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         let (data, response) = try await perform(request)
         try validate(response: response)
 
+        let fight: FightPayload
         do {
             let decoded = try JSONDecoder().decode(GraphQLResponse<FightQueryData>.self, from: data)
             if let errors = decoded.errors, !errors.isEmpty {
                 throw AppError.networkError(errors[0].message)
             }
-            guard let fight = decoded.data?.reportData?.report?.fights.first else {
+            guard let found = decoded.data?.reportData?.report?.fights.first else {
                 throw AppError.fightNotFound
             }
-            return FightMeta(
-                id: fight.id,
+            fight = found
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("Encounters decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
+
+        if fight.encounterID > 0 {
+            return [BossWindow(
                 encounterID: fight.encounterID,
                 name: fight.name,
                 startTime: Int64(fight.startTime.rounded()),
-                endTime: Int64(fight.endTime.rounded()),
-                kill: fight.kill ?? false
-            )
-        } catch let appError as AppError {
-            throw appError
-        } catch {
-            logger.error("Fight decoding failed: \(error)")
-            throw AppError.decodingFailed
-        }
-    }
-
-    func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> [BossWindow] {
-        var allEvents: [EncounterEventPayload] = []
-        var currentStartTime: Double? = nil
-
-        for _ in 0..<Self.maxPaginationPages {
-            let (pageEvents, nextTimestamp) = try await fetchEncountersPage(
-                reportCode: reportCode,
-                fightID: fightID,
-                startTime: currentStartTime,
-                token: token
-            )
-            allEvents.append(contentsOf: pageEvents)
-            guard let next = nextTimestamp else { break }
-            currentStartTime = next
+                endTime: Int64(fight.endTime.rounded())
+            )]
         }
 
-        return pairEncounterEvents(allEvents)
-    }
-
-    private func fetchEncountersPage(
-        reportCode: String,
-        fightID: Int,
-        startTime: Double?,
-        token: String
-    ) async throws -> ([EncounterEventPayload], Double?) {
-        let url = try graphQLURL()
-
-        let query = """
-        query($code: String!, $fightIDs: [Int]!, $startTime: Float) {
-          reportData {
-            report(code: $code) {
-              events(fightIDs: $fightIDs, dataType: Encounters, startTime: $startTime) {
-                data
-                nextPageTimestamp
-              }
+        let bossWindows = (fight.dungeonPulls ?? [])
+            .filter { $0.encounterID > 0 }
+            .map { pull in
+                BossWindow(
+                    encounterID: pull.encounterID,
+                    name: pull.name,
+                    startTime: Int64(pull.startTime.rounded()),
+                    endTime: Int64(pull.endTime.rounded())
+                )
             }
-          }
-        }
-        """
 
-        var variables: [String: GraphQLVariable] = [
-            "code": .string(reportCode),
-            "fightIDs": .intArray([fightID])
-        ]
-        if let startTime {
-            variables["startTime"] = .double(startTime)
+        guard !bossWindows.isEmpty else {
+            throw AppError.noBossEncounters
         }
 
-        let body = GraphQLRequest(query: query, variables: variables)
-        let request = try buildRequest(url: url, body: body, token: token)
-        let (data, response) = try await perform(request)
-        try validate(response: response)
-
-        do {
-            let decoded = try JSONDecoder().decode(GraphQLResponse<EncountersQueryData>.self, from: data)
-            if let errors = decoded.errors, !errors.isEmpty {
-                throw AppError.networkError(errors[0].message)
-            }
-            let events = decoded.data?.reportData?.report?.events
-            return (events?.data ?? [], events?.nextPageTimestamp)
-        } catch let appError as AppError {
-            throw appError
-        } catch {
-            logger.error("Encounters page decoding failed: \(error)")
-            throw AppError.decodingFailed
-        }
+        return bossWindows
     }
 
     func fetchCasts(
@@ -323,30 +282,6 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         return request
     }
 
-    private func pairEncounterEvents(_ events: [EncounterEventPayload]) -> [BossWindow] {
-        var pendingStarts: [Int: (name: String, startTime: Int64)] = [:]
-        var windows: [BossWindow] = []
-
-        for event in events {
-            guard let encounterID = event.encounterID else { continue }
-            if event.type == "encounterstart" {
-                guard let name = event.name else { continue }
-                pendingStarts[encounterID] = (name, event.timestamp)
-            } else if event.type == "encounterend" {
-                guard let pending = pendingStarts[encounterID] else { continue }
-                windows.append(BossWindow(
-                    encounterID: encounterID,
-                    name: pending.name,
-                    startTime: pending.startTime,
-                    endTime: event.timestamp
-                ))
-                pendingStarts.removeValue(forKey: encounterID)
-            }
-        }
-
-        return windows
-    }
-
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
@@ -417,8 +352,6 @@ private struct GraphQLError: Decodable {
     let message: String
 }
 
-// MARK: - fetchFight response types
-
 private struct FightQueryData: Decodable {
     let reportData: FightReportData?
 }
@@ -438,35 +371,17 @@ private struct FightPayload: Decodable {
     let startTime: Double
     let endTime: Double
     let kill: Bool?
+    let dungeonPulls: [DungeonPullPayload]?
 }
 
-// MARK: - fetchEncounters response types
-
-private struct EncountersQueryData: Decodable {
-    let reportData: EncountersReportData?
+private struct DungeonPullPayload: Decodable {
+    let id: Int
+    let encounterID: Int
+    let name: String
+    let startTime: Double
+    let endTime: Double
+    let kill: Bool?
 }
-
-private struct EncountersReportData: Decodable {
-    let report: EncountersReport?
-}
-
-private struct EncountersReport: Decodable {
-    let events: EncounterEventsPage?
-}
-
-private struct EncounterEventsPage: Decodable {
-    let data: [EncounterEventPayload]
-    let nextPageTimestamp: Double?
-}
-
-private struct EncounterEventPayload: Decodable {
-    let type: String?
-    let timestamp: Int64
-    let encounterID: Int?
-    let name: String?
-}
-
-// MARK: - fetchCasts response types
 
 private struct CastsQueryData: Decodable {
     let reportData: CastsReportData?
