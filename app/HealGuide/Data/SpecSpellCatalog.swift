@@ -70,14 +70,20 @@ enum SpecSpellCatalog {
         SpellEntry(id: 194509, nameKR: "신의 권능: 광휘",       nameEN: "Power Word: Radiance"),
         SpellEntry(id: 33206,  nameKR: "고통 억제",             nameEN: "Pain Suppression"),
         SpellEntry(id: 62618,  nameKR: "신의 권능: 방벽",       nameEN: "Power Word: Barrier"),
-        SpellEntry(id: 421434, nameKR: "궁극의 참회",           nameEN: "Ultimate Penitence"),
+        // 궁극의 참회: 동일 주문이지만 캐스트/변종 ID 가 여러 개. 모두 등록해 로그 매칭 누락 방지.
+        SpellEntry(id: 421543, nameKR: "궁극의 참회",           nameEN: "Ultimate Penitence"),
+        SpellEntry(id: 421453, nameKR: "궁극의 참회",           nameEN: "Ultimate Penitence"),
+        SpellEntry(id: 186263, nameKR: "어둠의 치유",           nameEN: "Shadow Mend"),
         SpellEntry(id: 246287, nameKR: "사도",                  nameEN: "Evangelism"),
+        SpellEntry(id: 472433, nameKR: "사도 (변종)",           nameEN: "Evangelism (variant)"),
         SpellEntry(id: 34433,  nameKR: "어둠의 친구",           nameEN: "Shadowfiend"),
         SpellEntry(id: 123040, nameKR: "정신 지배자",           nameEN: "Mindbender"),
+        SpellEntry(id: 1236616, nameKR: "빛의 잠재력",          nameEN: "Light's Potential"),
 
         // Hero talents — Voidweaver
         SpellEntry(id: 447444, nameKR: "혼돈의 균열",           nameEN: "Entropic Rift"),
         SpellEntry(id: 451234, nameKR: "공허 망령",             nameEN: "Voidwraith"),
+        SpellEntry(id: 1253593, nameKR: "공허의 보호막",        nameEN: "Void Shield"),
     ]
 
     // MARK: - Holy Priest (Midnight)
