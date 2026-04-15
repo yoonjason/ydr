@@ -27,22 +27,56 @@ final class WarcraftLogsAPIClientTests: XCTestCase {
         }
     }
 
-    func test_mock_fetchFight_success_returnsFightMeta() async throws {
-        let expected = FightMeta(id: 5, encounterID: 2599, name: "Ulgrax the Devourer", startTime: 1000, endTime: 9000, kill: true)
-        mock.fightResult = .success(expected)
-        let result = try await mock.fetchFight(reportCode: "AbCd1234", fightID: 5, token: "test-token")
-        XCTAssertEqual(result, expected)
+    func testFetchBossFights_anchorIsBoss() async throws {
+        let expected = [BossWindow(encounterID: 2599, name: "Ulgrax", startTime: 0, endTime: 10000)]
+        mock.encountersResult = .success(expected)
+        let result = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].encounterID, 2599)
     }
 
-    func test_mock_fetchFight_failure_throwsFightNotFound() async {
-        mock.fightResult = .failure(.fightNotFound)
+    func testFetchBossFights_dungeonWide() async throws {
+        let expected = [
+            BossWindow(encounterID: 100, name: "Boss A", startTime: 1000, endTime: 5000),
+            BossWindow(encounterID: 101, name: "Boss B", startTime: 6000, endTime: 10000),
+            BossWindow(encounterID: 102, name: "Boss C", startTime: 11000, endTime: 15000)
+        ]
+        mock.encountersResult = .success(expected)
+        let result = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
+        XCTAssertEqual(result.count, 3)
+    }
+
+    func testFetchBossFights_noBossEncounters() async {
+        mock.encountersResult = .failure(.noBossEncounters)
         do {
-            _ = try await mock.fetchFight(reportCode: "AbCd1234", fightID: 99, token: "test-token")
+            _ = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 1, token: "test-token")
+            XCTFail("Expected noBossEncounters to be thrown")
+        } catch let error as AppError {
+            XCTAssertEqual(error, .noBossEncounters)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testFetchBossFights_fightNotFound() async {
+        mock.encountersResult = .failure(.fightNotFound)
+        do {
+            _ = try await mock.fetchEncounters(reportCode: "AbCd1234", fightID: 99, token: "test-token")
             XCTFail("Expected fightNotFound to be thrown")
         } catch let error as AppError {
             XCTAssertEqual(error, .fightNotFound)
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
+    }
+
+    func test_mock_fetchCasts_success_returnsCasts() async throws {
+        let expected = [CastEvent(timestamp: 1000, spellID: 200, sourceID: 5)]
+        mock.castsResult = .success(expected)
+        let result = try await mock.fetchCasts(
+            reportCode: "AbCd1234", fightID: 3, sourceID: 5,
+            hostilityType: .friendly, startTime: 0, endTime: 10000, token: "test-token"
+        )
+        XCTAssertEqual(result, expected)
     }
 }
