@@ -72,4 +72,24 @@ final class URLParserTests: XCTestCase {
             XCTAssertEqual(error as? AppError, AppError.invalidURL)
         }
     }
+
+    func test_queryStringURL_parsed() throws {
+        let raw = "https://www.warcraftlogs.com/reports/fawL3G4hz79nPyTk?fight=71&type=casts&source=330&view=timeline"
+        let result = try parser.parse(raw)
+        XCTAssertEqual(result, ReportURL(code: "fawL3G4hz79nPyTk", fightID: 71, sourceID: 330))
+    }
+
+    func test_queryStringURL_fightLast_throwsFightSelectionRequired() {
+        let raw = "https://www.warcraftlogs.com/reports/AbCd1234?fight=last&source=7"
+        XCTAssertThrowsError(try parser.parse(raw)) { error in
+            XCTAssertEqual(error as? AppError, AppError.fightSelectionRequired)
+        }
+    }
+
+    func test_queryStringURL_missingSource_throwsInvalidURL() {
+        let raw = "https://www.warcraftlogs.com/reports/AbCd1234?fight=3"
+        XCTAssertThrowsError(try parser.parse(raw)) { error in
+            XCTAssertEqual(error as? AppError, AppError.invalidURL)
+        }
+    }
 }

@@ -2,6 +2,7 @@ import Foundation
 
 struct URLParser: URLParsing {
     // https://www.warcraftlogs.com/reports/<code>#fight=<N>&source=<N>
+    // https://www.warcraftlogs.com/reports/<code>?fight=<N>&source=<N>
     private static let codePattern = #/reports/([A-Za-z0-9]{8,16})/#
 
     func parse(_ rawURL: String) throws -> ReportURL {
@@ -20,13 +21,22 @@ struct URLParser: URLParsing {
 
         let code = String(match.1)
 
-        guard let fragment = urlComponents.fragment, !fragment.isEmpty else {
-            throw AppError.invalidURL
+        // fragment(#) 또는 query(?) 양쪽에서 fight/source 파싱
+        var params: [String: String] = [:]
+
+        if let fragment = urlComponents.fragment, !fragment.isEmpty {
+            params = parseQueryItems(from: fragment)
         }
 
-        let fragmentItems = parseQueryItems(from: fragment)
+        if let queryItems = urlComponents.queryItems {
+            for item in queryItems {
+                if let value = item.value {
+                    params[item.name] = value
+                }
+            }
+        }
 
-        guard let fightValue = fragmentItems["fight"] else {
+        guard let fightValue = params["fight"] else {
             throw AppError.invalidURL
         }
         guard fightValue != "last" else {
@@ -36,8 +46,7 @@ struct URLParser: URLParsing {
             throw AppError.invalidURL
         }
 
-        // source 파라미터는 필수 — 힐러 액터 식별에 필요
-        guard let sourceValue = fragmentItems["source"], let sourceID = Int(sourceValue) else {
+        guard let sourceValue = params["source"], let sourceID = Int(sourceValue) else {
             throw AppError.invalidURL
         }
 
