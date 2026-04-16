@@ -467,4 +467,97 @@ final class WarcraftLogsAPIClientImplTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    // MARK: - fetchMasterData
+
+    func test_fetchMasterData_success_returnsAbilities() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "masterData": {
+                      "abilities": [
+                        {"gameID": 123456, "name": "Power Word: Shield", "icon": "spell_holy_powerwordshield.jpg"},
+                        {"gameID": 789012, "name": "Rapture", "icon": "spell_holy_rapture.jpg"}
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchMasterData(reportCode: "AbCd1234", token: "test-token")
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result[0].gameID, 123456)
+        XCTAssertEqual(result[0].name, "Power Word: Shield")
+        XCTAssertEqual(result[0].icon, "spell_holy_powerwordshield.jpg")
+        XCTAssertEqual(result[1].gameID, 789012)
+    }
+
+    func test_fetchMasterData_emptyAbilities_returnsEmptyArray() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {"data": {"reportData": {"report": {"masterData": {"abilities": []}}}}}
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchMasterData(reportCode: "AbCd1234", token: "test-token")
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func test_fetchMasterData_graphqlErrors_throwsNetworkError() async {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {"errors": [{"message": "Report not found"}], "data": null}
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        do {
+            _ = try await client.fetchMasterData(reportCode: "invalid", token: "test-token")
+            XCTFail("Expected networkError")
+        } catch let error as AppError {
+            XCTAssertEqual(error, .networkError("Report not found"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func test_fetchMasterData_nullIcon_handledGracefully() async throws {
+        MockURLProtocol.classHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {
+              "data": {
+                "reportData": {
+                  "report": {
+                    "masterData": {
+                      "abilities": [
+                        {"gameID": 999, "name": "Unknown Spell", "icon": null}
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        let result = try await client.fetchMasterData(reportCode: "AbCd1234", token: "test-token")
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].gameID, 999)
+        XCTAssertNil(result[0].icon)
+    }
 }

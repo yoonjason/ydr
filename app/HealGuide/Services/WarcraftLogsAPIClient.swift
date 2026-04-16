@@ -19,6 +19,7 @@ protocol WarcraftLogsAPIClient {
         endTime: Int64,
         token: String
     ) async throws -> [CastEvent]
+    func fetchMasterData(reportCode: String, token: String) async throws -> [MasterDataAbility]
 }
 
 final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
@@ -310,6 +311,48 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
+    func fetchMasterData(reportCode: String, token: String) async throws -> [MasterDataAbility] {
+        let url = try graphQLURL()
+
+        let query = """
+        query($code: String!) {
+          reportData {
+            report(code: $code) {
+              masterData {
+                abilities {
+                  gameID
+                  name
+                  icon
+                }
+              }
+            }
+          }
+        }
+        """
+
+        let body = GraphQLRequest(
+            query: query,
+            variables: ["code": .string(reportCode)]
+        )
+        let request = try buildRequest(url: url, body: body, token: token)
+        let (data, response) = try await perform(request)
+        try validate(response: response)
+
+        do {
+            let decoded = try JSONDecoder().decode(GraphQLResponse<MasterDataQueryData>.self, from: data)
+            if let errors = decoded.errors, !errors.isEmpty {
+                throw AppError.networkError(errors[0].message)
+            }
+            let abilities = decoded.data?.reportData?.report?.masterData?.abilities ?? []
+            return abilities.map { MasterDataAbility(gameID: $0.gameID, name: $0.name, icon: $0.icon) }
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("MasterData decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
+    }
+
     private func graphQLURL() throws -> URL {
         var components = URLComponents()
         components.scheme = "https"
@@ -458,6 +501,32 @@ private struct RawEventPayload: Decodable {
     let timestamp: Int64
     let sourceID: Int?
     let abilityGameID: Int?
+}
+
+// MARK: - playerDetails
+
+// MARK: - masterData
+
+private struct MasterDataQueryData: Decodable {
+    let reportData: MasterDataReportData?
+}
+
+private struct MasterDataReportData: Decodable {
+    let report: MasterDataReport?
+}
+
+private struct MasterDataReport: Decodable {
+    let masterData: MasterDataPayload?
+}
+
+private struct MasterDataPayload: Decodable {
+    let abilities: [MasterDataAbilityDTO]
+}
+
+private struct MasterDataAbilityDTO: Decodable {
+    let gameID: Int
+    let name: String
+    let icon: String?
 }
 
 // MARK: - playerDetails
