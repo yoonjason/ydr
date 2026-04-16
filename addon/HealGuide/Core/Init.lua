@@ -34,6 +34,12 @@ local function onAddonLoaded(name)
     if addon.EncounterTimelineBridge and addon.EncounterTimelineBridge.Init then
         addon.EncounterTimelineBridge:Init()
     end
+    if addon.MinimapButton and addon.MinimapButton.Init then
+        addon.MinimapButton:Init()
+    end
+    if addon.TimerBarFrame and addon.TimerBarFrame.Init then
+        addon.TimerBarFrame:Init()
+    end
     autoImportGeneratedData()
     print("|cff00ff00HealGuide|r 로드 완료. /hg 로 설정")
 end
@@ -201,6 +207,14 @@ SlashCmdList["HEALGUIDE"] = function(msg)
             print("|cff00ff00HealGuide|r 스킬명 표시: OFF")
         else
             print("|cff00ff00HealGuide|r 사용법: /hg label <on|off>")
+        end
+    elseif cmd == "pause" then
+        addon.EncounterEngine:Pause()
+    elseif cmd == "resume" then
+        addon.EncounterEngine:Resume()
+    elseif cmd == "history" then
+        if addon.CombatHistoryFrame then
+            addon.CombatHistoryFrame:Toggle()
         end
     elseif cmd == "debug" then
         local current = addon.Storage:GetSetting("debugMode")

@@ -15,5 +15,8 @@ Core/ConditionEvaluator.lua
 Core/EncounterEngine.lua
 Core/EncounterTimelineBridge.lua
 UI/AlertFrame.lua
+UI/TimerBarFrame.lua
+UI/MinimapButton.lua
+UI/CombatHistoryFrame.lua
 UI/ImportDialog.lua
 UI/MainFrame.lua

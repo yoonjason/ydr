@@ -17,6 +17,8 @@ EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → time
 EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
 EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
 EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
+EncounterEngine.scheduledAlerts    = {}    -- 타이머 바용: { spellID, fireTime, source }
+EncounterEngine.paused             = false
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -129,6 +131,8 @@ function EncounterEngine:Cancel()
     self.recentAlerts       = {}
     self.playerCooldowns    = {}
     self.combatLog          = {}
+    self.scheduledAlerts    = {}
+    self.paused             = false
     self.activeEncounterID  = nil
     self.activeBossData     = nil
     self.activeSpecData     = nil
@@ -153,7 +157,12 @@ function EncounterEngine:ScheduleTimeline(timeline)
         if delay > 0 then
             local spellID        = entry.spellID
             local entryCondition = entry.condition
+            local fireTime = GetTime() + delay
+            local alertInfo = { spellID = spellID, fireTime = fireTime, source = "absolute" }
+            table.insert(self.scheduledAlerts, alertInfo)
             local t = C_Timer.NewTimer(delay, function()
+                self:_RemoveScheduledAlert(alertInfo)
+                if self.paused then return end
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                     self:TriggerAlert(spellID, "absolute")
                 else
@@ -208,7 +217,12 @@ function EncounterEngine:OnCombatLog(
         local playerSpellID  = entry.spellID
         local delay          = math.max(0, (entry.delay or 0) - leadTime)
         local entryCondition = entry.condition
+        local fireTime = GetTime() + delay
+        local alertInfo = { spellID = playerSpellID, fireTime = fireTime, source = "reactive" }
+        table.insert(self.scheduledAlerts, alertInfo)
         local t = C_Timer.NewTimer(delay, function()
+            self:_RemoveScheduledAlert(alertInfo)
+            if self.paused then return end
             if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                 self:TriggerAlert(playerSpellID, "reactive")
             else
@@ -295,6 +309,43 @@ function EncounterEngine:OnPhaseUpdate(phase)
         self.currentPhase = phase
         addon.dprint("페이즈 변경:", phase)
     end
+end
+
+function EncounterEngine:_RemoveScheduledAlert(alertInfo)
+    for i = #self.scheduledAlerts, 1, -1 do
+        if self.scheduledAlerts[i] == alertInfo then
+            table.remove(self.scheduledAlerts, i)
+            break
+        end
+    end
+end
+
+function EncounterEngine:GetUpcomingAlerts(limit)
+    local now = GetTime()
+    local upcoming = {}
+    for _, info in ipairs(self.scheduledAlerts) do
+        local remaining = info.fireTime - now
+        if remaining > 0 then
+            table.insert(upcoming, { spellID = info.spellID, remaining = remaining, source = info.source })
+        end
+    end
+    table.sort(upcoming, function(a, b) return a.remaining < b.remaining end)
+    if limit and #upcoming > limit then
+        local trimmed = {}
+        for i = 1, limit do trimmed[i] = upcoming[i] end
+        return trimmed
+    end
+    return upcoming
+end
+
+function EncounterEngine:Pause()
+    self.paused = true
+    print("|cff00ff00HealGuide|r 알림 일시 중지")
+end
+
+function EncounterEngine:Resume()
+    self.paused = false
+    print("|cff00ff00HealGuide|r 알림 재개")
 end
 
 function EncounterEngine:OnZoneChanged()

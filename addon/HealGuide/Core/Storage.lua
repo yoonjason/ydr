@@ -17,7 +17,9 @@ local DEFAULT_SETTINGS = {
     ttsVolume       = 100,
     leadTime        = 1.5,
     debugMode       = false,
-    conditionFallback = true,  -- 조건 평가 실패 시 true=발화, false=스킵
+    conditionFallback = true,
+    alertSoundID    = 888,
+    minimapAngle    = 220,
 }
 
 function Storage:Init()

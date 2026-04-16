@@ -560,6 +560,39 @@ function MainFrame:_CreateSettingsTab(panel)
     end
     y = y - 30
 
+    -- ── 알림 사운드 ─────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "알림 사운드", 8, y)
+    y = y - 22
+
+    local SOUND_PRESETS = {
+        { id = 888,   label = "기본 (ReadyCheck)" },
+        { id = 8959,  label = "레이드 경고" },
+        { id = 8046,  label = "PVP 알림" },
+        { id = 12889, label = "보석 획득" },
+        { id = 11466, label = "퀘스트 완료" },
+        { id = 3081,  label = "경고음" },
+    }
+    local soundLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    soundLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y)
+    panel.soundLabel = soundLabel
+
+    local soundPickBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    soundPickBtn:SetSize(80, 20)
+    soundPickBtn:SetPoint("LEFT", soundLabel, "RIGHT", 8, 0)
+    soundPickBtn:SetText("선택 ▾")
+    soundPickBtn:SetScript("OnClick", function(btn)
+        MainFrame:_ShowSoundDropdown(btn, SOUND_PRESETS)
+    end)
+
+    local soundTestBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    soundTestBtn:SetSize(60, 20)
+    soundTestBtn:SetPoint("LEFT", soundPickBtn, "RIGHT", 4, 0)
+    soundTestBtn:SetText("테스트")
+    soundTestBtn:SetScript("OnClick", function()
+        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
+    end)
+    y = y - 32
+
     -- ── 조건 엔진 ───────────────────────────────────────────────────────────
     self:_MakeSectionLabel(content, "조건 엔진", 8, y)
     y = y - 22
@@ -625,6 +658,9 @@ function MainFrame:_RefreshSettings()
 
     panel.fallbackCB:SetChecked(s:GetSetting("conditionFallback") and true or false)
     panel.debugCB:SetChecked(s:GetSetting("debugMode") and true or false)
+
+    local soundID = s:GetSetting("alertSoundID") or 888
+    panel.soundLabel:SetText("사운드: #" .. soundID)
 
     self:_RefreshVoiceLabel()
     self:_UpdateTTSGroupState()
@@ -758,6 +794,67 @@ function MainFrame:_ShowVoiceDropdown(anchor, entries)
     voiceDropdown:ClearAllPoints()
     voiceDropdown:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
     voiceDropdown:Show()
+end
+
+local soundDropdown = nil
+function MainFrame:_ShowSoundDropdown(anchorBtn, presets)
+    if soundDropdown and soundDropdown:IsShown() then
+        soundDropdown:Hide()
+        return
+    end
+    if not soundDropdown then
+        soundDropdown = CreateFrame("Frame", "HealGuideSoundDropdown", UIParent, "BackdropTemplate")
+        soundDropdown:SetFrameStrata("TOOLTIP")
+        soundDropdown:EnableMouse(true)
+        if soundDropdown.SetBackdrop then
+            soundDropdown:SetBackdrop({
+                bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true, tileSize = 16, edgeSize = 12,
+                insets = { left = 4, right = 4, top = 4, bottom = 4 },
+            })
+        end
+    end
+
+    if soundDropdown._buttons then
+        for _, b in ipairs(soundDropdown._buttons) do b:Hide() end
+    end
+    soundDropdown._buttons = {}
+
+    local ROW_H, PAD = 18, 6
+    local maxW = 140
+    for i, preset in ipairs(presets) do
+        local btn = CreateFrame("Button", nil, soundDropdown)
+        btn:SetHeight(ROW_H)
+        btn:SetPoint("TOPLEFT", soundDropdown, "TOPLEFT", PAD, -PAD - (i - 1) * ROW_H)
+        btn:SetPoint("TOPRIGHT", soundDropdown, "TOPRIGHT", -PAD, -PAD - (i - 1) * ROW_H)
+
+        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.15)
+
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("LEFT", btn, "LEFT", 2, 0)
+        fs:SetText(preset.label)
+        local w = fs:GetStringWidth() + 20
+        if w > maxW then maxW = w end
+
+        btn:SetScript("OnClick", function()
+            addon.Storage:SetSetting("alertSoundID", preset.id)
+            PlaySound(preset.id)
+            local panel = tabs[TAB_SETTINGS]
+            if panel and panel.soundLabel then
+                panel.soundLabel:SetText("사운드: " .. preset.label)
+            end
+            soundDropdown:Hide()
+        end)
+        soundDropdown._buttons[i] = btn
+    end
+
+    soundDropdown:SetSize(math.min(maxW, 280), PAD * 2 + #presets * ROW_H)
+    soundDropdown:ClearAllPoints()
+    soundDropdown:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, -2)
+    soundDropdown:Show()
 end
 
 -- ── Tab 3: 미리보기 ───────────────────────────────────────────────────────────

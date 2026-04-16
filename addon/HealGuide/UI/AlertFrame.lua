@@ -63,10 +63,15 @@ function AlertFrame:_CreateSlot(index)
 
     local nameText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     nameText:SetPoint("LEFT",  icon,  "RIGHT", 8, 4)
-    nameText:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
+    nameText:SetPoint("RIGHT", frame, "RIGHT", -40, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     frame.nameText = nameText
+
+    local countdownText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    countdownText:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
+    countdownText:SetJustifyH("RIGHT")
+    frame.countdownText = countdownText
 
     frame.pulse = {
         active = false, phase = nil, elapsed = 0,
@@ -106,10 +111,12 @@ function AlertFrame:_CreateSlot(index)
         local remaining = self.fadeDuration - self.fadeElapsed
         if remaining <= 0 then
             self.inUse = false
+            self.countdownText:SetText("")
             self:Hide()
             return
         end
         self:SetAlpha(remaining < 0.5 and (remaining / 0.5) or 1.0)
+        self.countdownText:SetText(string.format("%.1fs", remaining))
     end)
 
     frame:Hide()
@@ -162,7 +169,7 @@ function AlertFrame:ShowAlert(spellID)
     slot:Show()
 
     if addon.Storage:GetSetting("soundEnabled") then
-        PlaySound(888)
+        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
     end
 
     if addon.Storage:GetSetting("ttsEnabled") then
