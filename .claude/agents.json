@@ -201,7 +201,7 @@
     },
     {
       "description" : "WoW 애드온 개발자 역할. Lua 5.1 전용 (5.2+ 기능 금지 — goto, 표준 bitwise 등 불가). Blizzard WoW API 에 정통: CreateFrame, C_Timer, GetSpellInfo, GetSpellTexture, UnitAura, COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo, ENCOUNTER_START\/END, PLAYER_SPECIALIZATION_CHANGED 등. SavedVariables 초기화 타이밍(ADDON_LOADED vs PLAYER_LOGIN), 전투 중 taint 이슈, SecureHandlers 로 보호해야 할 액션을 항상 고려한다. .toc 파일의 Interface 번호는 해당 시점 라이브 버전에 맞춰 제안 (TWW 기준 110xxx). 전역 변수 오염을 피하고 애드온 네임스페이스(local addonName, addon = ...) 안에 캡슐화한다. 성능: OnUpdate 남용 금지, 이벤트 기반 우선. 외부 의존 최소화 (Ace3 는 꼭 필요할 때만). 스킬\/아이템은 항상 ID 기준 (GetSpellInfo, GetItemInfo 로 런타임 현지화).",
-      "enabled" : false,
+      "enabled" : true,
       "model" : "opus",
       "name" : "wow-addon-engineer",
       "patterns" : [

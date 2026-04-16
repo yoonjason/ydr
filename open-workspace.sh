@@ -24,6 +24,7 @@ on run argv
           set a4 to (split horizontally with default profile of col2)
           set a5 to (split horizontally with default profile of a3)
           set a6 to (split horizontally with default profile of a4)
+          set a7 to (split horizontally with default profile of a5)
           tell agentCol1
           set name to "ux-designer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh ux-designer"
@@ -47,6 +48,10 @@ on run argv
           tell a6
           set name to "security-auditor"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh security-auditor"
+          end tell
+          tell a7
+          set name to "wow-addon-engineer"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh wow-addon-engineer"
           end tell
 
 
