@@ -2,20 +2,55 @@ local addonName, addon = ...
 addon.AlertFrame = {}
 local AlertFrame = addon.AlertFrame
 
-local frame = nil
+local MAX_SLOTS = 4
+local SLOT_GAP  = 4
+local slots     = {}
+local anchor    = nil
 
 function AlertFrame:Init()
-    local baseSize  = addon.Storage:GetSetting("iconBaseSize")  or 64
-    local pulseSize = addon.Storage:GetSetting("iconPulseSize") or 96
-
-    frame = CreateFrame("Frame", "HealGuideAlertFrame", UIParent)
-    frame:SetSize(pulseSize + 192, pulseSize + 12)
-    frame:SetFrameStrata("HIGH")
-    frame:SetFrameLevel(100)
+    anchor = CreateFrame("Frame", "HealGuideAlertAnchor", UIParent)
+    anchor:SetSize(1, 1)
+    anchor:SetFrameStrata("HIGH")
 
     local pos = addon.Storage:GetSetting("alertFramePoint")
         or { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 }
-    frame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+    anchor:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+
+    anchor:SetMovable(true)
+    anchor:EnableMouse(true)
+    anchor:RegisterForDrag("LeftButton")
+    anchor:SetScript("OnDragStart", function(self)
+        if self.editMode or not addon.Storage:GetSetting("locked") then
+            self:StartMoving()
+        end
+    end)
+    anchor:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relPoint, x, y = self:GetPoint()
+        addon.Storage:SetSetting("alertFramePoint", {
+            point = point, relPoint = relPoint, x = x, y = y,
+        })
+        if addon.MainFrame and addon.MainFrame.UpdateCoordLabel then
+            addon.MainFrame:UpdateCoordLabel(x, y)
+        end
+    end)
+
+    anchor.editMode = false
+
+    for i = 1, MAX_SLOTS do
+        slots[i] = self:_CreateSlot(i)
+    end
+end
+
+function AlertFrame:_CreateSlot(index)
+    local baseSize  = addon.Storage:GetSetting("iconBaseSize")  or 64
+    local pulseSize = addon.Storage:GetSetting("iconPulseSize") or 96
+
+    local frame = CreateFrame("Frame", "HealGuideAlertSlot" .. index, UIParent)
+    frame:SetSize(pulseSize + 192, pulseSize + 12)
+    frame:SetFrameStrata("HIGH")
+    frame:SetFrameLevel(100)
+    frame:SetPoint("TOP", anchor, "TOP", 0, -((index - 1) * (pulseSize + 12 + SLOT_GAP)))
 
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -33,51 +68,23 @@ function AlertFrame:Init()
     nameText:SetWordWrap(false)
     frame.nameText = nameText
 
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
-        -- 편집 모드(= /hg 창 열림)이거나 잠금 해제 상태면 드래그 허용
-        if self.editMode or not addon.Storage:GetSetting("locked") then
-            self:StartMoving()
-        end
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        addon.Storage:SetSetting("alertFramePoint", {
-            point = point, relPoint = relPoint, x = x, y = y,
-        })
-        if addon.MainFrame and addon.MainFrame.UpdateCoordLabel then
-            addon.MainFrame:UpdateCoordLabel(x, y)
-        end
-    end)
-
-    -- 펄스 애니메이션 상태
     frame.pulse = {
-        active   = false,
-        phase    = nil,    -- "up" | "down"
-        elapsed  = 0,
-        fromSize = baseSize,
-        toSize   = pulseSize,
-        duration = 0,
+        active = false, phase = nil, elapsed = 0,
+        fromSize = baseSize, toSize = pulseSize, duration = 0,
     }
-
     frame.fadeElapsed  = 0
     frame.fadeDuration = 0
+    frame.inUse        = false
 
     frame:SetScript("OnUpdate", function(self, dt)
-        if not self:IsShown() then return end
-        -- 편집 모드에서는 페이드/펄스 건너뛰고 고정 표시
-        if self.editMode then return end
+        if not self:IsShown() or not self.inUse then return end
+        if anchor and anchor.editMode then return end
 
-        -- 펄스 애니메이션 (base → pulse → base)
         if self.pulse.active then
             self.pulse.elapsed = self.pulse.elapsed + dt
             local t = math.min(self.pulse.elapsed / self.pulse.duration, 1.0)
             local from, to = self.pulse.fromSize, self.pulse.toSize
-            local cur = math.floor(from + (to - from) * t)
-            self.icon:SetSize(cur, cur)
+            self.icon:SetSize(math.floor(from + (to - from) * t), math.floor(from + (to - from) * t))
 
             if t >= 1.0 then
                 if self.pulse.phase == "up" then
@@ -95,51 +102,32 @@ function AlertFrame:Init()
             end
         end
 
-        -- 페이드아웃
         self.fadeElapsed = self.fadeElapsed + dt
-        local remaining  = self.fadeDuration - self.fadeElapsed
+        local remaining = self.fadeDuration - self.fadeElapsed
         if remaining <= 0 then
+            self.inUse = false
             self:Hide()
             return
         end
         self:SetAlpha(remaining < 0.5 and (remaining / 0.5) or 1.0)
     end)
 
-    frame.editMode = false
     frame:Hide()
+    return frame
 end
 
--- 편집 모드: /hg 창이 열렸을 때 위치 조정용 플레이스홀더로 표시
-function AlertFrame:EnterEditMode()
-    if not frame then return end
-    frame.editMode       = true
-    frame.pulse.active   = false
-    frame.fadeElapsed    = 0
-    frame.fadeDuration   = 0
-
-    local baseSize = addon.Storage:GetSetting("iconBaseSize") or 64
-    frame.icon:SetSize(baseSize, baseSize)
-    frame.icon:SetTexture(134400) -- 물음표 아이콘(플레이스홀더)
-    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    frame.nameText:SetText("|cffffcc00알림 위치 (드래그)|r")
-    frame.nameText:Show()
-    frame:SetAlpha(1.0)
-    frame:Show()
+function AlertFrame:_FindAvailableSlot()
+    for i = 1, MAX_SLOTS do
+        if not slots[i].inUse then return slots[i] end
+    end
+    return slots[MAX_SLOTS]
 end
 
-function AlertFrame:ExitEditMode()
-    if not frame then return end
-    frame.editMode = false
-    frame:Hide()
-end
-
-function AlertFrame:IsEditMode()
-    return frame and frame.editMode == true
-end
-
--- B1: C_Spell.GetSpellInfo 사용 (TWW 11.2+ deprecated API 교체)
 function AlertFrame:ShowAlert(spellID)
-    if not frame then return end
+    if not anchor then return end
+
+    local slot = self:_FindAvailableSlot()
+    if not slot then return end
 
     local spellInfo = C_Spell.GetSpellInfo(spellID)
     local name      = spellInfo and spellInfo.name   or tostring(spellID)
@@ -147,31 +135,31 @@ function AlertFrame:ShowAlert(spellID)
 
     local showName = addon.Storage:GetSetting("showSpellName")
     if showName then
-        frame.nameText:SetText(name)
-        frame.nameText:Show()
+        slot.nameText:SetText(name)
+        slot.nameText:Show()
     else
-        frame.nameText:Hide()
+        slot.nameText:Hide()
     end
 
-    frame.icon:SetTexture(texture)
-    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    slot.icon:SetTexture(texture)
+    slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    -- 이전 애니메이션 취소 후 재시작
     local baseSize  = addon.Storage:GetSetting("iconBaseSize")  or 64
     local pulseSize = addon.Storage:GetSetting("iconPulseSize") or 96
 
-    frame.icon:SetSize(baseSize, baseSize)
-    frame.pulse.active   = true
-    frame.pulse.phase    = "up"
-    frame.pulse.elapsed  = 0
-    frame.pulse.fromSize = baseSize
-    frame.pulse.toSize   = pulseSize
-    frame.pulse.duration = 0.15
+    slot.icon:SetSize(baseSize, baseSize)
+    slot.pulse.active   = true
+    slot.pulse.phase    = "up"
+    slot.pulse.elapsed  = 0
+    slot.pulse.fromSize = baseSize
+    slot.pulse.toSize   = pulseSize
+    slot.pulse.duration = 0.15
 
-    frame.fadeElapsed  = 0
-    frame.fadeDuration = addon.Storage:GetSetting("displaySeconds") or 2.0
-    frame:SetAlpha(1.0)
-    frame:Show()
+    slot.fadeElapsed  = 0
+    slot.fadeDuration = addon.Storage:GetSetting("displaySeconds") or 2.0
+    slot.inUse        = true
+    slot:SetAlpha(1.0)
+    slot:Show()
 
     if addon.Storage:GetSetting("soundEnabled") then
         PlaySound(888)
@@ -182,37 +170,68 @@ function AlertFrame:ShowAlert(spellID)
     end
 end
 
--- ShowAlert 별칭 (미리보기 탭에서 사용)
 AlertFrame.ShowReminder = AlertFrame.ShowAlert
 
--- TTS 발화. C_VoiceChat 사용 불가 환경이면 사일런트 폴백.
+function AlertFrame:EnterEditMode()
+    if not anchor then return end
+    anchor.editMode = true
+
+    local baseSize = addon.Storage:GetSetting("iconBaseSize") or 64
+    local slot = slots[1]
+    if slot then
+        slot.inUse = false
+        slot.pulse.active = false
+        slot.icon:SetSize(baseSize, baseSize)
+        slot.icon:SetTexture(134400)
+        slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        slot.nameText:SetText("|cffffcc00알림 위치 (드래그)|r")
+        slot.nameText:Show()
+        slot:SetAlpha(1.0)
+        slot:Show()
+    end
+end
+
+function AlertFrame:ExitEditMode()
+    if not anchor then return end
+    anchor.editMode = false
+    for _, slot in ipairs(slots) do
+        if not slot.inUse then slot:Hide() end
+    end
+end
+
+function AlertFrame:IsEditMode()
+    return anchor and anchor.editMode == true
+end
+
 function AlertFrame:_SpeakTTS(text)
     if not C_VoiceChat or not C_VoiceChat.SpeakText then return end
     local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
     local rate    = addon.Storage:GetSetting("ttsRate")    or 5
     local volume  = addon.Storage:GetSetting("ttsVolume")  or 100
-    -- Enum.VoiceTtsDestination 가 제거된 클라이언트 대비 숫자 상수(1 = LocalPlayback) 폴백
     local dest = (Enum and Enum.VoiceTtsDestination and Enum.VoiceTtsDestination.LocalPlayback) or 1
     pcall(C_VoiceChat.SpeakText, voiceID, text, dest, rate, volume)
 end
 
 function AlertFrame:ApplyIconSize()
-    if not frame then return end
+    if not anchor then return end
     local baseSize  = addon.Storage:GetSetting("iconBaseSize")  or 64
     local pulseSize = addon.Storage:GetSetting("iconPulseSize") or 96
-    -- 애니메이션 미진행 시에만 base 크기 즉시 반영
-    if not frame.pulse.active then
-        frame.icon:SetSize(baseSize, baseSize)
+    for i, slot in ipairs(slots) do
+        if not slot.pulse.active then
+            slot.icon:SetSize(baseSize, baseSize)
+        end
+        slot:SetSize(pulseSize + 192, pulseSize + 12)
+        slot:ClearAllPoints()
+        slot:SetPoint("TOP", anchor, "TOP", 0, -((i - 1) * (pulseSize + 12 + SLOT_GAP)))
     end
-    frame:SetSize(pulseSize + 192, pulseSize + 12)
 end
 
 function AlertFrame:ResetPosition()
-    if not frame then return end
+    if not anchor then return end
     local defaultPos = { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 }
     addon.Storage:SetSetting("alertFramePoint", defaultPos)
-    frame:ClearAllPoints()
-    frame:SetPoint(defaultPos.point, UIParent, defaultPos.relPoint, defaultPos.x, defaultPos.y)
+    anchor:ClearAllPoints()
+    anchor:SetPoint(defaultPos.point, UIParent, defaultPos.relPoint, defaultPos.x, defaultPos.y)
     if addon.MainFrame and addon.MainFrame.UpdateCoordLabel then
         addon.MainFrame:UpdateCoordLabel(defaultPos.x, defaultPos.y)
     end

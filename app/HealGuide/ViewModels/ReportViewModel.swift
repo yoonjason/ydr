@@ -22,6 +22,10 @@ final class ReportViewModel: ObservableObject {
     }
     @Published var isSecretVisible: Bool = false
     @Published private(set) var state: ViewState = .idle
+    @Published var wowAddonsPath: String = "" {
+        didSet { persistWowAddonsPath() }
+    }
+    @Published var lastSaveResult: String?
 
     private var suppressPersist: Bool = false
 
@@ -126,7 +130,39 @@ final class ReportViewModel: ObservableObject {
         if blizzardClientSecret.isEmpty, let secret = blizzardKeychain.load() {
             blizzardClientSecret = secret
         }
+        if wowAddonsPath.isEmpty {
+            wowAddonsPath = UserDefaults.standard.string(forKey: "wowAddonsPath") ?? ""
+        }
         refreshBaselineIfNeeded()
+    }
+
+    private func persistWowAddonsPath() {
+        guard !suppressPersist else { return }
+        UserDefaults.standard.set(wowAddonsPath, forKey: "wowAddonsPath")
+    }
+
+    var canSaveToFile: Bool {
+        !wowAddonsPath.isEmpty
+    }
+
+    func saveToFile() {
+        guard case .success(let output, _) = state else { return }
+        let directory = (wowAddonsPath as NSString).appendingPathComponent("HealGuide/Data")
+        let filePath = (directory as NSString).appendingPathComponent("HealGuide_Generated.lua")
+
+        do {
+            try FileManager.default.createDirectory(
+                atPath: directory,
+                withIntermediateDirectories: true
+            )
+            let fileContent = output.luaText.replacingOccurrences(of: "return {", with: "HealGuide_Generated = {", options: [], range: output.luaText.startIndex..<output.luaText.index(output.luaText.startIndex, offsetBy: min(output.luaText.count, 10)))
+            try fileContent.write(toFile: filePath, atomically: true, encoding: .utf8)
+            lastSaveResult = "저장 완료: \(filePath)"
+            logger.info("Lua 파일 저장: \(filePath)")
+        } catch {
+            lastSaveResult = "저장 실패: \(error.localizedDescription)"
+            logger.error("Lua 파일 저장 실패: \(error)")
+        }
     }
 
     func refreshBaselineIfNeeded() {

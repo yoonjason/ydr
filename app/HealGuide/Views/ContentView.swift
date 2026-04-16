@@ -48,6 +48,38 @@ struct ContentView: View {
             .padding(8)
         }
         blizzardCredentialsSection
+        wowPathSection
+    }
+
+    @ViewBuilder
+    private var wowPathSection: some View {
+        DisclosureGroup("WoW AddOns 경로 (파일 직접 저장)") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Lua 파일을 직접 저장하려면 WoW AddOns 폴더 경로를 지정하세요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    TextField("/Applications/World of Warcraft/_retail_/Interface/AddOns", text: $viewModel.wowAddonsPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("선택") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        panel.message = "WoW Interface/AddOns 폴더를 선택하세요"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            viewModel.wowAddonsPath = url.path
+                        }
+                    }
+                }
+                if let result = viewModel.lastSaveResult {
+                    Text(result)
+                        .font(.caption2)
+                        .foregroundStyle(result.hasPrefix("저장 완료") ? .green : .red)
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 
     @ViewBuilder
@@ -227,6 +259,10 @@ struct ContentView: View {
                 Spacer()
                 Button("클립보드에 복사") { viewModel.copyToClipboard() }
                     .buttonStyle(.borderedProminent)
+                if viewModel.canSaveToFile {
+                    Button("파일로 저장") { viewModel.saveToFile() }
+                        .buttonStyle(.bordered)
+                }
             }
 
             if !output.bossNameMap.isEmpty {

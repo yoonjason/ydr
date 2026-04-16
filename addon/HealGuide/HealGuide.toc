@@ -6,6 +6,7 @@
 ## SavedVariablesPerCharacter: HealGuideCharDB
 
 Data/DungeonMappings.lua
+Data/HealGuide_Generated.lua
 Core/Init.lua
 Core/Storage.lua
 Core/SpecMatcher.lua

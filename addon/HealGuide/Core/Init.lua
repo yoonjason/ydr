@@ -12,6 +12,19 @@ local eventFrame = CreateFrame("Frame")
 -- 전투 로그 전용 분리 프레임 (추가 격리)
 local clFrame    = CreateFrame("Frame")
 
+local function autoImportGeneratedData()
+    if type(HealGuide_Generated) ~= "table" then return end
+    local data = HealGuide_Generated
+    if not data.spec or not data.bosses then return end
+
+    local ok, count = pcall(function()
+        return addon.ImportParser:ImportFromTable(data)
+    end)
+    if ok and count and count > 0 then
+        print(string.format("|cff88ff88[HG]|r 자동 import: %s (%d 보스)", data.dungeonName or "?", count))
+    end
+end
+
 local function onAddonLoaded(name)
     if name ~= addonName then return end
     addon.Storage:Init()
@@ -21,6 +34,7 @@ local function onAddonLoaded(name)
     if addon.EncounterTimelineBridge and addon.EncounterTimelineBridge.Init then
         addon.EncounterTimelineBridge:Init()
     end
+    autoImportGeneratedData()
     print("|cff00ff00HealGuide|r 로드 완료. /hg 로 설정")
 end
 
@@ -43,6 +57,11 @@ local function onEncounterEnd()
 end
 
 local function onCombatLog()
+    local timestamp, subevent, _, sourceGUID, _, sourceFlags, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+    -- 플레이어 캐스트 추적 (쿨다운 스킵용)
+    if subevent == "SPELL_CAST_SUCCESS" and sourceGUID == UnitGUID("player") and spellID then
+        addon.EncounterEngine:OnPlayerCast(spellID)
+    end
     addon.EncounterEngine:OnCombatLog(CombatLogGetCurrentEventInfo())
 end
 
@@ -55,6 +74,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
+eventFrame:RegisterEvent("ENCOUNTER_PHASE_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
@@ -71,6 +91,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         onEncounterStart(...)
     elseif event == "ENCOUNTER_END" then
         onEncounterEnd()
+    elseif event == "ENCOUNTER_PHASE_UPDATE" then
+        local phase = ...
+        addon.EncounterEngine:OnPhaseUpdate(phase)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         onZoneChanged()
     end

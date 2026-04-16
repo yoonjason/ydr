@@ -10,8 +10,12 @@ EncounterEngine.activeBossData     = nil
 EncounterEngine.activeSpecData     = nil
 EncounterEngine.encounterStartTime = nil
 EncounterEngine.cachedAlertMode    = nil   -- N2: OnEncounterStart 시 1회 캐싱
+EncounterEngine.bossUnitID         = nil   -- 보스 유닛 ID (boss1~boss5)
+EncounterEngine.currentPhase       = 1     -- ENCOUNTER_PHASE_UPDATE 추적
 EncounterEngine.pendingTimers      = {}
 EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → timestamp
+EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
+EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -62,7 +66,10 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self.encounterStartTime = GetTime()
     self.cachedAlertMode    = addon.Storage:GetSetting("alertMode")  -- N2
 
-    addon.dprint("ENCOUNTER_START", encounterName, "모드:", self.cachedAlertMode, "스펙:", activeSpec)
+    self.currentPhase = 1
+    self.bossUnitID = self:_FindBossUnit()
+
+    addon.dprint("ENCOUNTER_START", encounterName, "모드:", self.cachedAlertMode, "스펙:", activeSpec, "보스유닛:", self.bossUnitID or "없음")
 
     if self.cachedAlertMode == "absolute" or self.cachedAlertMode == "hybrid" then
         self:ScheduleTimeline(specData.timeline)
@@ -70,7 +77,15 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
 end
 
 function EncounterEngine:OnEncounterEnd()
+    local s = self.stats
+    if s.fired > 0 or s.conditionSkipped > 0 or s.cooldownSkipped > 0 then
+        print(string.format(
+            "|cff88ff88[HG]|r 전투 요약: 알림 %d개 | 조건 스킵 %d | 쿨다운 스킵 %d | 실제 사용 %d",
+            s.fired, s.conditionSkipped, s.cooldownSkipped, s.used
+        ))
+    end
     self:Cancel()
+    self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
 end
 
 function EncounterEngine:Cancel()
@@ -79,11 +94,14 @@ function EncounterEngine:Cancel()
     end
     self.pendingTimers      = {}
     self.recentAlerts       = {}
+    self.playerCooldowns    = {}
     self.activeEncounterID  = nil
     self.activeBossData     = nil
     self.activeSpecData     = nil
     self.encounterStartTime = nil
     self.cachedAlertMode    = nil
+    self.bossUnitID         = nil
+    self.currentPhase       = 1
     if addon.EncounterTimelineBridge then
         addon.EncounterTimelineBridge:Reset()
     end
@@ -104,6 +122,8 @@ function EncounterEngine:ScheduleTimeline(timeline)
             local t = C_Timer.NewTimer(delay, function()
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                     self:TriggerAlert(spellID, "absolute")
+                else
+                    self.stats.conditionSkipped = self.stats.conditionSkipped + 1
                 end
             end)
             table.insert(self.pendingTimers, t)
@@ -157,6 +177,8 @@ function EncounterEngine:OnCombatLog(
         local t = C_Timer.NewTimer(delay, function()
             if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                 self:TriggerAlert(playerSpellID, "reactive")
+            else
+                self.stats.conditionSkipped = self.stats.conditionSkipped + 1
             end
         end)
         table.insert(self.pendingTimers, t)
@@ -177,8 +199,55 @@ function EncounterEngine:TriggerAlert(spellID, source)
         self.recentAlerts[spellID] = now
     end
 
+    -- 쿨다운 추적: 플레이어가 최근 이 스킬을 사용했으면 재알림 스킵
+    local lastUsed = self.playerCooldowns[spellID]
+    if lastUsed then
+        local start, duration, enable = GetSpellCooldown(spellID)
+        if start and start > 0 and duration and duration > 1.5 and enable == 1 then
+            addon.dprint("쿨다운 스킵:", spellID, "잔여:", string.format("%.1f", start + duration - GetTime()))
+            self.stats.cooldownSkipped = self.stats.cooldownSkipped + 1
+            return
+        end
+    end
+
+    self.stats.fired = self.stats.fired + 1
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
     addon.AlertFrame:ShowAlert(spellID)
+end
+
+function EncounterEngine:OnPlayerCast(spellID)
+    if not self.activeEncounterID then return end
+    self.playerCooldowns[spellID] = GetTime()
+    self.stats.used = self.stats.used + 1
+end
+
+function EncounterEngine:_FindBossUnit()
+    for i = 1, 5 do
+        local unit = "boss" .. i
+        if UnitExists(unit) and not UnitIsDead(unit) then
+            return unit
+        end
+    end
+    return nil
+end
+
+function EncounterEngine:GetBossHP()
+    local unit = self.bossUnitID
+    if not unit or not UnitExists(unit) then
+        unit = self:_FindBossUnit()
+        self.bossUnitID = unit
+    end
+    if not unit then return nil end
+    local maxHP = UnitHealthMax(unit)
+    if not maxHP or maxHP <= 0 then return nil end
+    return UnitHealth(unit) / maxHP
+end
+
+function EncounterEngine:OnPhaseUpdate(phase)
+    if phase and phase > 0 then
+        self.currentPhase = phase
+        addon.dprint("페이즈 변경:", phase)
+    end
 end
 
 function EncounterEngine:OnZoneChanged()

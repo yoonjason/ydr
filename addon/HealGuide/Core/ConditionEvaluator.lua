@@ -24,6 +24,8 @@ local ALLOWED_FIELDS = {
     spellOnCooldown      = true,
     encounterTimeElapsed = true,
     raidSize             = true,
+    bossHP               = true,
+    bossPhase            = true,
 }
 
 local Collector = {}
@@ -111,6 +113,18 @@ function Collector.raidSize()
     return GetNumGroupMembers()
 end
 
+function Collector.bossHP()
+    local engine = addon.EncounterEngine
+    if not engine then return nil end
+    return engine:GetBossHP()
+end
+
+function Collector.bossPhase()
+    local engine = addon.EncounterEngine
+    if not engine then return nil end
+    return engine.currentPhase or 1
+end
+
 local function collectRequiredFields(node, fields)
     if not node then return end
     if node.field then
@@ -143,6 +157,10 @@ function Evaluator:BuildContext(condition)
             context[field] = Collector.encounterTimeElapsed()
         elseif field == "raidSize" then
             context[field] = Collector.raidSize()
+        elseif field == "bossHP" then
+            context[field] = Collector.bossHP()
+        elseif field == "bossPhase" then
+            context[field] = Collector.bossPhase()
         end
         -- spellOnCooldown 은 node.spellID 가 노드마다 다르므로 리프 평가 시점에 직접 호출
     end

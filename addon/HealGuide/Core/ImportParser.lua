@@ -137,3 +137,24 @@ function ImportParser:Parse(input)
 
     return result, nil
 end
+
+function ImportParser:ImportFromTable(data)
+    if type(data) ~= "table" then return 0 end
+    if data.version ~= 1 then return 0 end
+    if type(data.dungeonName) ~= "string" or data.dungeonName == "" then return 0 end
+    if type(data.spec) ~= "string" or not VALID_SPECS[data.spec] then return 0 end
+    if type(data.bosses) ~= "table" then return 0 end
+
+    local bossCount = 0
+    for _ in pairs(data.bosses) do bossCount = bossCount + 1 end
+    if bossCount == 0 then return 0 end
+
+    addon.Storage:AddDungeon({
+        dungeonName = data.dungeonName,
+        spec        = data.spec,
+        bosses      = data.bosses,
+        sourceURL   = data.sourceURL or "",
+    })
+
+    return bossCount
+end
