@@ -11,6 +11,7 @@ struct SpellCatalogRecord: Codable, Equatable, Hashable {
     let spellID: Int
     var nameKR: String
     var nameEN: String
+    var iconURL: String?
     var firstSeenAt: Date
     var source: Source
 

@@ -20,6 +20,10 @@ import os
 protocol BlizzardGameDataAPIClient {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
     func fetchSpell(spellID: Int, locale: String, token: String) async throws -> BlizzardSpellInfo
+    func fetchSpellMedia(spellID: Int, token: String) async throws -> String?
+    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> [BossAbilityInfo]
+    func fetchJournalInstance(instanceID: Int, locale: String, token: String) async throws -> JournalInstanceInfo
+    func fetchPlayableSpecialization(specID: Int, token: String) async throws -> SpecAbilityInfo
 }
 
 struct BlizzardSpellInfo: Equatable {
@@ -122,5 +126,163 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
             logger.error("Blizzard spell decode failed for \(spellID, privacy: .public)")
             throw AppError.decodingFailed
         }
+    }
+
+    func fetchSpellMedia(spellID: Int, token: String) async throws -> String? {
+        let url = try buildURL(path: "/data/wow/media/spell/\(spellID)", queryItems: [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+        ])
+        let data = try await performGet(url: url, token: token)
+
+        struct MediaResponse: Decodable {
+            let assets: [MediaAsset]?
+        }
+        struct MediaAsset: Decodable {
+            let key: String
+            let value: String
+        }
+
+        let decoded = try JSONDecoder().decode(MediaResponse.self, from: data)
+        return decoded.assets?.first(where: { $0.key == "icon" })?.value
+    }
+
+    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> [BossAbilityInfo] {
+        let url = try buildURL(path: "/data/wow/journal-encounter/\(encounterID)", queryItems: [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ])
+        let data = try await performGet(url: url, token: token)
+
+        struct EncounterResponse: Decodable {
+            let sections: [EncounterSection]?
+        }
+        struct EncounterSection: Decodable {
+            let spellID: SpellRef?
+            let title: String?
+            let sections: [EncounterSection]?
+
+            enum CodingKeys: String, CodingKey {
+                case spellID = "spell"
+                case title
+                case sections
+            }
+        }
+        struct SpellRef: Decodable {
+            let id: Int
+            let name: String
+        }
+
+        let decoded = try JSONDecoder().decode(EncounterResponse.self, from: data)
+        var abilities: [BossAbilityInfo] = []
+        func walk(_ sections: [EncounterSection]?) {
+            guard let sections else { return }
+            for section in sections {
+                if let spell = section.spellID {
+                    abilities.append(BossAbilityInfo(
+                        spellID: spell.id,
+                        name: spell.name,
+                        description: section.title ?? ""
+                    ))
+                }
+                walk(section.sections)
+            }
+        }
+        walk(decoded.sections)
+        return abilities
+    }
+
+    func fetchJournalInstance(instanceID: Int, locale: String, token: String) async throws -> JournalInstanceInfo {
+        let url = try buildURL(path: "/data/wow/journal-instance/\(instanceID)", queryItems: [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ])
+        let data = try await performGet(url: url, token: token)
+
+        struct InstanceResponse: Decodable {
+            let id: Int
+            let name: String
+            let encounters: [EncounterRef]?
+        }
+        struct EncounterRef: Decodable {
+            let id: Int
+            let name: String
+        }
+
+        let decoded = try JSONDecoder().decode(InstanceResponse.self, from: data)
+        let encounters = (decoded.encounters ?? []).map {
+            JournalEncounterSummary(encounterID: $0.id, name: $0.name)
+        }
+        return JournalInstanceInfo(instanceID: decoded.id, name: decoded.name, encounters: encounters)
+    }
+
+    func fetchPlayableSpecialization(specID: Int, token: String) async throws -> SpecAbilityInfo {
+        let url = try buildURL(path: "/data/wow/playable-specialization/\(specID)", queryItems: [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+            URLQueryItem(name: "locale", value: "en_US"),
+        ])
+        let data = try await performGet(url: url, token: token)
+
+        struct SpecResponse: Decodable {
+            let id: Int
+            let name: String
+            let talentTiers: [TalentTier]?
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case name
+                case talentTiers = "talent_tiers"
+            }
+        }
+        struct TalentTier: Decodable {
+            let talents: [TalentEntry]?
+        }
+        struct TalentEntry: Decodable {
+            let spell: SpellRef?
+        }
+        struct SpellRef: Decodable {
+            let id: Int
+        }
+
+        let decoded = try JSONDecoder().decode(SpecResponse.self, from: data)
+        var spellIDs: [Int] = []
+        for tier in decoded.talentTiers ?? [] {
+            for talent in tier.talents ?? [] {
+                if let spell = talent.spell {
+                    spellIDs.append(spell.id)
+                }
+            }
+        }
+        return SpecAbilityInfo(specID: decoded.id, specName: decoded.name, spellIDs: spellIDs)
+    }
+
+    // MARK: - Helpers
+
+    private func buildURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "\(region).api.blizzard.com"
+        components.path = path
+        components.queryItems = queryItems
+        guard let url = components.url else {
+            throw AppError.networkError("Invalid Blizzard API URL: \(path)")
+        }
+        return url
+    }
+
+    private func performGet(url: URL, token: String) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AppError.networkError("Invalid response")
+        }
+        if http.statusCode == 404 {
+            throw AppError.networkError("Not found: \(url.path)")
+        }
+        if http.statusCode != 200 {
+            throw AppError.networkError("Blizzard API status \(http.statusCode)")
+        }
+        return data
     }
 }

@@ -440,11 +440,15 @@ final class ReportViewModel: ObservableObject {
                 ) {
                     nameEN = enInfo.name
                 }
+                let iconURL = try? await blizzardAPIClient.fetchSpellMedia(
+                    spellID: spell.id, token: token
+                )
 
                 records.append(SpellCatalogRecord(
                     spellID: spell.id,
                     nameKR: nameKR,
                     nameEN: nameEN,
+                    iconURL: iconURL,
                     firstSeenAt: now,
                     source: source
                 ))

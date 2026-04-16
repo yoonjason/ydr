@@ -182,6 +182,15 @@ struct ContentView: View {
                                 set: { _ in viewModel.toggleSpell(entry.id) }
                             )) {
                                 HStack {
+                                    if let iconURL = entry.iconURL, let url = URL(string: iconURL) {
+                                        AsyncImage(url: url) { image in
+                                            image.resizable()
+                                        } placeholder: {
+                                            Color.gray.opacity(0.3)
+                                        }
+                                        .frame(width: 20, height: 20)
+                                        .cornerRadius(4)
+                                    }
                                     Text(entry.nameKR)
                                     Text("(\(entry.nameEN))")
                                         .font(.caption)
