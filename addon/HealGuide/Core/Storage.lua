@@ -15,7 +15,9 @@ local DEFAULT_SETTINGS = {
     ttsVoiceID      = 0,
     ttsRate         = 5,
     ttsVolume       = 100,
-    leadTime        = 1.5,  -- 모든 알림을 N초 앞당김 (반응 시간 확보)
+    leadTime        = 1.5,
+    debugMode       = false,
+    conditionFallback = true,  -- 조건 평가 실패 시 true=발화, false=스킵
 }
 
 function Storage:Init()

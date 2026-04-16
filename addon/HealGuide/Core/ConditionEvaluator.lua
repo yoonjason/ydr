@@ -232,24 +232,31 @@ function Evaluator:Evaluate(node, context, depth)
 end
 
 -- condition = nil → 무조건 true (하위 호환)
--- 평가 실패(nil) → fallback 적용. fallback=false 명시 시 skip, 기본은 fire.
+-- 평가 실패(nil) → fallback 적용.
+-- fallback 우선순위: entry-level 인자 > Storage conditionFallback 설정.
 function Evaluator:ShouldFire(condition, fallback)
     if condition == nil then return true end
+
+    local function resolveFallback()
+        if fallback ~= nil then return fallback end
+        if addon.Storage then return addon.Storage:GetSetting("conditionFallback") end
+        return true
+    end
 
     local ok, context = pcall(function() return self:BuildContext(condition) end)
     if not ok then
         addon.dprint("ConditionEvaluator: BuildContext 실패, fallback 적용")
-        return fallback ~= false
+        return resolveFallback() and true or false
     end
 
     local ok2, result = pcall(function() return self:Evaluate(condition, context, 0) end)
     if not ok2 then
         addon.dprint("ConditionEvaluator: Evaluate 예외, fallback 적용")
-        return fallback ~= false
+        return resolveFallback() and true or false
     end
     if result == nil then
         addon.dprint("ConditionEvaluator: 평가 결과 nil, fallback 적용")
-        return fallback ~= false
+        return resolveFallback() and true or false
     end
     return result
 end

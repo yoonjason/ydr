@@ -560,6 +560,42 @@ function MainFrame:_CreateSettingsTab(panel)
     end
     y = y - 30
 
+    -- ── 조건 엔진 ───────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "조건 엔진", 8, y)
+    y = y - 22
+
+    local fallbackCB = self:_MakeCheckbox("HGTabFallbackCB", "조건 평가 실패 시 발화 (기본: ON)", content, 8, y)
+    fallbackCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("조건 Fallback", 1, 1, 1)
+        GameTooltip:AddLine("ON: 조건 평가 실패 시 알림 발화 (안전 모드)\nOFF: 조건 평가 실패 시 알림 생략", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    fallbackCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    fallbackCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("conditionFallback", self:GetChecked() and true or false)
+    end)
+    panel.fallbackCB = fallbackCB
+    y = y - 32
+
+    -- ── 개발자 ───────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "개발자", 8, y)
+    y = y - 22
+
+    local debugCB = self:_MakeCheckbox("HGTabDebugCB", "디버그 로그", content, 8, y)
+    debugCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("디버그 모드", 1, 1, 1)
+        GameTooltip:AddLine("|cff888888[HG]|r 디버그 메시지를 채팅창에 표시합니다.", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    debugCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    debugCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("debugMode", self:GetChecked() and true or false)
+    end)
+    panel.debugCB = debugCB
+    y = y - 30
+
     content:SetHeight(math.abs(y) + 16)
 end
 
@@ -586,6 +622,9 @@ function MainFrame:_RefreshSettings()
     for _, btn in ipairs(panel.modeBtns) do
         btn:SetChecked(btn._mode == mode)
     end
+
+    panel.fallbackCB:SetChecked(s:GetSetting("conditionFallback") and true or false)
+    panel.debugCB:SetChecked(s:GetSetting("debugMode") and true or false)
 
     self:_RefreshVoiceLabel()
     self:_UpdateTTSGroupState()

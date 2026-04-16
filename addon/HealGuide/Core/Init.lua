@@ -1,10 +1,10 @@
 local addonName, addon = ...
 -- S1: 전역 HealGuide 제거 — 다른 파일은 모두 local addon 참조
 
-local DEBUG = true
-
 addon.dprint = function(...)
-    if DEBUG then print("|cff888888[HG]|r", ...) end
+    if addon.Storage and addon.Storage:GetSetting("debugMode") then
+        print("|cff888888[HG]|r", ...)
+    end
 end
 
 -- 메인 이벤트 프레임: 부모 없이 생성 (12.0에서 UIParent 자식 + COMBAT_LOG_EVENT_UNFILTERED 조합이 FORBIDDEN 트리거)
@@ -179,10 +179,17 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         else
             print("|cff00ff00HealGuide|r 사용법: /hg label <on|off>")
         end
+    elseif cmd == "debug" then
+        local current = addon.Storage:GetSetting("debugMode")
+        addon.Storage:SetSetting("debugMode", not current)
+        print("|cff00ff00HealGuide|r 디버그: " .. (not current and "ON" or "OFF"))
+        if addon.MainFrame._RefreshSettings then
+            addon.MainFrame:_RefreshSettings()
+        end
     else
         print("|cff00ff00HealGuide|r 명령어: /hg, /hg import, /hg test <encID>, " ..
               "/hg lock, /hg mode <reactive|absolute|hybrid>, " ..
               "/hg size <32-128>, /hg pulse <48-160>, /hg lead <0.0-5.0>, " ..
-              "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>")
+              "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>, /hg debug")
     end
 end
