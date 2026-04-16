@@ -25,7 +25,11 @@ final class ReportViewModel: ObservableObject {
     @Published var wowAddonsPath: String = "" {
         didSet { persistWowAddonsPath() }
     }
+    @Published var wtfCharacterPath: String = "" {
+        didSet { persistWtfCharacterPath() }
+    }
     @Published var lastSaveResult: String?
+    @Published var combatHistory: [CombatRecord] = []
 
     private var suppressPersist: Bool = false
 
@@ -133,6 +137,9 @@ final class ReportViewModel: ObservableObject {
         if wowAddonsPath.isEmpty {
             wowAddonsPath = UserDefaults.standard.string(forKey: "wowAddonsPath") ?? ""
         }
+        if wtfCharacterPath.isEmpty {
+            wtfCharacterPath = UserDefaults.standard.string(forKey: "wtfCharacterPath") ?? ""
+        }
         refreshBaselineIfNeeded()
     }
 
@@ -141,9 +148,13 @@ final class ReportViewModel: ObservableObject {
         UserDefaults.standard.set(wowAddonsPath, forKey: "wowAddonsPath")
     }
 
-    var canSaveToFile: Bool {
-        !wowAddonsPath.isEmpty
+    private func persistWtfCharacterPath() {
+        guard !suppressPersist else { return }
+        UserDefaults.standard.set(wtfCharacterPath, forKey: "wtfCharacterPath")
     }
+
+    var canSaveToFile: Bool { !wowAddonsPath.isEmpty }
+    var canSaveToSavedVariables: Bool { !wtfCharacterPath.isEmpty }
 
     func saveToFile() {
         guard case .success(let output, _) = state else { return }
@@ -162,6 +173,28 @@ final class ReportViewModel: ObservableObject {
         } catch {
             lastSaveResult = "저장 실패: \(error.localizedDescription)"
             logger.error("Lua 파일 저장 실패: \(error)")
+        }
+    }
+
+    func saveToSavedVariables() {
+        guard case .success(let output, _) = state else { return }
+        guard let reportURL = cachedReportURL,
+              let healer = cachedHealers.first(where: { $0.id == selectedHealerID }),
+              let spec = healer.healerSpec else { return }
+
+        let writer = SavedVariablesWriter()
+        do {
+            try writer.writeToSavedVariables(
+                wtfCharacterPath: wtfCharacterPath,
+                blocks: output.blocks,
+                spec: spec,
+                dungeonName: cachedDungeonName,
+                sourceURL: reportURLText
+            )
+            lastSaveResult = "SavedVariables 저장 완료 (다음 로그인 시 적용)"
+        } catch {
+            lastSaveResult = "SavedVariables 저장 실패: \(error.localizedDescription)"
+            logger.error("SavedVariables 저장 실패: \(error)")
         }
     }
 
@@ -218,6 +251,12 @@ final class ReportViewModel: ObservableObject {
         } catch {
             logger.warning("Playable Spec 베이스라인 갱신 실패: \(error)")
         }
+    }
+
+    func loadCombatHistory() {
+        guard !wtfCharacterPath.isEmpty else { return }
+        let reader = CombatHistoryReader()
+        combatHistory = reader.read(wtfCharacterPath: wtfCharacterPath)
     }
 
     func copyToClipboard() {

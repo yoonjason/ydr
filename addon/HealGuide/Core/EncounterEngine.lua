@@ -16,6 +16,7 @@ EncounterEngine.pendingTimers      = {}
 EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → timestamp
 EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
 EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
+EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -84,8 +85,40 @@ function EncounterEngine:OnEncounterEnd()
             s.fired, s.conditionSkipped, s.cooldownSkipped, s.used
         ))
     end
+
+    if #self.combatLog > 0 and self.activeEncounterID then
+        self:_SaveCombatRecord()
+    end
+
     self:Cancel()
+    self.combatLog = {}
     self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
+end
+
+function EncounterEngine:_SaveCombatRecord()
+    local db = HealGuideCharDB
+    if not db then return end
+    db.combatHistory = db.combatHistory or {}
+
+    local record = {
+        encounterID = self.activeEncounterID,
+        timestamp   = time(),
+        duration    = GetTime() - (self.encounterStartTime or GetTime()),
+        stats       = {
+            fired            = self.stats.fired,
+            conditionSkipped = self.stats.conditionSkipped,
+            cooldownSkipped  = self.stats.cooldownSkipped,
+            used             = self.stats.used,
+        },
+        events = self.combatLog,
+    }
+
+    table.insert(db.combatHistory, record)
+
+    -- 최근 50개만 유지
+    while #db.combatHistory > 50 do
+        table.remove(db.combatHistory, 1)
+    end
 end
 
 function EncounterEngine:Cancel()
@@ -95,6 +128,7 @@ function EncounterEngine:Cancel()
     self.pendingTimers      = {}
     self.recentAlerts       = {}
     self.playerCooldowns    = {}
+    self.combatLog          = {}
     self.activeEncounterID  = nil
     self.activeBossData     = nil
     self.activeSpecData     = nil
@@ -213,12 +247,25 @@ function EncounterEngine:TriggerAlert(spellID, source)
     self.stats.fired = self.stats.fired + 1
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
     addon.AlertFrame:ShowAlert(spellID)
+
+    table.insert(self.combatLog, {
+        type = "alert",
+        spellID = spellID,
+        source = source,
+        timestamp = GetTime() - (self.encounterStartTime or GetTime()),
+    })
 end
 
 function EncounterEngine:OnPlayerCast(spellID)
     if not self.activeEncounterID then return end
     self.playerCooldowns[spellID] = GetTime()
     self.stats.used = self.stats.used + 1
+
+    table.insert(self.combatLog, {
+        type = "used",
+        spellID = spellID,
+        timestamp = GetTime() - (self.encounterStartTime or GetTime()),
+    })
 end
 
 function EncounterEngine:_FindBossUnit()

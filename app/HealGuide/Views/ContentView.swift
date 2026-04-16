@@ -9,11 +9,18 @@ struct ContentView: View {
                 inputsSection
                 Divider()
                 stateSection
+                if !viewModel.combatHistory.isEmpty {
+                    Divider()
+                    combatHistorySection
+                }
             }
             .padding()
         }
         .frame(minWidth: 560, minHeight: 600)
-        .onAppear { viewModel.onAppear() }
+        .onAppear {
+            viewModel.onAppear()
+            viewModel.loadCombatHistory()
+        }
         .sheet(isPresented: $viewModel.showNewSpellSheet) {
             NewSpellApprovalSheet(viewModel: viewModel)
         }
@@ -72,13 +79,64 @@ struct ContentView: View {
                         }
                     }
                 }
+                Divider()
+                Text("Companion 전송 (SavedVariables 직접 쓰기)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    TextField("WTF/Account/.../캐릭터명", text: $viewModel.wtfCharacterPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("선택") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        panel.message = "WTF/Account/<계정>/<서버>/<캐릭터명> 폴더를 선택하세요"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            viewModel.wtfCharacterPath = url.path
+                        }
+                    }
+                }
                 if let result = viewModel.lastSaveResult {
                     Text(result)
                         .font(.caption2)
-                        .foregroundStyle(result.hasPrefix("저장 완료") ? .green : .red)
+                        .foregroundStyle(result.contains("완료") ? .green : .red)
                 }
             }
             .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var combatHistorySection: some View {
+        GroupBox(label: HStack {
+            Text("전투 히스토리").font(.headline)
+            Spacer()
+            Button("새로고침") { viewModel.loadCombatHistory() }
+                .font(.caption)
+        }) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(viewModel.combatHistory.suffix(10)) { record in
+                    HStack {
+                        Text("Enc \(record.encounterID)")
+                            .font(.caption)
+                            .frame(width: 70, alignment: .leading)
+                        Text("알림 \(record.stats.fired)")
+                            .font(.caption)
+                        Text("사용 \(record.stats.used)")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                        Text("적중률 \(Int(record.stats.accuracy * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(record.stats.accuracy > 0.5 ? .green : .orange)
+                        Spacer()
+                        Text(String(format: "%.0f초", record.duration))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(4)
         }
     }
 
@@ -261,6 +319,10 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                 if viewModel.canSaveToFile {
                     Button("파일로 저장") { viewModel.saveToFile() }
+                        .buttonStyle(.bordered)
+                }
+                if viewModel.canSaveToSavedVariables {
+                    Button("SavedVariables") { viewModel.saveToSavedVariables() }
                         .buttonStyle(.bordered)
                 }
             }
