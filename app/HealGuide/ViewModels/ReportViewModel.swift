@@ -37,6 +37,18 @@ final class ReportViewModel: ObservableObject {
         catch { logger.error("persist secret failed: \(error)") }
     }
 
+    private func persistBlizzardClientID() {
+        guard !suppressPersist, !blizzardClientID.isEmpty else { return }
+        do { try blizzardKeychain.saveClientID(blizzardClientID) }
+        catch { logger.error("persist blizzard clientID failed: \(error)") }
+    }
+
+    private func persistBlizzardClientSecret() {
+        guard !suppressPersist, !blizzardClientSecret.isEmpty else { return }
+        do { try blizzardKeychain.save(blizzardClientSecret) }
+        catch { logger.error("persist blizzard secret failed: \(error)") }
+    }
+
     // 힐러 선택 / 주문 선택 상태
     @Published var selectedHealerID: Int?
     @Published var selectedSpellIDs: Set<Int> = []
@@ -56,10 +68,24 @@ final class ReportViewModel: ObservableObject {
     private let pasteboard: any PasteboardWriting
     private let spellResolver: any SpellResolving
     private let spellCatalogStore: any SpellCatalogStoring
+    private let blizzardKeychain: any KeychainStoring
+    private let blizzardAPIClient: any BlizzardGameDataAPIClient
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "ReportViewModel")
 
+    @Published var blizzardClientID: String = "" {
+        didSet { persistBlizzardClientID() }
+    }
+    @Published var blizzardClientSecret: String = "" {
+        didSet { persistBlizzardClientSecret() }
+    }
+    @Published var isBlizzardSecretVisible: Bool = false
     @Published var discoveredSpells: [DiscoveredSpell] = []
     @Published var showNewSpellSheet = false
+    @Published var isResolvingBlizzardNames = false
+
+    var hasBlizzardCredentials: Bool {
+        !blizzardClientID.isEmpty && !blizzardClientSecret.isEmpty
+    }
 
     init(
         urlParser: any URLParsing,
@@ -69,7 +95,9 @@ final class ReportViewModel: ObservableObject {
         luaGenerator: any LuaGenerating,
         pasteboard: any PasteboardWriting,
         spellResolver: any SpellResolving,
-        spellCatalogStore: any SpellCatalogStoring = SpellCatalogStore()
+        spellCatalogStore: any SpellCatalogStoring = SpellCatalogStore(),
+        blizzardKeychain: any KeychainStoring = FileCredentialStore(fileName: "blizzard_credentials.json"),
+        blizzardAPIClient: any BlizzardGameDataAPIClient = BlizzardGameDataAPIClientImpl()
     ) {
         self.urlParser = urlParser
         self.keychain = keychain
@@ -79,6 +107,8 @@ final class ReportViewModel: ObservableObject {
         self.pasteboard = pasteboard
         self.spellResolver = spellResolver
         self.spellCatalogStore = spellCatalogStore
+        self.blizzardKeychain = blizzardKeychain
+        self.blizzardAPIClient = blizzardAPIClient
     }
 
     func onAppear() {
@@ -89,6 +119,12 @@ final class ReportViewModel: ObservableObject {
         }
         if clientID.isEmpty, let id = keychain.loadClientID() {
             clientID = id
+        }
+        if blizzardClientID.isEmpty, let id = blizzardKeychain.loadClientID() {
+            blizzardClientID = id
+        }
+        if blizzardClientSecret.isEmpty, let secret = blizzardKeychain.load() {
+            blizzardClientSecret = secret
         }
     }
 
@@ -353,18 +389,81 @@ final class ReportViewModel: ObservableObject {
 
     func approveDiscoveredSpells() {
         let approved = discoveredSpells.filter(\.selected)
-        let records = approved.map { spell in
-            SpellCatalogRecord(
-                spellID: spell.id,
-                nameKR: spell.name,
-                nameEN: spell.name,
-                firstSeenAt: Date(),
-                source: .wclMasterData
-            )
+        guard !approved.isEmpty else {
+            showNewSpellSheet = false
+            discoveredSpells = []
+            return
         }
-        if !records.isEmpty {
+
+        if hasBlizzardCredentials {
+            Task { await approveWithBlizzardNames(approved) }
+        } else {
+            let records = approved.map { spell in
+                SpellCatalogRecord(
+                    spellID: spell.id,
+                    nameKR: spell.name,
+                    nameEN: spell.name,
+                    firstSeenAt: Date(),
+                    source: .wclMasterData
+                )
+            }
             try? spellCatalogStore.upsertMany(records)
+            showNewSpellSheet = false
+            discoveredSpells = []
         }
+    }
+
+    private func approveWithBlizzardNames(_ approved: [DiscoveredSpell]) async {
+        isResolvingBlizzardNames = true
+        var records: [SpellCatalogRecord] = []
+        let now = Date()
+
+        do {
+            let token = try await blizzardAPIClient.fetchAccessToken(
+                clientID: blizzardClientID,
+                clientSecret: blizzardClientSecret
+            )
+
+            for spell in approved {
+                var nameKR = spell.name
+                var nameEN = spell.name
+                var source: SpellCatalogRecord.Source = .wclMasterData
+
+                if let krInfo = try? await blizzardAPIClient.fetchSpell(
+                    spellID: spell.id, locale: "ko_KR", token: token
+                ) {
+                    nameKR = krInfo.name
+                    source = .blizzardAPI
+                }
+                if let enInfo = try? await blizzardAPIClient.fetchSpell(
+                    spellID: spell.id, locale: "en_US", token: token
+                ) {
+                    nameEN = enInfo.name
+                }
+
+                records.append(SpellCatalogRecord(
+                    spellID: spell.id,
+                    nameKR: nameKR,
+                    nameEN: nameEN,
+                    firstSeenAt: now,
+                    source: source
+                ))
+            }
+        } catch {
+            logger.warning("Blizzard API 인증 실패, WCL 이름으로 저장: \(error)")
+            records = approved.map { spell in
+                SpellCatalogRecord(
+                    spellID: spell.id,
+                    nameKR: spell.name,
+                    nameEN: spell.name,
+                    firstSeenAt: now,
+                    source: .wclMasterData
+                )
+            }
+        }
+
+        try? spellCatalogStore.upsertMany(records)
+        isResolvingBlizzardNames = false
         showNewSpellSheet = false
         discoveredSpells = []
     }

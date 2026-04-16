@@ -47,6 +47,42 @@ struct ContentView: View {
             }
             .padding(8)
         }
+        blizzardCredentialsSection
+    }
+
+    @ViewBuilder
+    private var blizzardCredentialsSection: some View {
+        DisclosureGroup("Blizzard API (선택사항)") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("developer.battle.net 에서 발급받은 자격증명. 신규 스킬의 한국어 이름 자동 해상에 사용됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Blizzard Client ID", text: $viewModel.blizzardClientID)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    if viewModel.isBlizzardSecretVisible {
+                        TextField("Blizzard Client Secret", text: $viewModel.blizzardClientSecret)
+                            .textFieldStyle(.roundedBorder)
+                    } else {
+                        SecureField("Blizzard Client Secret", text: $viewModel.blizzardClientSecret)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    Button {
+                        viewModel.isBlizzardSecretVisible.toggle()
+                    } label: {
+                        Image(systemName: viewModel.isBlizzardSecretVisible ? "eye.slash" : "eye")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if viewModel.hasBlizzardCredentials {
+                    Text("설정됨 — 신규 스킬 승인 시 Blizzard API 로 한국어 이름을 가져옵니다.")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 
     private var isBusy: Bool {

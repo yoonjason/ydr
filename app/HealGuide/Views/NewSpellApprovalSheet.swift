@@ -12,6 +12,16 @@ struct NewSpellApprovalSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            if viewModel.hasBlizzardCredentials {
+                Label("Blizzard API 로 한국어 이름을 가져옵니다.", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else {
+                Label("Blizzard API 미설정 — WCL 이름으로 저장됩니다.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             Divider()
 
             ScrollView {
@@ -39,10 +49,21 @@ struct NewSpellApprovalSheet: View {
             HStack {
                 Button("전체 선택") { viewModel.selectAllDiscoveredSpells() }
                 Spacer()
+                if viewModel.isResolvingBlizzardNames {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("이름 해상 중...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button("무시") { viewModel.dismissDiscoveredSpells() }
+                    .disabled(viewModel.isResolvingBlizzardNames)
                 Button("선택 항목 추가") { viewModel.approveDiscoveredSpells() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.discoveredSpells.allSatisfy { !$0.selected })
+                    .disabled(
+                        viewModel.discoveredSpells.allSatisfy { !$0.selected }
+                        || viewModel.isResolvingBlizzardNames
+                    )
             }
         }
         .padding()
