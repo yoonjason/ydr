@@ -93,7 +93,6 @@ function EncounterEngine:OnEncounterEnd()
     end
 
     self:Cancel()
-    self.combatLog = {}
     self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
 end
 
@@ -200,14 +199,13 @@ function EncounterEngine:OnCombatLog(
     if bridge and bossSpellID then
         local lastNative = bridge.scheduledBossSpells and bridge.scheduledBossSpells[bossSpellID]
         if lastNative and (GetTime() - lastNative) < 30 then
-            print(string.format("|cffaaaaff[HG-CL]|r boss cast spellID=%s → 네이티브 예약 존재, 스킵",
+            addon.dprint(string.format("[HG-CL] boss cast spellID=%s → 네이티브 예약 존재, 스킵",
                 tostring(bossSpellID)))
             return
         end
     end
 
-    -- 디버그: 보스가 캐스트 한 모든 주문 로그
-    print(string.format("|cffaaaaff[HG-CL]|r boss cast: name=%s spellID=%s matched=%s",
+    addon.dprint(string.format("[HG-CL] boss cast: name=%s spellID=%s matched=%s",
         tostring(sourceName), tostring(bossSpellID),
         (reactions and reactions[bossSpellID]) and "YES" or "NO"))
     if not reactions or not reactions[bossSpellID] then return end
@@ -323,11 +321,17 @@ end
 function EncounterEngine:GetUpcomingAlerts(limit)
     local now = GetTime()
     local upcoming = {}
+    local seen = {}
     for _, info in ipairs(self.scheduledAlerts) do
         local remaining = info.fireTime - now
         if remaining > 0 then
-            table.insert(upcoming, { spellID = info.spellID, remaining = remaining, source = info.source })
+            if not seen[info.spellID] or seen[info.spellID] > remaining then
+                seen[info.spellID] = remaining
+            end
         end
+    end
+    for spellID, remaining in pairs(seen) do
+        table.insert(upcoming, { spellID = spellID, remaining = remaining })
     end
     table.sort(upcoming, function(a, b) return a.remaining < b.remaining end)
     if limit and #upcoming > limit then

@@ -33,7 +33,11 @@ function TimerBarFrame:Init()
         bars[i] = self:_CreateBar(i)
     end
 
+    local updateElapsed = 0
     anchor:SetScript("OnUpdate", function(_, dt)
+        updateElapsed = updateElapsed + dt
+        if updateElapsed < 0.1 then return end
+        updateElapsed = 0
         TimerBarFrame:_Update()
     end)
 end
@@ -96,9 +100,11 @@ function TimerBarFrame:_Update()
             bar.nameText:SetText(name)
             bar.timeText:SetText(string.format("%.1f", data.remaining))
 
-            if bar.spellID ~= data.spellID or bar.maxDuration < data.remaining then
+            if bar.spellID ~= data.spellID then
                 bar.maxDuration = data.remaining
                 bar.spellID = data.spellID
+            elseif data.remaining > bar.maxDuration then
+                bar.maxDuration = data.remaining
             end
 
             if bar.maxDuration > 0 then

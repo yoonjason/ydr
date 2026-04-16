@@ -32,7 +32,8 @@ function CombatHistoryFrame:_Create()
     scrollFrame:SetPoint("BOTTOMRIGHT", frame.InsetBg, "BOTTOMRIGHT", -26, 4)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(scrollFrame:GetWidth() or 360)
+    local scrollWidth = scrollFrame:GetWidth()
+    content:SetWidth((scrollWidth and scrollWidth > 0) and scrollWidth or 360)
     content:SetHeight(1)
     scrollFrame:SetScrollChild(content)
     frame.content = content
@@ -57,7 +58,8 @@ function CombatHistoryFrame:_Refresh()
             if not row then
                 row = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 row:SetJustifyH("LEFT")
-                row:SetWidth(content:GetWidth() or 360)
+                local contentWidth = content:GetWidth()
+            row:SetWidth((contentWidth and contentWidth > 0) and contentWidth or 360)
                 frame.rows[#history - i + 1] = row
             end
 

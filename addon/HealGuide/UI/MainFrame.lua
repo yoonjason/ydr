@@ -950,8 +950,3 @@ function MainFrame:_MakeSlider(name, labelText, minV, maxV, step, parent, y)
     return sl
 end
 
-function MainFrame:_ToggleSound()
-    local sound = addon.Storage:GetSetting("soundEnabled")
-    addon.Storage:SetSetting("soundEnabled", not sound)
-    print("|cff00ff00HealGuide|r 사운드: " .. (not sound and "ON" or "OFF"))
-end

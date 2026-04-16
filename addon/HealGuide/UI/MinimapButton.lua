@@ -9,7 +9,6 @@ function MinimapButton:Init()
     button = CreateFrame("Button", "HealGuideMinimapButton", Minimap)
     button:SetSize(32, 32)
     button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(8)
 
     local bg = button:CreateTexture(nil, "BACKGROUND")
     bg:SetSize(54, 54)
