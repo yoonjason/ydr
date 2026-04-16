@@ -1,11 +1,6 @@
 import Foundation
 import os
 
-// `SpellCatalogStoring` 의 파일 기반 구현.
-//
-// 저장 경로: `~/Library/Application Support/HealGuide/spell_catalog.json`
-// 포맷: JSON dictionary `{ "<spellID>": { spellID, nameKR, nameEN, firstSeenAt, source } }`
-// 동시성: 단일 프로세스(Mac 앱) 전제. 직렬 큐로 파일 I/O 를 serialize.
 final class SpellCatalogStore: SpellCatalogStoring {
     private let fileURL: URL
     private let queue = DispatchQueue(label: "com.yeongseok.healguide.SpellCatalogStore")
@@ -65,6 +60,48 @@ final class SpellCatalogStore: SpellCatalogStoring {
         queue.sync {
             ensureLoaded()
             return candidates.filter { cache[$0] == nil }
+        }
+    }
+
+    func seedIfNeeded(bundle: Bundle = .main) {
+        queue.sync {
+            ensureLoaded()
+            guard cache.isEmpty else { return }
+
+            guard let seedURL = bundle.url(forResource: "spell_catalog_seed", withExtension: "json"),
+                  let seedData = try? Data(contentsOf: seedURL) else {
+                logger.warning("시드 JSON 없음 — 빈 카탈로그로 시작")
+                return
+            }
+
+            struct SeedEntry: Decodable {
+                let spellID: Int
+                let nameKR: String
+                let nameEN: String
+            }
+
+            guard let entries = try? JSONDecoder().decode([SeedEntry].self, from: seedData) else {
+                logger.warning("시드 JSON 디코딩 실패")
+                return
+            }
+
+            let now = Date()
+            for entry in entries {
+                let record = SpellCatalogRecord(
+                    spellID: entry.spellID,
+                    nameKR: entry.nameKR,
+                    nameEN: entry.nameEN,
+                    firstSeenAt: now,
+                    source: .baseline
+                )
+                mergeIntoCache(record)
+            }
+            do {
+                try writeUnlocked()
+                logger.info("시드 \(entries.count)개 로드 완료")
+            } catch {
+                logger.error("시드 저장 실패: \(error)")
+            }
         }
     }
 

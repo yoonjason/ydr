@@ -123,7 +123,7 @@ struct ContentView: View {
     @ViewBuilder
     private func spellSelectionView(healer: HealerCandidate) -> some View {
         let spec = healer.healerSpec ?? .discPriest
-        let catalog = SpecSpellCatalog.spells(for: spec)
+        let catalog = viewModel.resolvedSpells(for: spec)
 
         GroupBox(label: Text("주문 선택 — \(healer.name) (\(spec.displayName))").font(.headline)) {
             VStack(alignment: .leading, spacing: 8) {
@@ -190,7 +190,7 @@ struct ContentView: View {
                         Text("SpellID: \(unknown.map(String.init).joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("가이드에 포함하려면 SpecSpellCatalog.swift 에 추가 후 다시 감지해 주세요.")
+                        Text("가이드에 포함하려면 카탈로그에 추가 후 다시 감지해 주세요.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -214,6 +214,7 @@ struct ContentView: View {
         apiClient: MockWarcraftLogsAPIClient(),
         normalizer: TimelineNormalizer(),
         luaGenerator: LuaGenerator(),
-        pasteboard: MockPasteboard()
+        pasteboard: MockPasteboard(),
+        spellResolver: SpellResolver(store: SpellCatalogStore())
     ))
 }

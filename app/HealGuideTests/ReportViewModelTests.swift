@@ -17,7 +17,8 @@ final class ReportViewModelTests: XCTestCase {
             apiClient: apiClient,
             normalizer: normalizer,
             luaGenerator: luaGenerator,
-            pasteboard: MockPasteboard()
+            pasteboard: MockPasteboard(),
+            spellResolver: MockSpellResolver()
         )
     }
 
@@ -287,7 +288,8 @@ final class ReportViewModelTests: XCTestCase {
             apiClient: MockWarcraftLogsAPIClient(),
             normalizer: MockTimelineNormalizer(),
             luaGenerator: MockLuaGenerator(),
-            pasteboard: pasteboard
+            pasteboard: pasteboard,
+            spellResolver: MockSpellResolver()
         )
         vm.copyToClipboard()
         XCTAssertTrue(pasteboard.writtenStrings.isEmpty)

@@ -1,0 +1,1017 @@
+[
+  {
+    "spellID": 17,
+    "nameKR": "신의 권능: 보호막",
+    "nameEN": "Power Word: Shield"
+  },
+  {
+    "spellID": 99,
+    "nameKR": "무력화의 포효",
+    "nameEN": "Incapacitating Roar"
+  },
+  {
+    "spellID": 139,
+    "nameKR": "소생",
+    "nameEN": "Renew"
+  },
+  {
+    "spellID": 339,
+    "nameKR": "휘감는 뿌리",
+    "nameEN": "Entangling Roots"
+  },
+  {
+    "spellID": 370,
+    "nameKR": "정화",
+    "nameEN": "Purge"
+  },
+  {
+    "spellID": 453,
+    "nameKR": "정신 진정",
+    "nameEN": "Mind Soothe"
+  },
+  {
+    "spellID": 498,
+    "nameKR": "천상의 보호막",
+    "nameEN": "Divine Protection"
+  },
+  {
+    "spellID": 527,
+    "nameKR": "정화",
+    "nameEN": "Purify"
+  },
+  {
+    "spellID": 528,
+    "nameKR": "마법 무효화",
+    "nameEN": "Dispel Magic"
+  },
+  {
+    "spellID": 546,
+    "nameKR": "물 위 걷기",
+    "nameEN": "Water Walking"
+  },
+  {
+    "spellID": 585,
+    "nameKR": "성스러운 일격",
+    "nameEN": "Smite"
+  },
+  {
+    "spellID": 586,
+    "nameKR": "소실",
+    "nameEN": "Fade"
+  },
+  {
+    "spellID": 589,
+    "nameKR": "어둠의 권능: 고통",
+    "nameEN": "Shadow Word: Pain"
+  },
+  {
+    "spellID": 596,
+    "nameKR": "치유의 기도",
+    "nameEN": "Prayer of Healing"
+  },
+  {
+    "spellID": 605,
+    "nameKR": "정신 지배",
+    "nameEN": "Mind Control"
+  },
+  {
+    "spellID": 642,
+    "nameKR": "천상의 방패",
+    "nameEN": "Divine Shield"
+  },
+  {
+    "spellID": 740,
+    "nameKR": "평온",
+    "nameEN": "Tranquility"
+  },
+  {
+    "spellID": 774,
+    "nameKR": "회복",
+    "nameEN": "Rejuvenation"
+  },
+  {
+    "spellID": 853,
+    "nameKR": "심판의 망치",
+    "nameEN": "Hammer of Justice"
+  },
+  {
+    "spellID": 974,
+    "nameKR": "대지의 보호막",
+    "nameEN": "Earth Shield"
+  },
+  {
+    "spellID": 1022,
+    "nameKR": "보호의 축복",
+    "nameEN": "Blessing of Protection"
+  },
+  {
+    "spellID": 1044,
+    "nameKR": "자유의 축복",
+    "nameEN": "Blessing of Freedom"
+  },
+  {
+    "spellID": 1064,
+    "nameKR": "연쇄 치유",
+    "nameEN": "Chain Heal"
+  },
+  {
+    "spellID": 1126,
+    "nameKR": "야생의 징표",
+    "nameEN": "Mark of the Wild"
+  },
+  {
+    "spellID": 1706,
+    "nameKR": "공중 부양",
+    "nameEN": "Levitate"
+  },
+  {
+    "spellID": 2008,
+    "nameKR": "고대의 영혼",
+    "nameEN": "Ancestral Spirit"
+  },
+  {
+    "spellID": 2050,
+    "nameKR": "신성한 언령: 평온",
+    "nameEN": "Holy Word: Serenity"
+  },
+  {
+    "spellID": 2060,
+    "nameKR": "치유",
+    "nameEN": "Heal"
+  },
+  {
+    "spellID": 2061,
+    "nameKR": "순간 치유",
+    "nameEN": "Flash Heal"
+  },
+  {
+    "spellID": 2484,
+    "nameKR": "대지 결박 토템",
+    "nameEN": "Earthbind Totem"
+  },
+  {
+    "spellID": 2637,
+    "nameKR": "곰의 잠",
+    "nameEN": "Hibernate"
+  },
+  {
+    "spellID": 2645,
+    "nameKR": "늑대 정령",
+    "nameEN": "Ghost Wolf"
+  },
+  {
+    "spellID": 2825,
+    "nameKR": "피의 욕망",
+    "nameEN": "Bloodlust"
+  },
+  {
+    "spellID": 2908,
+    "nameKR": "진정",
+    "nameEN": "Soothe"
+  },
+  {
+    "spellID": 4987,
+    "nameKR": "정화",
+    "nameEN": "Cleanse"
+  },
+  {
+    "spellID": 5176,
+    "nameKR": "천벌",
+    "nameEN": "Wrath"
+  },
+  {
+    "spellID": 5211,
+    "nameKR": "강타",
+    "nameEN": "Mighty Bash"
+  },
+  {
+    "spellID": 5215,
+    "nameKR": "은신",
+    "nameEN": "Prowl"
+  },
+  {
+    "spellID": 5394,
+    "nameKR": "치유의 토템",
+    "nameEN": "Healing Stream Totem"
+  },
+  {
+    "spellID": 8092,
+    "nameKR": "정신 분열",
+    "nameEN": "Mind Blast"
+  },
+  {
+    "spellID": 8122,
+    "nameKR": "내면의 공포",
+    "nameEN": "Psychic Scream"
+  },
+  {
+    "spellID": 8143,
+    "nameKR": "진동 토템",
+    "nameEN": "Tremor Totem"
+  },
+  {
+    "spellID": 8921,
+    "nameKR": "달빛섬광",
+    "nameEN": "Moonfire"
+  },
+  {
+    "spellID": 8936,
+    "nameKR": "회복지정",
+    "nameEN": "Regrowth"
+  },
+  {
+    "spellID": 9484,
+    "nameKR": "공포 속박",
+    "nameEN": "Shackle Horror"
+  },
+  {
+    "spellID": 10060,
+    "nameKR": "마력 주입",
+    "nameEN": "Power Infusion"
+  },
+  {
+    "spellID": 14914,
+    "nameKR": "신성한 불꽃",
+    "nameEN": "Holy Fire"
+  },
+  {
+    "spellID": 18562,
+    "nameKR": "신속한 치유",
+    "nameEN": "Swiftmend"
+  },
+  {
+    "spellID": 19236,
+    "nameKR": "필사의 기도",
+    "nameEN": "Desperate Prayer"
+  },
+  {
+    "spellID": 19750,
+    "nameKR": "빛의 섬광",
+    "nameEN": "Flash of Light"
+  },
+  {
+    "spellID": 20271,
+    "nameKR": "심판",
+    "nameEN": "Judgment"
+  },
+  {
+    "spellID": 20473,
+    "nameKR": "신성 충격",
+    "nameEN": "Holy Shock"
+  },
+  {
+    "spellID": 20484,
+    "nameKR": "환생",
+    "nameEN": "Rebirth"
+  },
+  {
+    "spellID": 21562,
+    "nameKR": "신의 권능: 인내",
+    "nameEN": "Power Word: Fortitude"
+  },
+  {
+    "spellID": 22812,
+    "nameKR": "나무 껍질",
+    "nameEN": "Barkskin"
+  },
+  {
+    "spellID": 22842,
+    "nameKR": "광폭한 재생력",
+    "nameEN": "Frenzied Regeneration"
+  },
+  {
+    "spellID": 26573,
+    "nameKR": "신성화",
+    "nameEN": "Consecration"
+  },
+  {
+    "spellID": 29166,
+    "nameKR": "에너지 불어넣기",
+    "nameEN": "Innervate"
+  },
+  {
+    "spellID": 31821,
+    "nameKR": "오라 숙련",
+    "nameEN": "Aura Mastery"
+  },
+  {
+    "spellID": 31884,
+    "nameKR": "응징의 격노",
+    "nameEN": "Avenging Wrath"
+  },
+  {
+    "spellID": 32182,
+    "nameKR": "영웅심",
+    "nameEN": "Heroism"
+  },
+  {
+    "spellID": 32375,
+    "nameKR": "대규모 무효화",
+    "nameEN": "Mass Dispel"
+  },
+  {
+    "spellID": 32379,
+    "nameKR": "어둠의 권능: 죽음",
+    "nameEN": "Shadow Word: Death"
+  },
+  {
+    "spellID": 33076,
+    "nameKR": "치유의 기원",
+    "nameEN": "Prayer of Mending"
+  },
+  {
+    "spellID": 33206,
+    "nameKR": "고통 억제",
+    "nameEN": "Pain Suppression"
+  },
+  {
+    "spellID": 33763,
+    "nameKR": "피어나는 생명",
+    "nameEN": "Lifebloom"
+  },
+  {
+    "spellID": 33786,
+    "nameKR": "사이클론",
+    "nameEN": "Cyclone"
+  },
+  {
+    "spellID": 33891,
+    "nameKR": "화신: 생명의 나무",
+    "nameEN": "Incarnation: Tree of Life"
+  },
+  {
+    "spellID": 34433,
+    "nameKR": "어둠의 친구",
+    "nameEN": "Shadowfiend"
+  },
+  {
+    "spellID": 34861,
+    "nameKR": "신성한 언령: 축성",
+    "nameEN": "Holy Word: Sanctify"
+  },
+  {
+    "spellID": 47540,
+    "nameKR": "회개",
+    "nameEN": "Penance"
+  },
+  {
+    "spellID": 47788,
+    "nameKR": "수호 영혼",
+    "nameEN": "Guardian Spirit"
+  },
+  {
+    "spellID": 48438,
+    "nameKR": "급속 성장",
+    "nameEN": "Wild Growth"
+  },
+  {
+    "spellID": 51485,
+    "nameKR": "대지 붙잡기 토템",
+    "nameEN": "Earthgrab Totem"
+  },
+  {
+    "spellID": 51505,
+    "nameKR": "용암 폭발",
+    "nameEN": "Lava Burst"
+  },
+  {
+    "spellID": 51514,
+    "nameKR": "변이",
+    "nameEN": "Hex"
+  },
+  {
+    "spellID": 53563,
+    "nameKR": "빛의 봉화",
+    "nameEN": "Beacon of Light"
+  },
+  {
+    "spellID": 53600,
+    "nameKR": "정의의 방패",
+    "nameEN": "Shield of the Righteous"
+  },
+  {
+    "spellID": 57994,
+    "nameKR": "바람 베기",
+    "nameEN": "Wind Shear"
+  },
+  {
+    "spellID": 58875,
+    "nameKR": "정령 걷기",
+    "nameEN": "Spirit Walk"
+  },
+  {
+    "spellID": 61295,
+    "nameKR": "성난 해일",
+    "nameEN": "Riptide"
+  },
+  {
+    "spellID": 62618,
+    "nameKR": "신의 권능: 방벽",
+    "nameEN": "Power Word: Barrier"
+  },
+  {
+    "spellID": 64843,
+    "nameKR": "천상의 찬가",
+    "nameEN": "Divine Hymn"
+  },
+  {
+    "spellID": 73325,
+    "nameKR": "신념의 도약",
+    "nameEN": "Leap of Faith"
+  },
+  {
+    "spellID": 73685,
+    "nameKR": "생명의 해방",
+    "nameEN": "Unleash Life"
+  },
+  {
+    "spellID": 73920,
+    "nameKR": "치유의 비",
+    "nameEN": "Healing Rain"
+  },
+  {
+    "spellID": 77130,
+    "nameKR": "영혼 정화",
+    "nameEN": "Purify Spirit"
+  },
+  {
+    "spellID": 77472,
+    "nameKR": "치유의 파도",
+    "nameEN": "Healing Wave"
+  },
+  {
+    "spellID": 79206,
+    "nameKR": "정령 방랑자의 은총",
+    "nameEN": "Spiritwalker's Grace"
+  },
+  {
+    "spellID": 82326,
+    "nameKR": "성스러운 빛",
+    "nameEN": "Holy Light"
+  },
+  {
+    "spellID": 85222,
+    "nameKR": "여명의 빛",
+    "nameEN": "Light of Dawn"
+  },
+  {
+    "spellID": 85673,
+    "nameKR": "영광의 서약",
+    "nameEN": "Word of Glory"
+  },
+  {
+    "spellID": 88625,
+    "nameKR": "신성한 언령: 응징",
+    "nameEN": "Holy Word: Chastise"
+  },
+  {
+    "spellID": 93402,
+    "nameKR": "태양섬광",
+    "nameEN": "Sunfire"
+  },
+  {
+    "spellID": 98008,
+    "nameKR": "영혼 결속 토템",
+    "nameEN": "Spirit Link Totem"
+  },
+  {
+    "spellID": 100780,
+    "nameKR": "범의 장풍",
+    "nameEN": "Tiger Palm"
+  },
+  {
+    "spellID": 100784,
+    "nameKR": "후려차기",
+    "nameEN": "Blackout Kick"
+  },
+  {
+    "spellID": 101546,
+    "nameKR": "회전 학다리차기",
+    "nameEN": "Spinning Crane Kick"
+  },
+  {
+    "spellID": 101643,
+    "nameKR": "초월",
+    "nameEN": "Transcendence"
+  },
+  {
+    "spellID": 102342,
+    "nameKR": "무쇠나무 껍질",
+    "nameEN": "Ironbark"
+  },
+  {
+    "spellID": 102359,
+    "nameKR": "군중 휘감기",
+    "nameEN": "Mass Entanglement"
+  },
+  {
+    "spellID": 102401,
+    "nameKR": "야생 질주",
+    "nameEN": "Wild Charge"
+  },
+  {
+    "spellID": 102793,
+    "nameKR": "우르솔의 소용돌이",
+    "nameEN": "Ursol's Vortex"
+  },
+  {
+    "spellID": 106898,
+    "nameKR": "쇄도의 포효",
+    "nameEN": "Stampeding Roar"
+  },
+  {
+    "spellID": 107428,
+    "nameKR": "해오름차기",
+    "nameEN": "Rising Sun Kick"
+  },
+  {
+    "spellID": 108280,
+    "nameKR": "치유의 해일 토템",
+    "nameEN": "Healing Tide Totem"
+  },
+  {
+    "spellID": 109132,
+    "nameKR": "구르기",
+    "nameEN": "Roll"
+  },
+  {
+    "spellID": 114052,
+    "nameKR": "정령체",
+    "nameEN": "Ascendance"
+  },
+  {
+    "spellID": 114165,
+    "nameKR": "성스러운 프리즘",
+    "nameEN": "Holy Prism"
+  },
+  {
+    "spellID": 115078,
+    "nameKR": "기절",
+    "nameEN": "Paralysis"
+  },
+  {
+    "spellID": 115151,
+    "nameKR": "재생의 안개",
+    "nameEN": "Renewing Mist"
+  },
+  {
+    "spellID": 115175,
+    "nameKR": "평온의 안개",
+    "nameEN": "Soothing Mist"
+  },
+  {
+    "spellID": 115203,
+    "nameKR": "강화주",
+    "nameEN": "Fortifying Brew"
+  },
+  {
+    "spellID": 115310,
+    "nameKR": "소생",
+    "nameEN": "Revival"
+  },
+  {
+    "spellID": 115313,
+    "nameKR": "옥룡 석상 소환",
+    "nameEN": "Summon Jade Serpent Statue"
+  },
+  {
+    "spellID": 115546,
+    "nameKR": "도발",
+    "nameEN": "Provoke"
+  },
+  {
+    "spellID": 115750,
+    "nameKR": "실명의 빛",
+    "nameEN": "Blinding Light"
+  },
+  {
+    "spellID": 116095,
+    "nameKR": "무력화",
+    "nameEN": "Disable"
+  },
+  {
+    "spellID": 116670,
+    "nameKR": "소생",
+    "nameEN": "Vivify"
+  },
+  {
+    "spellID": 116680,
+    "nameKR": "벽력의 집중차",
+    "nameEN": "Thunder Focus Tea"
+  },
+  {
+    "spellID": 116841,
+    "nameKR": "범의 욕망",
+    "nameEN": "Tiger's Lust"
+  },
+  {
+    "spellID": 116844,
+    "nameKR": "평화의 고리",
+    "nameEN": "Ring of Peace"
+  },
+  {
+    "spellID": 116849,
+    "nameKR": "생명의 고치",
+    "nameEN": "Life Cocoon"
+  },
+  {
+    "spellID": 117952,
+    "nameKR": "폭풍 옥룡의 번개",
+    "nameEN": "Crackling Jade Lightning"
+  },
+  {
+    "spellID": 119381,
+    "nameKR": "회축",
+    "nameEN": "Leg Sweep"
+  },
+  {
+    "spellID": 121536,
+    "nameKR": "천사의 깃털",
+    "nameEN": "Angelic Feather"
+  },
+  {
+    "spellID": 123040,
+    "nameKR": "정신 지배자",
+    "nameEN": "Mindbender"
+  },
+  {
+    "spellID": 123986,
+    "nameKR": "기의 쇄도",
+    "nameEN": "Chi Burst"
+  },
+  {
+    "spellID": 124682,
+    "nameKR": "포영의 안개",
+    "nameEN": "Enveloping Mist"
+  },
+  {
+    "spellID": 132157,
+    "nameKR": "성스러운 폭발",
+    "nameEN": "Holy Nova"
+  },
+  {
+    "spellID": 132158,
+    "nameKR": "자연의 신속함",
+    "nameEN": "Nature's Swiftness"
+  },
+  {
+    "spellID": 132469,
+    "nameKR": "태풍",
+    "nameEN": "Typhoon"
+  },
+  {
+    "spellID": 145205,
+    "nameKR": "개화",
+    "nameEN": "Efflorescence"
+  },
+  {
+    "spellID": 156322,
+    "nameKR": "영원한 불꽃",
+    "nameEN": "Eternal Flame"
+  },
+  {
+    "spellID": 186263,
+    "nameKR": "어둠의 치유",
+    "nameEN": "Shadow Mend"
+  },
+  {
+    "spellID": 188196,
+    "nameKR": "번개 화살",
+    "nameEN": "Lightning Bolt"
+  },
+  {
+    "spellID": 188389,
+    "nameKR": "불길 쇼크",
+    "nameEN": "Flame Shock"
+  },
+  {
+    "spellID": 188443,
+    "nameKR": "연쇄 번개",
+    "nameEN": "Chain Lightning"
+  },
+  {
+    "spellID": 190784,
+    "nameKR": "성전의 군마",
+    "nameEN": "Divine Steed"
+  },
+  {
+    "spellID": 192058,
+    "nameKR": "축전 토템",
+    "nameEN": "Capacitor Totem"
+  },
+  {
+    "spellID": 192077,
+    "nameKR": "바람 쇄도 토템",
+    "nameEN": "Wind Rush Totem"
+  },
+  {
+    "spellID": 194509,
+    "nameKR": "신의 권능: 광휘",
+    "nameEN": "Power Word: Radiance"
+  },
+  {
+    "spellID": 196840,
+    "nameKR": "냉기 쇼크",
+    "nameEN": "Frost Shock"
+  },
+  {
+    "spellID": 197626,
+    "nameKR": "별빛쇄도",
+    "nameEN": "Starsurge"
+  },
+  {
+    "spellID": 197628,
+    "nameKR": "별빛섬광",
+    "nameEN": "Starfire"
+  },
+  {
+    "spellID": 197908,
+    "nameKR": "마력차",
+    "nameEN": "Mana Tea"
+  },
+  {
+    "spellID": 198103,
+    "nameKR": "대지 정령",
+    "nameEN": "Earth Elemental"
+  },
+  {
+    "spellID": 198898,
+    "nameKR": "적기린의 노래",
+    "nameEN": "Song of Chi-Ji"
+  },
+  {
+    "spellID": 200183,
+    "nameKR": "신격화",
+    "nameEN": "Apotheosis"
+  },
+  {
+    "spellID": 212036,
+    "nameKR": "대규모 부활",
+    "nameEN": "Mass Resurrection"
+  },
+  {
+    "spellID": 212051,
+    "nameKR": "소생술",
+    "nameEN": "Reawaken"
+  },
+  {
+    "spellID": 216331,
+    "nameKR": "응징의 성전사",
+    "nameEN": "Avenging Crusader"
+  },
+  {
+    "spellID": 218164,
+    "nameKR": "해독",
+    "nameEN": "Detox"
+  },
+  {
+    "spellID": 246287,
+    "nameKR": "사도",
+    "nameEN": "Evangelism"
+  },
+  {
+    "spellID": 322118,
+    "nameKR": "유룡 소환",
+    "nameEN": "Invoke Yu'lon"
+  },
+  {
+    "spellID": 325197,
+    "nameKR": "적기린 소환",
+    "nameEN": "Invoke Chi-Ji"
+  },
+  {
+    "spellID": 355913,
+    "nameKR": "에메랄드의 꽃",
+    "nameEN": "Emerald Blossom"
+  },
+  {
+    "spellID": 355936,
+    "nameKR": "꿈결 숨결",
+    "nameEN": "Dream Breath"
+  },
+  {
+    "spellID": 356995,
+    "nameKR": "분해",
+    "nameEN": "Disintegrate"
+  },
+  {
+    "spellID": 357170,
+    "nameKR": "시간 팽창",
+    "nameEN": "Time Dilation"
+  },
+  {
+    "spellID": 357208,
+    "nameKR": "불 숨결",
+    "nameEN": "Fire Breath"
+  },
+  {
+    "spellID": 357210,
+    "nameKR": "깊은 숨결",
+    "nameEN": "Deep Breath"
+  },
+  {
+    "spellID": 357214,
+    "nameKR": "날개 강타",
+    "nameEN": "Wing Buffet"
+  },
+  {
+    "spellID": 358267,
+    "nameKR": "부양",
+    "nameEN": "Hover"
+  },
+  {
+    "spellID": 358385,
+    "nameKR": "산사태",
+    "nameEN": "Landslide"
+  },
+  {
+    "spellID": 359816,
+    "nameKR": "꿈의 비행",
+    "nameEN": "Dream Flight"
+  },
+  {
+    "spellID": 360823,
+    "nameKR": "자연화",
+    "nameEN": "Naturalize"
+  },
+  {
+    "spellID": 360995,
+    "nameKR": "신록의 포옹",
+    "nameEN": "Verdant Embrace"
+  },
+  {
+    "spellID": 361469,
+    "nameKR": "살아있는 불꽃",
+    "nameEN": "Living Flame"
+  },
+  {
+    "spellID": 362969,
+    "nameKR": "하늘빛 일격",
+    "nameEN": "Azure Strike"
+  },
+  {
+    "spellID": 363534,
+    "nameKR": "되감기",
+    "nameEN": "Rewind"
+  },
+  {
+    "spellID": 363916,
+    "nameKR": "흑요석 비늘",
+    "nameEN": "Obsidian Scales"
+  },
+  {
+    "spellID": 364343,
+    "nameKR": "메아리",
+    "nameEN": "Echo"
+  },
+  {
+    "spellID": 366155,
+    "nameKR": "되돌리기",
+    "nameEN": "Reversion"
+  },
+  {
+    "spellID": 368970,
+    "nameKR": "꼬리 후려치기",
+    "nameEN": "Tail Swipe"
+  },
+  {
+    "spellID": 370537,
+    "nameKR": "정체",
+    "nameEN": "Stasis"
+  },
+  {
+    "spellID": 370553,
+    "nameKR": "시간 조정",
+    "nameEN": "Tip the Scales"
+  },
+  {
+    "spellID": 370665,
+    "nameKR": "구출",
+    "nameEN": "Rescue"
+  },
+  {
+    "spellID": 373861,
+    "nameKR": "시간의 변칙",
+    "nameEN": "Temporal Anomaly"
+  },
+  {
+    "spellID": 374227,
+    "nameKR": "산들바람",
+    "nameEN": "Zephyr"
+  },
+  {
+    "spellID": 374251,
+    "nameKR": "소작의 불꽃",
+    "nameEN": "Cauterizing Flame"
+  },
+  {
+    "spellID": 375576,
+    "nameKR": "천상의 조종",
+    "nameEN": "Divine Toll"
+  },
+  {
+    "spellID": 378081,
+    "nameKR": "자연의 신속함",
+    "nameEN": "Nature's Swiftness"
+  },
+  {
+    "spellID": 383013,
+    "nameKR": "독 정화 토템",
+    "nameEN": "Poison Cleansing Totem"
+  },
+  {
+    "spellID": 388193,
+    "nameKR": "옥염진각",
+    "nameEN": "Jadefire Stomp"
+  },
+  {
+    "spellID": 388615,
+    "nameKR": "회복의 기운",
+    "nameEN": "Restoral"
+  },
+  {
+    "spellID": 390386,
+    "nameKR": "용의 격노",
+    "nameEN": "Fury of the Aspects"
+  },
+  {
+    "spellID": 391054,
+    "nameKR": "중재",
+    "nameEN": "Intercession"
+  },
+  {
+    "spellID": 391528,
+    "nameKR": "영혼 소집",
+    "nameEN": "Convoke the Spirits"
+  },
+  {
+    "spellID": 399491,
+    "nameKR": "쉐이룬의 선물",
+    "nameEN": "Sheilun's Gift"
+  },
+  {
+    "spellID": 421453,
+    "nameKR": "궁극의 참회",
+    "nameEN": "Ultimate Penitence"
+  },
+  {
+    "spellID": 421543,
+    "nameKR": "궁극의 참회",
+    "nameEN": "Ultimate Penitence"
+  },
+  {
+    "spellID": 432459,
+    "nameKR": "신성 무장",
+    "nameEN": "Holy Armaments"
+  },
+  {
+    "spellID": 443028,
+    "nameKR": "천신의 도관",
+    "nameEN": "Celestial Conduit"
+  },
+  {
+    "spellID": 443454,
+    "nameKR": "선조의 부름",
+    "nameEN": "Call of the Ancestors"
+  },
+  {
+    "spellID": 444995,
+    "nameKR": "파동 토템",
+    "nameEN": "Surging Totem"
+  },
+  {
+    "spellID": 447444,
+    "nameKR": "혼돈의 균열",
+    "nameEN": "Entropic Rift"
+  },
+  {
+    "spellID": 450391,
+    "nameKR": "기의 파도",
+    "nameEN": "Chi Wave"
+  },
+  {
+    "spellID": 451234,
+    "nameKR": "공허 망령",
+    "nameEN": "Voidwraith"
+  },
+  {
+    "spellID": 451259,
+    "nameKR": "쇄풍차기",
+    "nameEN": "Rushing Wind Kick"
+  },
+  {
+    "spellID": 472433,
+    "nameKR": "사도 (변종)",
+    "nameEN": "Evangelism (variant)"
+  },
+  {
+    "spellID": 1236616,
+    "nameKR": "빛의 잠재력",
+    "nameEN": "Light's Potential"
+  },
+  {
+    "spellID": 1253593,
+    "nameKR": "공허의 보호막",
+    "nameEN": "Void Shield"
+  }
+]

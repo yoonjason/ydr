@@ -54,6 +54,7 @@ final class ReportViewModel: ObservableObject {
     private let normalizer: any TimelineNormalizing
     private let luaGenerator: any LuaGenerating
     private let pasteboard: any PasteboardWriting
+    private let spellResolver: any SpellResolving
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "ReportViewModel")
 
     init(
@@ -62,7 +63,8 @@ final class ReportViewModel: ObservableObject {
         apiClient: any WarcraftLogsAPIClient,
         normalizer: any TimelineNormalizing,
         luaGenerator: any LuaGenerating,
-        pasteboard: any PasteboardWriting
+        pasteboard: any PasteboardWriting,
+        spellResolver: any SpellResolving
     ) {
         self.urlParser = urlParser
         self.keychain = keychain
@@ -70,6 +72,7 @@ final class ReportViewModel: ObservableObject {
         self.normalizer = normalizer
         self.luaGenerator = luaGenerator
         self.pasteboard = pasteboard
+        self.spellResolver = spellResolver
     }
 
     func onAppear() {
@@ -86,6 +89,10 @@ final class ReportViewModel: ObservableObject {
     func copyToClipboard() {
         guard case .success(let output, _) = state else { return }
         pasteboard.write(output.luaText)
+    }
+
+    func resolvedSpells(for spec: HealerSpec) -> [SpellEntry] {
+        spellResolver.spells(for: spec)
     }
 
     // MARK: - Stage 1: 힐러 감지
@@ -184,8 +191,7 @@ final class ReportViewModel: ObservableObject {
             state = .failure(.noHealers)
             return
         }
-        // 카탈로그 기본: 전체 체크
-        let catalog = SpecSpellCatalog.spells(for: spec)
+        let catalog = spellResolver.spells(for: spec)
         selectedSpellIDs = Set(catalog.map(\.id))
         state = .spellSelection(healer: healer)
     }
@@ -200,7 +206,7 @@ final class ReportViewModel: ObservableObject {
 
     func checkAllSpells() {
         guard case .spellSelection(let healer) = state, let spec = healer.healerSpec else { return }
-        selectedSpellIDs = Set(SpecSpellCatalog.spells(for: spec).map(\.id))
+        selectedSpellIDs = Set(spellResolver.spells(for: spec).map(\.id))
     }
 
     func uncheckAllSpells() {
@@ -290,7 +296,7 @@ final class ReportViewModel: ObservableObject {
         }
 
         // 카탈로그에 없는 주문 탐지
-        let catalogIDs = Set(SpecSpellCatalog.spells(for: spec).map(\.id))
+        let catalogIDs = Set(spellResolver.allSpellIDs(for: spec))
         let unknown = Array(allPlayerSpellIDs.subtracting(catalogIDs)).sorted()
 
         let luaText = luaGenerator.generate(
