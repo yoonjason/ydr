@@ -38,8 +38,10 @@ struct LuaGenerator: LuaGenerating {
             for reaction in block.reactions {
                 grouped[reaction.bossAbilityID, default: []].append(reaction)
             }
+            let bossNames = metadata.bossSpellNames
             for bossID in grouped.keys.sorted() {
-                lines.append("        [\(bossID)] = {")
+                let nameComment = bossNames[bossID].map { " -- \($0)" } ?? ""
+                lines.append("        [\(bossID)] = {\(nameComment)")
                 for reaction in grouped[bossID, default: []] {
                     let delayStr = String(format: "%.1f", reaction.delay)
                     if let condition = reaction.condition {
@@ -60,7 +62,8 @@ struct LuaGenerator: LuaGenerating {
                 leadGrouped[lead.bossAbilityID, default: []].append(lead)
             }
             for bossID in leadGrouped.keys.sorted() {
-                lines.append("        [\(bossID)] = {")
+                let nameComment = bossNames[bossID].map { " -- \($0)" } ?? ""
+                lines.append("        [\(bossID)] = {\(nameComment)")
                 for lead in leadGrouped[bossID, default: []] {
                     let offsetStr = String(format: "%.1f", lead.offset)
                     if let condition = lead.condition {

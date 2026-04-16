@@ -126,6 +126,62 @@ final class ReportViewModel: ObservableObject {
         if blizzardClientSecret.isEmpty, let secret = blizzardKeychain.load() {
             blizzardClientSecret = secret
         }
+        refreshBaselineIfNeeded()
+    }
+
+    func refreshBaselineIfNeeded() {
+        guard hasBlizzardCredentials else { return }
+        Task { await performBaselineRefresh() }
+    }
+
+    private func performBaselineRefresh() async {
+        do {
+            let token = try await blizzardAPIClient.fetchAccessToken(
+                clientID: blizzardClientID, clientSecret: blizzardClientSecret
+            )
+            let knownIDs = spellCatalogStore.knownSpellIDs()
+            let now = Date()
+            var newRecords: [SpellCatalogRecord] = []
+
+            for spec in HealerSpec.allCases {
+                let specInfo = try? await blizzardAPIClient.fetchPlayableSpecialization(
+                    specID: spec.blizzardSpecID, token: token
+                )
+                guard let spellIDs = specInfo?.spellIDs else { continue }
+                let missing = spellIDs.filter { !knownIDs.contains($0) }
+                for spellID in missing {
+                    let krName: String
+                    if let info = try? await blizzardAPIClient.fetchSpell(
+                        spellID: spellID, locale: "ko_KR", token: token
+                    ) {
+                        krName = info.name
+                    } else {
+                        krName = "Spell #\(spellID)"
+                    }
+                    let enName: String
+                    if let info = try? await blizzardAPIClient.fetchSpell(
+                        spellID: spellID, locale: "en_US", token: token
+                    ) {
+                        enName = info.name
+                    } else {
+                        enName = "Spell #\(spellID)"
+                    }
+                    newRecords.append(SpellCatalogRecord(
+                        spellID: spellID,
+                        nameKR: krName,
+                        nameEN: enName,
+                        firstSeenAt: now,
+                        source: .blizzardAPI
+                    ))
+                }
+            }
+            if !newRecords.isEmpty {
+                try? spellCatalogStore.upsertMany(newRecords)
+                logger.info("Playable Spec 베이스라인 갱신: \(newRecords.count)개 스킬 추가")
+            }
+        } catch {
+            logger.warning("Playable Spec 베이스라인 갱신 실패: \(error)")
+        }
     }
 
     func copyToClipboard() {
@@ -340,20 +396,59 @@ final class ReportViewModel: ObservableObject {
         let catalogIDs = Set(spellResolver.allSpellIDs(for: spec))
         let unknownIDs = Array(allPlayerSpellIDs.subtracting(catalogIDs)).sorted()
 
+        let encounterData = await fetchEncounterData(
+            encounterIDs: bossWindows.map(\.encounterID)
+        )
+
         let luaText = luaGenerator.generate(
             blocks: blocks,
             metadata: ExportMetadata(
                 spec: spec,
                 dungeonName: dungeonName,
                 sourceURL: reportURLText,
-                generatedAt: Date()
+                generatedAt: Date(),
+                bossSpellNames: encounterData.bossSpellNames
             )
         )
-        state = .success(LuaOutput(blocks: blocks, luaText: luaText), unknownSpellIDs: unknownIDs)
+
+        state = .success(
+            LuaOutput(blocks: blocks, luaText: luaText, bossNameMap: encounterData.encounterNames),
+            unknownSpellIDs: unknownIDs
+        )
 
         if !unknownIDs.isEmpty {
             await resolveUnknownSpells(unknownIDs, reportCode: reportURL.code, token: token)
         }
+    }
+
+    // MARK: - 보스/인카운터 이름 해상
+
+    struct EncounterNamesResult {
+        var bossSpellNames: [Int: String] = [:]
+        var encounterNames: [Int: String] = [:]
+    }
+
+    private func fetchEncounterData(encounterIDs: [Int]) async -> EncounterNamesResult {
+        guard hasBlizzardCredentials else { return EncounterNamesResult() }
+        var result = EncounterNamesResult()
+        do {
+            let token = try await blizzardAPIClient.fetchAccessToken(
+                clientID: blizzardClientID, clientSecret: blizzardClientSecret
+            )
+            for encounterID in Set(encounterIDs) {
+                if let encounter = try? await blizzardAPIClient.fetchJournalEncounter(
+                    encounterID: encounterID, locale: "ko_KR", token: token
+                ) {
+                    result.encounterNames[encounterID] = encounter.name
+                    for ability in encounter.abilities {
+                        result.bossSpellNames[ability.spellID] = ability.name
+                    }
+                }
+            }
+        } catch {
+            logger.warning("인카운터/스킬 이름 해상 실패: \(error)")
+        }
+        return result
     }
 
     // MARK: - 신규 스킬 감지

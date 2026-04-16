@@ -63,6 +63,13 @@ final class SpellCatalogStore: SpellCatalogStoring {
         }
     }
 
+    func knownSpellIDs() -> Set<Int> {
+        queue.sync {
+            ensureLoaded()
+            return Set(cache.keys)
+        }
+    }
+
     func seedIfNeeded(bundle: Bundle = .main) {
         queue.sync {
             ensureLoaded()

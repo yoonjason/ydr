@@ -229,6 +229,25 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
             }
 
+            if !output.bossNameMap.isEmpty {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(output.blocks, id: \.encounterID) { block in
+                            let krName = output.bossNameMap[block.encounterID]
+                            HStack(spacing: 4) {
+                                Text(krName ?? block.name)
+                                    .font(.caption)
+                                if krName != nil {
+                                    Text("(\(block.name))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if !unknown.isEmpty {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 4) {

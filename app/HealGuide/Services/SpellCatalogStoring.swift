@@ -24,4 +24,5 @@ protocol SpellCatalogStoring {
 
     // 카탈로그에 존재하지 않는 spellID 만 필터 — 신규 스킬 감지 시 사용.
     func missingSpellIDs(from candidates: [Int]) -> [Int]
+    func knownSpellIDs() -> Set<Int>
 }

@@ -21,7 +21,7 @@ protocol BlizzardGameDataAPIClient {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
     func fetchSpell(spellID: Int, locale: String, token: String) async throws -> BlizzardSpellInfo
     func fetchSpellMedia(spellID: Int, token: String) async throws -> String?
-    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> [BossAbilityInfo]
+    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> (name: String, abilities: [BossAbilityInfo])
     func fetchJournalInstance(instanceID: Int, locale: String, token: String) async throws -> JournalInstanceInfo
     func fetchPlayableSpecialization(specID: Int, token: String) async throws -> SpecAbilityInfo
 }
@@ -146,7 +146,7 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
         return decoded.assets?.first(where: { $0.key == "icon" })?.value
     }
 
-    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> [BossAbilityInfo] {
+    func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> (name: String, abilities: [BossAbilityInfo]) {
         let url = try buildURL(path: "/data/wow/journal-encounter/\(encounterID)", queryItems: [
             URLQueryItem(name: "namespace", value: "static-\(region)"),
             URLQueryItem(name: "locale", value: locale),
@@ -154,6 +154,7 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
         let data = try await performGet(url: url, token: token)
 
         struct EncounterResponse: Decodable {
+            let name: String
             let sections: [EncounterSection]?
         }
         struct EncounterSection: Decodable {
@@ -188,7 +189,7 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
             }
         }
         walk(decoded.sections)
-        return abilities
+        return (name: decoded.name, abilities: abilities)
     }
 
     func fetchJournalInstance(instanceID: Int, locale: String, token: String) async throws -> JournalInstanceInfo {

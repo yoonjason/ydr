@@ -20,4 +20,16 @@ enum HealerSpec: String, CaseIterable, Identifiable {
         case .presEvoker:      return "보존 기원사"
         }
     }
+
+    var blizzardSpecID: Int {
+        switch self {
+        case .discPriest:      return 256
+        case .holyPriest:      return 257
+        case .restoDruid:      return 105
+        case .mistweaverMonk:  return 270
+        case .holyPaladin:     return 65
+        case .restoShaman:     return 264
+        case .presEvoker:      return 1468
+        }
+    }
 }
