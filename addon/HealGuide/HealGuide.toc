@@ -10,6 +10,7 @@ Core/Init.lua
 Core/Storage.lua
 Core/SpecMatcher.lua
 Core/ImportParser.lua
+Core/ConditionEvaluator.lua
 Core/EncounterEngine.lua
 Core/EncounterTimelineBridge.lua
 UI/AlertFrame.lua

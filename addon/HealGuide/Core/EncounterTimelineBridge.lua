@@ -80,18 +80,23 @@ function Bridge:OnEventAdded(eventInfo)
     -- 예: duration=10, offset=-8 → 10 + (-8) - leadTime = 2 - leadTime 뒤에 예약
     if hasLeadIns then
         for _, entry in ipairs(leadIns[bossSpellID]) do
-            local playerSpellID = entry.spellID
-            local leadOffset    = entry.offset or 0  -- 음수
-            local schedule      = duration + leadOffset - leadTime
+            local playerSpellID  = entry.spellID
+            local leadOffset     = entry.offset or 0  -- 음수
+            local schedule       = duration + leadOffset - leadTime
+            local entryCondition = entry.condition
             if schedule > 0 then
                 local t = C_Timer.NewTimer(schedule, function()
-                    engine:TriggerAlert(playerSpellID, "leadIn")
+                    if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                        engine:TriggerAlert(playerSpellID, "leadIn")
+                    end
                 end)
                 table.insert(engine.pendingTimers, t)
                 scheduledCount = scheduledCount + 1
             elseif schedule > -0.5 then
                 -- 이미 거의 지났으면 즉시 표시 (램프 후반부)
-                engine:TriggerAlert(playerSpellID, "leadIn-immediate")
+                if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                    engine:TriggerAlert(playerSpellID, "leadIn-immediate")
+                end
                 scheduledCount = scheduledCount + 1
             end
             -- schedule < -0.5: 너무 늦음, 스킵
@@ -101,17 +106,22 @@ function Bridge:OnEventAdded(eventInfo)
     -- reactions: 보스 캐스트 이후 반응 시퀀스
     if hasReactions then
         for _, entry in ipairs(reactions[bossSpellID]) do
-            local playerSpellID = entry.spellID
-            local reactionDelay = entry.delay or 0
-            local schedule = duration + reactionDelay - leadTime
+            local playerSpellID  = entry.spellID
+            local reactionDelay  = entry.delay or 0
+            local schedule       = duration + reactionDelay - leadTime
+            local entryCondition = entry.condition
             if schedule > 0 then
                 local t = C_Timer.NewTimer(schedule, function()
-                    engine:TriggerAlert(playerSpellID, "native")
+                    if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                        engine:TriggerAlert(playerSpellID, "native")
+                    end
                 end)
                 table.insert(engine.pendingTimers, t)
                 scheduledCount = scheduledCount + 1
             else
-                engine:TriggerAlert(playerSpellID, "native-immediate")
+                if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                    engine:TriggerAlert(playerSpellID, "native-immediate")
+                end
                 scheduledCount = scheduledCount + 1
             end
         end

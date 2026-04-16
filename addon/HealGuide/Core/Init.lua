@@ -88,11 +88,19 @@ SlashCmdList["HEALGUIDE"] = function(msg)
     elseif cmd == "import" then
         addon.ImportDialog:Open()
     elseif cmd == "test" then
+        if args == "condition" then
+            if addon.ConditionEvaluator and addon.ConditionEvaluator.RunSelfTest then
+                addon.ConditionEvaluator:RunSelfTest()
+            else
+                print("|cff00ff00HealGuide|r ConditionEvaluator 미로드")
+            end
+            return
+        end
         local encID = tonumber(args)
         if encID then
             addon.EncounterEngine:TestEncounter(encID)
         else
-            print("|cff00ff00HealGuide|r 사용법: /hg test <encounterID>")
+            print("|cff00ff00HealGuide|r 사용법: /hg test <encounterID> 또는 /hg test condition")
         end
     elseif cmd == "lock" then
         addon.AlertFrame:ToggleLock()

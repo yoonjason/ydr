@@ -219,4 +219,67 @@ final class LuaGeneratorTests: XCTestCase {
         XCTAssertTrue(output.contains("offset = 3.2"))
         XCTAssertTrue(output.contains("delay = 0.5"))
     }
+
+    // MARK: - condition 출력
+
+    func test_absoluteEntry_nilCondition_backwardCompatibleFormat() {
+        let entry = AbsoluteEntry(spellID: 17, offset: 3.2)
+        let block = makeBlock(absolute: [entry])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        XCTAssertTrue(output.contains("{ spellID = 17, offset = 3.2 },"))
+        XCTAssertFalse(output.contains("condition"))
+    }
+
+    func test_absoluteEntry_simpleLeafCondition() {
+        let condition = ConditionNode(op: "lt", field: "partyHPAvg", value: 0.6)
+        let entry = AbsoluteEntry(spellID: 17, offset: 3.2, condition: condition)
+        let block = makeBlock(absolute: [entry])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        XCTAssertTrue(output.contains("{ op = \"lt\", field = \"partyHPAvg\", value = 0.6 }"))
+    }
+
+    func test_reactionEntry_leafConditionWithSpellID() {
+        let condition = ConditionNode(op: "eq", field: "spellOnCooldown", value: 1, spellID: 65116)
+        let reaction = ReactionEntry(bossAbilityID: 100, playerSpellID: 17, delay: 0.5, condition: condition)
+        let block = makeBlock(reactions: [reaction])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        XCTAssertTrue(output.contains("{ op = \"eq\", field = \"spellOnCooldown\", spellID = 65116, value = 1 }"))
+    }
+
+    func test_leadInEntry_andCompoundCondition() {
+        let condition = ConditionNode(op: "and", operands: [
+            ConditionNode(op: "lt", field: "partyHPAvg", value: 0.6),
+            ConditionNode(op: "gt", field: "playerMana", value: 0.3)
+        ])
+        let lead = LeadInEntry(bossAbilityID: 100, playerSpellID: 17, offset: -8.0, condition: condition)
+        let block = makeBlock(leadIns: [lead])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        XCTAssertTrue(output.contains("op = \"and\", operands = {"))
+        XCTAssertTrue(output.contains("{ op = \"lt\", field = \"partyHPAvg\", value = 0.6 }"))
+        XCTAssertTrue(output.contains("{ op = \"gt\", field = \"playerMana\", value = 0.3 }"))
+    }
+
+    func test_notCondition_wrapsInnerLeaf() {
+        let condition = ConditionNode(op: "not", operands: [
+            ConditionNode(op: "eq", field: "spellOnCooldown", value: 1, spellID: 65116)
+        ])
+        let entry = AbsoluteEntry(spellID: 17, offset: 3.2, condition: condition)
+        let block = makeBlock(absolute: [entry])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        XCTAssertTrue(output.contains("op = \"not\", operands = {"))
+        XCTAssertTrue(output.contains("spellID = 65116"))
+    }
+
+    func test_compoundCondition_noDoubleIndent() {
+        let condition = ConditionNode(op: "and", operands: [
+            ConditionNode(op: "lt", field: "partyHPAvg", value: 0.6)
+        ])
+        let entry = AbsoluteEntry(spellID: 17, offset: 3.2, condition: condition)
+        let block = makeBlock(absolute: [entry])
+        let output = generator.generate(blocks: [block], metadata: makeMetadata())
+        // 이중 indent 회귀 방지: 내부 리프가 정확히 12칸 들여쓰기로 시작해야 함
+        // (condition 시작 indent 10칸 + inner 2칸 = 12칸)
+        XCTAssertTrue(output.contains("            { op = \"lt\", field = \"partyHPAvg\", value = 0.6 }"))
+        XCTAssertFalse(output.contains("              { op = \"lt\""))
+    }
 }

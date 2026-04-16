@@ -23,7 +23,14 @@ struct LuaGenerator: LuaGenerating {
             lines.append("      timeline = {")
             for entry in block.absolute {
                 let offsetStr = String(format: "%.1f", entry.offset)
-                lines.append("        { spellID = \(entry.spellID), offset = \(offsetStr) },")
+                if let condition = entry.condition {
+                    let conditionLine = conditionLua(condition, indent: "          ")
+                    lines.append("        { spellID = \(entry.spellID), offset = \(offsetStr),")
+                    lines.append("          condition = \(conditionLine),")
+                    lines.append("        },")
+                } else {
+                    lines.append("        { spellID = \(entry.spellID), offset = \(offsetStr) },")
+                }
             }
             lines.append("      },")
             lines.append("      reactions = {")
@@ -35,12 +42,18 @@ struct LuaGenerator: LuaGenerating {
                 lines.append("        [\(bossID)] = {")
                 for reaction in grouped[bossID, default: []] {
                     let delayStr = String(format: "%.1f", reaction.delay)
-                    lines.append("          { spellID = \(reaction.playerSpellID), delay = \(delayStr) },")
+                    if let condition = reaction.condition {
+                        let conditionLine = conditionLua(condition, indent: "            ")
+                        lines.append("          { spellID = \(reaction.playerSpellID), delay = \(delayStr),")
+                        lines.append("            condition = \(conditionLine),")
+                        lines.append("          },")
+                    } else {
+                        lines.append("          { spellID = \(reaction.playerSpellID), delay = \(delayStr) },")
+                    }
                 }
                 lines.append("        },")
             }
             lines.append("      },")
-            // leadIns: 보스 캐스트 이전 15초 램프 시퀀스 (offset 음수)
             lines.append("      leadIns = {")
             var leadGrouped: [Int: [LeadInEntry]] = [:]
             for lead in block.leadIns {
@@ -50,7 +63,14 @@ struct LuaGenerator: LuaGenerating {
                 lines.append("        [\(bossID)] = {")
                 for lead in leadGrouped[bossID, default: []] {
                     let offsetStr = String(format: "%.1f", lead.offset)
-                    lines.append("          { spellID = \(lead.playerSpellID), offset = \(offsetStr) },")
+                    if let condition = lead.condition {
+                        let conditionLine = conditionLua(condition, indent: "            ")
+                        lines.append("          { spellID = \(lead.playerSpellID), offset = \(offsetStr),")
+                        lines.append("            condition = \(conditionLine),")
+                        lines.append("          },")
+                    } else {
+                        lines.append("          { spellID = \(lead.playerSpellID), offset = \(offsetStr) },")
+                    }
                 }
                 lines.append("        },")
             }
@@ -62,6 +82,27 @@ struct LuaGenerator: LuaGenerating {
         lines.append("}")
 
         return lines.joined(separator: "\n")
+    }
+
+    private func conditionLua(_ node: ConditionNode, indent: String) -> String {
+        switch node.op {
+        case "and", "or":
+            let inner = indent + "  "
+            let operandLines = (node.operands ?? []).map { inner + conditionLua($0, indent: inner) }
+            return "{ op = \"\(node.op)\", operands = {\n"
+                + operandLines.joined(separator: ",\n")
+                + ",\n" + indent + "} }"
+        case "not":
+            let innerNode = node.operands?.first.map { conditionLua($0, indent: indent + "  ") } ?? "nil"
+            return "{ op = \"not\", operands = { \(innerNode) } }"
+        default:
+            let valueStr = node.value.map { String(format: "%g", $0) } ?? "nil"
+            let fieldStr = node.field ?? ""
+            if let spellID = node.spellID {
+                return "{ op = \"\(node.op)\", field = \"\(fieldStr)\", spellID = \(spellID), value = \(valueStr) }"
+            }
+            return "{ op = \"\(node.op)\", field = \"\(fieldStr)\", value = \(valueStr) }"
+        }
     }
 
     private func escapeLuaString(_ str: String) -> String {

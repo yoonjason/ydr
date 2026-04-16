@@ -99,9 +99,12 @@ function EncounterEngine:ScheduleTimeline(timeline)
     for _, entry in ipairs(timeline) do
         local delay = entry.offset - (now - startTime) - leadTime
         if delay > 0 then
-            local spellID = entry.spellID
+            local spellID        = entry.spellID
+            local entryCondition = entry.condition
             local t = C_Timer.NewTimer(delay, function()
-                self:TriggerAlert(spellID, "absolute")
+                if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                    self:TriggerAlert(spellID, "absolute")
+                end
             end)
             table.insert(self.pendingTimers, t)
             scheduled = scheduled + 1
@@ -148,10 +151,13 @@ function EncounterEngine:OnCombatLog(
 
     local leadTime = addon.Storage:GetSetting("leadTime") or 0
     for _, entry in ipairs(reactions[bossSpellID]) do
-        local playerSpellID = entry.spellID
-        local delay         = math.max(0, (entry.delay or 0) - leadTime)
+        local playerSpellID  = entry.spellID
+        local delay          = math.max(0, (entry.delay or 0) - leadTime)
+        local entryCondition = entry.condition
         local t = C_Timer.NewTimer(delay, function()
-            self:TriggerAlert(playerSpellID, "reactive")
+            if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                self:TriggerAlert(playerSpellID, "reactive")
+            end
         end)
         table.insert(self.pendingTimers, t)
     end
