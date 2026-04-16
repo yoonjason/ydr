@@ -55,7 +55,11 @@ final class ReportViewModel: ObservableObject {
     private let luaGenerator: any LuaGenerating
     private let pasteboard: any PasteboardWriting
     private let spellResolver: any SpellResolving
+    private let spellCatalogStore: any SpellCatalogStoring
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "ReportViewModel")
+
+    @Published var discoveredSpells: [DiscoveredSpell] = []
+    @Published var showNewSpellSheet = false
 
     init(
         urlParser: any URLParsing,
@@ -64,7 +68,8 @@ final class ReportViewModel: ObservableObject {
         normalizer: any TimelineNormalizing,
         luaGenerator: any LuaGenerating,
         pasteboard: any PasteboardWriting,
-        spellResolver: any SpellResolving
+        spellResolver: any SpellResolving,
+        spellCatalogStore: any SpellCatalogStoring = SpellCatalogStore()
     ) {
         self.urlParser = urlParser
         self.keychain = keychain
@@ -73,6 +78,7 @@ final class ReportViewModel: ObservableObject {
         self.luaGenerator = luaGenerator
         self.pasteboard = pasteboard
         self.spellResolver = spellResolver
+        self.spellCatalogStore = spellCatalogStore
     }
 
     func onAppear() {
@@ -295,9 +301,8 @@ final class ReportViewModel: ObservableObject {
             return
         }
 
-        // 카탈로그에 없는 주문 탐지
         let catalogIDs = Set(spellResolver.allSpellIDs(for: spec))
-        let unknown = Array(allPlayerSpellIDs.subtracting(catalogIDs)).sorted()
+        let unknownIDs = Array(allPlayerSpellIDs.subtracting(catalogIDs)).sorted()
 
         let luaText = luaGenerator.generate(
             blocks: blocks,
@@ -308,7 +313,65 @@ final class ReportViewModel: ObservableObject {
                 generatedAt: Date()
             )
         )
-        state = .success(LuaOutput(blocks: blocks, luaText: luaText), unknownSpellIDs: unknown)
+        state = .success(LuaOutput(blocks: blocks, luaText: luaText), unknownSpellIDs: unknownIDs)
+
+        if !unknownIDs.isEmpty {
+            await resolveUnknownSpells(unknownIDs, reportCode: reportURL.code, token: token)
+        }
+    }
+
+    // MARK: - 신규 스킬 감지
+
+    private func resolveUnknownSpells(_ unknownIDs: [Int], reportCode: String, token: String) async {
+        var nameMap: [Int: String] = [:]
+        do {
+            let abilities = try await apiClient.fetchMasterData(reportCode: reportCode, token: token)
+            for ability in abilities where unknownIDs.contains(ability.gameID) {
+                nameMap[ability.gameID] = ability.name
+            }
+        } catch {
+            logger.warning("masterData fetch 실패, spellID 만 표시: \(error)")
+        }
+
+        discoveredSpells = unknownIDs.map { id in
+            DiscoveredSpell(
+                spellID: id,
+                name: nameMap[id] ?? "Spell #\(id)"
+            )
+        }
+        showNewSpellSheet = true
+    }
+
+    func toggleDiscoveredSpell(_ spellID: Int) {
+        guard let index = discoveredSpells.firstIndex(where: { $0.id == spellID }) else { return }
+        discoveredSpells[index].selected.toggle()
+    }
+
+    func selectAllDiscoveredSpells() {
+        for index in discoveredSpells.indices { discoveredSpells[index].selected = true }
+    }
+
+    func approveDiscoveredSpells() {
+        let approved = discoveredSpells.filter(\.selected)
+        let records = approved.map { spell in
+            SpellCatalogRecord(
+                spellID: spell.id,
+                nameKR: spell.name,
+                nameEN: spell.name,
+                firstSeenAt: Date(),
+                source: .wclMasterData
+            )
+        }
+        if !records.isEmpty {
+            try? spellCatalogStore.upsertMany(records)
+        }
+        showNewSpellSheet = false
+        discoveredSpells = []
+    }
+
+    func dismissDiscoveredSpells() {
+        showNewSpellSheet = false
+        discoveredSpells = []
     }
 
     // MARK: - 되돌리기

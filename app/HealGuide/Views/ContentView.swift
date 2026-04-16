@@ -14,6 +14,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 560, minHeight: 600)
         .onAppear { viewModel.onAppear() }
+        .sheet(isPresented: $viewModel.showNewSpellSheet) {
+            NewSpellApprovalSheet(viewModel: viewModel)
+        }
     }
 
     // MARK: - 입력
@@ -190,9 +193,10 @@ struct ContentView: View {
                         Text("SpellID: \(unknown.map(String.init).joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("가이드에 포함하려면 카탈로그에 추가 후 다시 감지해 주세요.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        if !viewModel.discoveredSpells.isEmpty {
+                            Button("카탈로그에 추가...") { viewModel.showNewSpellSheet = true }
+                                .font(.caption)
+                        }
                     }
                 }
             }
