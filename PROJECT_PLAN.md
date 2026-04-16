@@ -456,3 +456,188 @@ HealGuideDB = {
 - [WarcraftLogs OAuth 가이드](https://www.warcraftlogs.com/api/docs)
 - [Blizzard WoW API 문서 (Wowpedia)](https://warcraft.wiki.gg/wiki/World_of_Warcraft_API)
 - [COMBAT_LOG_EVENT_UNFILTERED 이벤트](https://warcraft.wiki.gg/wiki/COMBAT_LOG_EVENT_UNFILTERED)
+- [Blizzard Game Data API (Spell)](https://develop.battle.net/documentation/world-of-warcraft/game-data-apis)
+- [Anthropic Messages API](https://docs.anthropic.com/en/api/messages)
+
+---
+
+## 11. Phase 5 — 상황 인지 알림 (Context-Aware Alerts)
+
+### 11.1 배경 & 목표
+
+현재 (U1~U3) 구조는 "레퍼런스 로그 복제" 방식. 보스가 스킬 X 를 쓰면
+레퍼런스 힐러가 그 순간 썼던 플레이어 스킬을 리드타임만큼 앞당겨 띄운다.
+
+**한계:** 실시간 파티 상태(HP, 디버프, 쿨다운 등) 를 고려하지 않고
+"광휘" 가 필요 없는 상황에서도 광휘를 띄운다. 인간 상위권 힐러의
+상황 판단을 복제하지 못함.
+
+**목표:** 알림 발화 직전 조건 평가로 "지금 이 스킬이 적절한가" 를 게이팅.
+정적 타임라인 복제 → 동적 상황 인지로 진화.
+
+**품질 목표:** 인간 상위권 80점. 100% 복제는 비현실적
+(WCL 로그에서 추출 불가한 변수 다수).
+
+### 11.2 하이브리드 카탈로그 + Blizzard API (선행 작업)
+
+Phase A~C 착수 전, 한국어 스킬명 정확도 100% 및 메타 자동 대응을 위해
+`SpecSpellCatalog` 를 하드코딩에서 동적 구조로 전환.
+
+**데이터 소스:**
+1. **베이스라인 spell ID 리스트** (하드코딩 ~100줄, 메타 변경 드문 핵심 스킬만)
+2. **WCL masterData.abilities** 런타임 확장 (로그 import 시 힐러가 실제 사용한 스킬 자동 수집)
+3. **Blizzard Game Data API** (`/data/wow/spell/{id}?locale=ko_KR`) 로 공식 한국어 이름 fetch
+
+**저장소:**
+- `~/Library/Application Support/HealGuide/spell_catalog.json` (영구)
+- 스키마: `spellID → {nameKR, nameEN, firstSeenAt, source}`
+
+**인증:**
+- Blizzard OAuth2 client credentials
+- `FileCredentialStore` 재사용 (WCL 과 동일 패턴, 별도 키)
+
+**신규 스킬 감지 UX:**
+- import 중 카탈로그 미등록 spellID 감지 → 시트 팝업
+- "새 스킬 N개 발견. 카탈로그에 추가할까요?" [모두 추가] / [개별 선택] / [무시]
+- 승인된 것만 Blizzard API 로 이름 fetch → 카탈로그 merge
+
+**공수:** 0.5~1일
+
+### 11.3 Phase A — 런타임 조건 엔진 인프라
+
+**데이터 스키마 확장:**
+
+기존:
+```lua
+leadIns = { [bossSpellID] = { { spellID = X, offset = -8.0 }, ... } }
+```
+
+확장:
+```lua
+leadIns = {
+  [bossSpellID] = {
+    { spellID = X, offset = -8.0 },                              -- 무조건 (하위 호환)
+    { spellID = Y, offset = -5.0, condition = {                  -- 조건부
+        op = "and",
+        args = {
+          { op = "lt",  field = "partyHPAvg",      value = 70 },
+          { op = "gte", field = "tankDebuffStack", value = 3 }
+        }
+    }}
+  }
+}
+```
+
+**필드 화이트리스트 (WoW API 매핑):**
+
+| field | WoW API | 비고 |
+|---|---|---|
+| `partyHPAvg` | `UnitHealth/UnitHealthMax` 순회 | 파티 평균 HP % |
+| `partyHPMin` | 위와 동일, min 계산 | 가장 낮은 파티원 HP % |
+| `tankHP` | `UnitGroupRolesAssigned == "TANK"` 필터 | 탱커 HP % |
+| `tankDebuffStack` | `C_UnitAuras.GetAuraDataByIndex` | 탱커 특정 디버프 스택 |
+| `playerMana` | `UnitPower("player", Enum.PowerType.Mana)` | 플레이어 마나 % |
+| `spellOnCooldown` | `C_Spell.GetSpellCooldown` | 특정 spellID 쿨다운 여부 |
+| `encounterTimeElapsed` | `GetTime() - encounterStartTime` | 전투 경과 초 |
+
+**Predicate 인터프리터:**
+- op: `lt/lte/gt/gte/eq/neq/and/or/not`
+- 재귀 깊이 제한: 8
+- 필드 화이트리스트 strict — 미등록 필드는 evaluation error → fallback
+- 파일: `addon/HealGuide/Core/ConditionEngine.lua` (~300 LOC 예상)
+
+**통합 지점:**
+- `EncounterEngine:TriggerAlert(spellID, source, condition)` 에 조건 파라미터 추가
+- `EncounterTimelineBridge` 및 `ScheduleTimeline` 이 엔트리 예약 시 condition 을 클로저에 바인딩
+- 발화 직전 `ConditionEngine:Evaluate(condition)` → `true` 면 표시, `false` 면 스킵
+- `nil` 조건은 기존대로 무조건 발화 (하위 호환)
+
+**Swift 측 변경:**
+- `Models/TimelineEntry.swift` 의 `LeadInEntry`/`ReactionEntry` 에 `condition: ConditionNode?` 추가
+- `Services/LuaGenerator.swift` 에 조건 직렬화 함수
+- `Services/TimelineNormalizer.swift` 는 현재 단계에선 condition 을 **비워둠** (Phase C 에서 채움)
+
+**테스트 전략:**
+- Lua: 수동 `/hg test condition` 슬래시로 필드값 덤프 + 샘플 predicate 평가
+- Swift: `ConditionNode` 직렬화/역직렬화 단위 테스트
+
+**공수:** 2~3일
+
+### 11.4 Phase B — (건너뜀) 수동 룰 에디터
+
+사용자 요청에 따라 Phase B 는 건너뛴다. Phase A 조건 엔진만 구축한 뒤
+바로 Phase C 로 진입해 LLM 이 룰을 자동 생성하도록 한다.
+
+단, Phase A 완료 시점에 **쿨다운 체크** 같은 범용 하드코딩 룰 1~2개는
+시험용으로 작성해 조건 엔진 자체의 실전 검증에 사용한다.
+
+### 11.5 Phase C — LLM 룰 자동 생성
+
+**파이프라인:**
+
+```
+1. Mac 앱: WCL 에서 상황 컨텍스트 추가 fetch
+   - report.events(dataType: Resources) → 파티 HP 타임라인
+   - report.events(dataType: Debuffs)   → 주요 디버프 스택 변화
+2. 앱: 보스 캐스트 시점 직전 스냅샷 추출 (HP, 디버프, 쿨다운 추정)
+3. 앱: Claude API 배치 호출 (Anthropic Batch API, 50% 할인)
+   프롬프트 템플릿:
+     "보스 {bossName} 가 {bossSpellName} 를 시전할 때
+      {healerSpec} 힐러는 상황 A, B, C 에서 각각 다른 스킬을 선택.
+      어떤 조건이 이 선택을 가른 predicate JSON 으로 요약. 필드는
+      {화이트리스트} 만 허용."
+4. 앱: LLM 응답 파싱 → SpecSpellCatalog 대조 → 무효 spellID 제거
+5. 앱: 사람 승인 UI (필수) — 생성된 룰 프리뷰, 개별 승인/수정/삭제
+6. 앱: 승인된 룰을 Phase A 스키마로 직렬화 → Lua 출력
+7. 애드온: ConditionEngine 이 런타임 평가
+8. 애드온: 이상 알림 리포트 → JSON export → 앱 재학습 루프
+```
+
+**리스크 & 완화:**
+
+| 리스크 | 완화 |
+|---|---|
+| LLM 과적합 (샘플 2개로 경계값 추출) | 샘플 수 N<5 면 룰 생성 skip |
+| 상관관계를 인과로 착각 | confidence 필드 요구, 낮으면 제외 |
+| 존재하지 않는 필드명 생성 | 화이트리스트 strict 검증 |
+| 환각 spellID | SpecSpellCatalog 대조 필수 |
+| 메타 변경 시 룰 stale | 버전 태깅 + 재생성 트리거 |
+| WCL query 부하 | 캐싱 + rate limit 준수 |
+
+**비용 추정:**
+- 던전 1개 = 보스 5~8 × 스킬 10~20 × 상황 다양 → 쿼리 100~200건
+- Claude Sonnet 3K 입력 토큰/쿼리 × 200 = 600K 토큰 ≈ $2~3
+- 배치 API 할인 적용 → **$1~1.5/던전**
+- 유저 자기 키 옵션 지원 → 운영 부담 0
+
+**인증:**
+- Anthropic API 키는 `FileCredentialStore` 에 저장 (WCL 과 동일 계층)
+
+**사람 개입 (필수):**
+- 룰 승인 UI 없이 완전 자동화는 환상. 최소 2~3회 검토 루프 필요.
+- SwiftUI 룰 에디터 + 프리뷰 + 실기 피드백 import 약 2~3일
+
+**공수:** 7~10일 (앱 측 전체)
+
+### 11.6 전체 로드맵 요약
+
+| 순서 | 작업 | 공수 | 착수 조건 |
+|---|---|---|---|
+| 0   | 실기 검증 (U1~U3, BLK-1, U2.5)            | —     | 인게임 접속 시 |
+| 0.5 | 디버그 로그 정리 (dprint 전환)             | 0.5일 | 실기 검증 후   |
+| 1   | **하이브리드 카탈로그 + Blizzard API**     | 0.5~1일 | 실기 검증 후 |
+| 2   | **Phase A: 조건 엔진 인프라**              | 2~3일 | 1 완료 후      |
+| 2.5 | 최소 하드코딩 룰 (쿨다운 체크) + 실기      | 0.5일 | 2 완료 후      |
+| 3   | **Phase C: LLM 룰 자동 생성**              | 7~10일 | 2.5 검증 후   |
+
+**Go/No-Go 결정 지점:**
+- Phase 2.5 에서 조건 엔진이 유용하지 않으면 Phase C 취소, Phase A 만 유지
+- Phase C 구현 중 LLM 출력 품질이 80점 미만이면 수동 룰(Phase B) 복귀 검토
+
+### 11.7 미해결 질문
+
+- 파티 HP 타임라인 해상도: WCL 의 Resources 이벤트가 1초 미만 정밀도를 보장하는가?
+- 탱커 디버프 스택 추적: 디버프 종류가 보스마다 다름 → 보스별 추적 대상 디버프 목록을 누가 정의?
+- 특성 빌드 차이: 레퍼런스 힐러 특성과 내 특성이 다를 때 룰 신뢰도 저하 — 경고 UI 필요?
+- Midnight 12.0 API 변경: `UnitDebuff` 제거 여부 (C_UnitAuras 로 완전 이전) 확인 필요
+- 커뮤니티 카탈로그: `spell_catalog.json` 공유 기능(GitHub Gist 등) 의 장기 가치

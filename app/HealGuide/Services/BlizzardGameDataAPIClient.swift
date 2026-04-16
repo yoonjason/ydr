@@ -1,0 +1,126 @@
+import Foundation
+import os
+
+// Blizzard Battle.net Game Data API 클라이언트.
+//
+// 목적: spellID → 정식 한국어/영어 이름 해석. WCL masterData 는 로그 녹화 시
+// 서버 로캘 기반이라 일관성이 떨어지고 누락이 있을 수 있어, Blizzard 공식
+// API 를 ground-truth 로 사용한다.
+//
+// 인증: OAuth2 Client Credentials Grant
+//   POST https://oauth.battle.net/token
+//   Authorization: Basic base64(clientID:clientSecret)
+//   body: grant_type=client_credentials
+//
+// Spell API:
+//   GET https://kr.api.blizzard.com/data/wow/spell/{id}?namespace=static-kr&locale=ko_KR
+//   Authorization: Bearer <token>
+//
+// Region: 현재는 `kr` 고정. 추후 locale 확장 시 region 파라미터화.
+protocol BlizzardGameDataAPIClient {
+    func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
+    func fetchSpell(spellID: Int, locale: String, token: String) async throws -> BlizzardSpellInfo
+}
+
+struct BlizzardSpellInfo: Equatable {
+    let id: Int
+    let name: String
+}
+
+final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
+    private let session: URLSession
+    private let region: String  // "kr", "us", "eu" — 현재는 kr 기본
+    private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "BlizzardAPI")
+
+    init(session: URLSession? = nil, region: String = "kr") {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 60
+            self.session = URLSession(configuration: config)
+        }
+        self.region = region
+    }
+
+    func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "oauth.battle.net"
+        components.path = "/token"
+
+        guard let url = components.url else {
+            throw AppError.networkError("Invalid Blizzard token endpoint")
+        }
+
+        let credentials = "\(clientID):\(clientSecret)"
+        guard let credentialsData = credentials.data(using: .utf8) else {
+            throw AppError.authenticationFailed
+        }
+        let base64 = credentialsData.base64EncodedString()
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("Basic \(base64)", forHTTPHeaderField: "Authorization")
+        request.httpBody = "grant_type=client_credentials".data(using: .utf8)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            logger.error("Blizzard OAuth failed: \((response as? HTTPURLResponse)?.statusCode ?? -1, privacy: .public)")
+            throw AppError.authenticationFailed
+        }
+
+        struct TokenResponse: Decodable {
+            let access_token: String
+        }
+        do {
+            return try JSONDecoder().decode(TokenResponse.self, from: data).access_token
+        } catch {
+            throw AppError.decodingFailed
+        }
+    }
+
+    func fetchSpell(spellID: Int, locale: String, token: String) async throws -> BlizzardSpellInfo {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "\(region).api.blizzard.com"
+        components.path = "/data/wow/spell/\(spellID)"
+        components.queryItems = [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ]
+
+        guard let url = components.url else {
+            throw AppError.networkError("Invalid Blizzard spell endpoint")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AppError.networkError("Invalid response")
+        }
+        if http.statusCode == 404 {
+            throw AppError.networkError("Spell \(spellID) not found in Blizzard API")
+        }
+        if http.statusCode != 200 {
+            throw AppError.networkError("Blizzard API status \(http.statusCode)")
+        }
+
+        struct SpellResponse: Decodable {
+            let id: Int
+            let name: String
+        }
+        do {
+            let decoded = try JSONDecoder().decode(SpellResponse.self, from: data)
+            return BlizzardSpellInfo(id: decoded.id, name: decoded.name)
+        } catch {
+            logger.error("Blizzard spell decode failed for \(spellID, privacy: .public)")
+            throw AppError.decodingFailed
+        }
+    }
+}
