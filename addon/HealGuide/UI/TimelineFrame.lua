@@ -111,17 +111,15 @@ local function acquireIcon()
     timeText:SetPoint("CENTER")
     btn.timeText = timeText
 
-    local ic = { btn = btn, tex = tex, glow = glow, interruptGlow = interruptGlow, timeText = timeText, _inUse = true, _locked = false }
+    local ic = { btn = btn, tex = tex, glow = glow, interruptGlow = interruptGlow, timeText = timeText, _inUse = true }
     pool[#pool + 1] = ic
     return ic
 end
 
 local function releaseAllIcons()
     for _, ic in ipairs(pool) do
-        if not ic._locked then
-            ic._inUse = false
-            ic.btn:Hide()
-        end
+        ic._inUse = false
+        ic.btn:Hide()
     end
 end
 
@@ -148,9 +146,6 @@ function TimelineFrame:Init()
 
     trackLine = anchor:CreateTexture(nil, "BACKGROUND")
     trackLine:SetColorTexture(0.5, 0.5, 0.5, 0.5)
-
-    self.firedRecently = {}  -- [spellID] = { startTime, ic }
-    self._prevVisible  = {}  -- [spellID] = remaining (previous frame)
 
     self:ApplyLayout()
     self:ApplyVisibility()
@@ -179,18 +174,6 @@ end
 
 function TimelineFrame:ApplyLayout()
     if not anchor then return end
-    -- linger 풀 클리어 (orientation 전환 시)
-    if self.firedRecently then
-        for spellID, entry in pairs(self.firedRecently) do
-            if entry.ic then
-                entry.ic._locked = false
-                entry.ic._inUse  = false
-                entry.ic.btn:SetAlpha(1)
-                entry.ic.btn:Hide()
-            end
-        end
-        self.firedRecently = {}
-    end
 
     local orientation = S("timelineOrientation") or "horizontal"
     local trackLength = S("timelineTrackLength") or 400
@@ -231,16 +214,6 @@ end
 
 function TimelineFrame:_Update()
     if not addon.EncounterEngine or not addon.EncounterEngine.activeEncounterID then
-        for _, entry in pairs(self.firedRecently) do
-            if entry.ic then
-                entry.ic._locked = false
-                entry.ic._inUse  = false
-                entry.ic.btn:SetAlpha(1)
-                entry.ic.btn:Hide()
-            end
-        end
-        self.firedRecently = {}
-        self._prevVisible  = {}
         releaseAllIcons()
         releaseAllTicks()
         return
@@ -251,7 +224,6 @@ function TimelineFrame:_Update()
     local trackLength = S("timelineTrackLength") or 400
     local iconSize    = S("timelineIconSize")    or 36
     local showTicks   = S("timelineShowTicks")
-    local now         = GetTime()
 
     releaseAllIcons()
     releaseAllTicks()
@@ -259,31 +231,7 @@ function TimelineFrame:_Update()
     local upcoming = addon.EncounterEngine:GetUpcomingAlerts(20)
     local travel   = trackLength - iconSize
 
-    -- ── 1. 현재 프레임 visible set 구성 ─────────────────────────────────────────
-    local currentVisible = {}
-    for _, data in ipairs(upcoming) do
-        if data.remaining > 0 and data.remaining <= window then
-            currentVisible[data.spellID] = data.remaining
-        end
-    end
-
-    -- ── 2. 이전 프레임에 있었지만 사라진 spellID → linger 풀 등록 ──────────────
-    for spellID, prevRemaining in pairs(self._prevVisible) do
-        if not currentVisible[spellID] and prevRemaining < 0.5
-                and not self.firedRecently[spellID] then
-            local ic = acquireIcon()
-            if ic then
-                ic._locked = true
-                local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-                ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
-                self.firedRecently[spellID] = { startTime = now, ic = ic }
-            end
-        end
-    end
-
-    self._prevVisible = currentVisible
-
-    -- ── 3. 일반 upcoming 아이콘 배치 ────────────────────────────────────────────
+    -- ── 아이콘 배치 (remaining=1 이하에서 선형 스케일업 → 0 도달 시 자연 소멸) ──
     for _, data in ipairs(upcoming) do
         if data.remaining > 0 and data.remaining <= window then
             local ic = acquireIcon()
@@ -291,7 +239,12 @@ function TimelineFrame:_Update()
 
             local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(data.spellID)
             ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
-            ic.btn:SetSize(iconSize, iconSize)
+
+            local scale = 1.0
+            if data.remaining <= 1.0 then
+                scale = 1.0 + (1.0 - data.remaining) * 0.4
+            end
+            ic.btn:SetSize(iconSize * scale, iconSize * scale)
             ic.btn:SetAlpha(1)
             ic.btn:ClearAllPoints()
 
@@ -323,52 +276,7 @@ function TimelineFrame:_Update()
         end
     end
 
-    -- ── 4. linger 아이콘 배치/애니메이션 ────────────────────────────────────────
-    local lingerCx = travel + iconSize / 2  -- frac=1 고정 위치
-
-    for spellID, entry in pairs(self.firedRecently) do
-        local elapsed = now - entry.startTime
-        if elapsed > 0.5 then
-            entry.ic._locked = false
-            entry.ic._inUse  = false
-            entry.ic.btn:SetAlpha(1)
-            entry.ic.btn:Hide()
-            self.firedRecently[spellID] = nil
-        else
-            local scale, alpha
-            if elapsed < 0.2 then
-                scale = 1.0 + (elapsed / 0.2) * 0.4
-                alpha = 1.0
-            else
-                local t = (elapsed - 0.2) / 0.3
-                scale = 1.4 - t * 0.4
-                alpha = 1.0 - t
-            end
-
-            local ic = entry.ic
-            ic.btn:SetSize(iconSize * scale, iconSize * scale)
-            ic.btn:SetAlpha(alpha)
-            ic.btn:ClearAllPoints()
-
-            if orientation == "horizontal" then
-                ic.btn:SetPoint("CENTER", anchor, "LEFT", lingerCx, 0)
-            else
-                ic.btn:SetPoint("CENTER", anchor, "TOP", 0, -lingerCx)
-            end
-
-            ic.timeText:SetText("")
-            ic.glow:Show()
-            ic.timeText:SetTextColor(1, 0.2, 0.2, 1)
-
-            if isPlayerSpecInterruptCapable() and INTERRUPT_IDS[spellID] then
-                ic.interruptGlow:Show()
-            else
-                ic.interruptGlow:Hide()
-            end
-        end
-    end
-
-    -- ── 5. 틱 마커 배치 ─────────────────────────────────────────────────────────
+    -- ── 틱 마커 배치 ─────────────────────────────────────────────────────────────
     if showTicks then
         local t = 5
         while t <= window do

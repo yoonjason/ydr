@@ -476,6 +476,25 @@ function MainFrame:_CreateSettingsTab(panel)
     end
     y = y - 30
 
+    local TL_WINDOW_PRESETS = { { label = "5s", val = 5 }, { label = "10s", val = 10 }, { label = "15s", val = 15 } }
+    local TL_PRESET_NAMES   = { "HGTabTLPreset5", "HGTabTLPreset10", "HGTabTLPreset15" }
+    for i, preset in ipairs(TL_WINDOW_PRESETS) do
+        local pb = CreateFrame("Button", TL_PRESET_NAMES[i], content, "GameMenuButtonTemplate")
+        pb:SetSize(36, 20)
+        pb:SetPoint("TOPLEFT", content, "TOPLEFT", 8 + (i - 1) * 40, y - 2)
+        pb:SetText(preset.label)
+        local v = preset.val
+        pb:SetScript("OnClick", function()
+            -- 슬라이더 동기화 중 OnValueChanged 의 중복 저장 방지
+            panel._refreshing = true
+            addon.Storage:SetSetting("timelineWindow", v)
+            panel.tlWindowSl:SetValue(v)
+            panel._refreshing = false
+            addon.TimelineFrame:ApplyLayout()
+        end)
+    end
+    y = y - 28
+
     local tlWindowSl = self:_MakeSlider("HGTabTLWindowSl", "표시 창(초)", 10, 60, 1, content, y)
     tlWindowSl:SetScript("OnValueChanged", function(self, val)
         if panel and panel._refreshing then return end
