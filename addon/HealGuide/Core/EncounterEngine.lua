@@ -23,6 +23,25 @@ EncounterEngine.paused             = false
 EncounterEngine.keystoneLevel      = 0
 EncounterEngine.activeDungeonKey   = ""
 EncounterEngine.activeAffixIDs    = {}
+EncounterEngine.spellMetaCache     = {}    -- [spellID] = { baseCD, castTime }
+
+local function getSpellMeta(spellID)
+    local cache = EncounterEngine.spellMetaCache
+    local meta = cache[spellID]
+    if not meta then
+        local baseCD = 0
+        local ok1, cd = pcall(GetSpellBaseCooldown, spellID)
+        if ok1 and type(cd) == "number" then baseCD = cd end
+        local castTime = 0
+        if C_Spell and C_Spell.GetSpellInfo then
+            local ok2, info = pcall(C_Spell.GetSpellInfo, spellID)
+            if ok2 and info and type(info.castTime) == "number" then castTime = info.castTime end
+        end
+        meta = { baseCD = baseCD, castTime = castTime }
+        cache[spellID] = meta
+    end
+    return meta
+end
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -187,24 +206,31 @@ function EncounterEngine:ScheduleTimeline(timeline)
     for _, entry in ipairs(timeline) do
         -- §5D: M+ 활성(keystoneLevel > 0) 일 때만 minKeystone 필터 적용
         if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
-        local delay = entry.offset - (now - startTime) - leadTime
-        if delay > 0 then
-            local spellID        = entry.spellID
-            local entryCondition = entry.condition
-            local fireTime = GetTime() + delay
-            local alertInfo = { spellID = spellID, fireTime = fireTime, source = "absolute" }
-            table.insert(self.scheduledAlerts, alertInfo)
-            local t = C_Timer.NewTimer(delay, function()
-                self:_RemoveScheduledAlert(alertInfo)
-                if self.paused then return end
-                if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                    self:TriggerAlert(spellID, "absolute")
-                else
-                    self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+        local spellID = entry.spellID
+        if type(spellID) == "number" then
+            local meta = getSpellMeta(spellID)
+            if meta.baseCD >= 30000 then
+                local rawDelay = entry.offset - (now - startTime) - leadTime - (meta.castTime / 1000)
+                if rawDelay > 0 then
+                    local entryCondition = entry.condition
+                    local fireTime = GetTime() + rawDelay
+                    local alertInfo = { spellID = spellID, fireTime = fireTime, source = "absolute" }
+                    table.insert(self.scheduledAlerts, alertInfo)
+                    local t = C_Timer.NewTimer(rawDelay, function()
+                        self:_RemoveScheduledAlert(alertInfo)
+                        if self.paused then return end
+                        if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                            self:TriggerAlert(spellID, "absolute")
+                        else
+                            self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+                        end
+                    end)
+                    table.insert(self.pendingTimers, t)
+                    scheduled = scheduled + 1
                 end
-            end)
-            table.insert(self.pendingTimers, t)
-            scheduled = scheduled + 1
+            else
+                self.stats.cooldownSkipped = self.stats.cooldownSkipped + 1
+            end
         end
         end  -- minKeystone 필터
     end
@@ -254,22 +280,30 @@ function EncounterEngine:OnCombatLog(
     for _, entry in ipairs(reactions[bossSpellID]) do
         -- §5D: M+ 활성일 때만 minKeystone 필터 적용
         if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
-        local playerSpellID  = entry.spellID
-        local delay          = math.max(0, (entry.delay or 0) - leadTime)
-        local entryCondition = entry.condition
-        local fireTime = GetTime() + delay
-        local alertInfo = { spellID = playerSpellID, fireTime = fireTime, source = "reactive" }
-        table.insert(self.scheduledAlerts, alertInfo)
-        local t = C_Timer.NewTimer(delay, function()
-            self:_RemoveScheduledAlert(alertInfo)
-            if self.paused then return end
-            if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                self:TriggerAlert(playerSpellID, "reactive")
+        local playerSpellID = entry.spellID
+        if type(playerSpellID) == "number" then
+            local meta = getSpellMeta(playerSpellID)
+            if meta.baseCD >= 30000 then
+                local rawDelay = (entry.delay or 0) - leadTime - (meta.castTime / 1000)
+                local delay = math.max(0, rawDelay)
+                local entryCondition = entry.condition
+                local fireTime = GetTime() + delay
+                local alertInfo = { spellID = playerSpellID, fireTime = fireTime, source = "reactive" }
+                table.insert(self.scheduledAlerts, alertInfo)
+                local t = C_Timer.NewTimer(delay, function()
+                    self:_RemoveScheduledAlert(alertInfo)
+                    if self.paused then return end
+                    if addon.ConditionEvaluator:ShouldFire(entryCondition) then
+                        self:TriggerAlert(playerSpellID, "reactive")
+                    else
+                        self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+                    end
+                end)
+                table.insert(self.pendingTimers, t)
             else
-                self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+                self.stats.cooldownSkipped = self.stats.cooldownSkipped + 1
             end
-        end)
-        table.insert(self.pendingTimers, t)
+        end
         end  -- minKeystone 필터
     end
 end
