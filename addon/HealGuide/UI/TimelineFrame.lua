@@ -91,7 +91,7 @@ local function acquireIcon()
     btn.tex = tex
 
     -- 긴박 상태(3초 이하) 빨간 테두리 글로우
-    local glow = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    local glow = btn:CreateTexture(nil, "OVERLAY", nil, 6)
     glow:SetPoint("TOPLEFT",     btn, "TOPLEFT",     -3,  3)
     glow:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT",  3, -3)
     glow:SetColorTexture(1, 0, 0, 0.35)
@@ -99,7 +99,8 @@ local function acquireIcon()
     btn.glow = glow
 
     -- interrupt-critical 오렌지 border (§5C: 인터럽트 분담 마커)
-    local interruptGlow = btn:CreateTexture(nil, "OVERLAY", nil, 8)
+    -- sublevel 7 이 최대 (OVERLAY sublevel 범위 -8~7). glow 보다 위에 오도록 7 유지.
+    local interruptGlow = btn:CreateTexture(nil, "OVERLAY", nil, 7)
     interruptGlow:SetPoint("TOPLEFT",     btn, "TOPLEFT",     -2,  2)
     interruptGlow:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT",  2, -2)
     interruptGlow:SetColorTexture(1.0, 0.6, 0.1, 0.4)
