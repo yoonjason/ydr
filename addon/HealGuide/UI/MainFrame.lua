@@ -398,8 +398,34 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.content = content
 
     local y = -8
+    y = self:_CreateSettings_AlertPosition(panel, content, y)
+    y = self:_CreateSettings_Timeline(panel, content, y)
+    y = self:_CreateSettings_MPlus(panel, content, y)
+    y = self:_CreateSettings_AlertSize(panel, content, y)
+    y = self:_CreateSettings_LeadTime(panel, content, y)
+    y = self:_CreateSettings_AlertDisplay(panel, content, y)
 
-    -- ── 알림 위치 ────────────────────────────────────────────────────────────
+    local ttsGroup = CreateFrame("Frame", nil, content)
+    ttsGroup:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    ttsGroup:SetPoint("RIGHT",   content, "RIGHT",   0, 0)
+    panel.ttsGroup = ttsGroup
+    local ttsGroupH = self:_CreateSettings_TTS(panel, ttsGroup)
+    ttsGroup:SetHeight(ttsGroupH)
+    panel._ttsGroupH = ttsGroupH
+
+    local afterTts = CreateFrame("Frame", nil, content)
+    afterTts:SetPoint("TOPLEFT", ttsGroup, "BOTTOMLEFT", 0, -4)
+    afterTts:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    local ay = 0
+    ay = self:_CreateSettings_AlertMode(panel, afterTts, ay)
+    ay = self:_CreateSettings_Sound(panel, afterTts, ay)
+    ay = self:_CreateSettings_Condition(panel, afterTts, ay)
+    ay = self:_CreateSettings_Developer(panel, afterTts, ay)
+    afterTts:SetHeight(math.abs(ay) + 16)
+    content:SetHeight(math.abs(y) + ttsGroupH + 4 + math.abs(ay) + 16)
+end
+
+function MainFrame:_CreateSettings_AlertPosition(panel, content, y)
     self:_MakeSectionLabel(content, "알림 위치", 8, y)
     y = y - 22
 
@@ -423,8 +449,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.coordLabel = coordLabel
 
     y = y - 32
+    return y
+end
 
-    -- ── 타임라인 ─────────────────────────────────────────────────────────────
+function MainFrame:_CreateSettings_Timeline(panel, content, y)
     self:_MakeSectionLabel(content, "타임라인", 8, y)
     y = y - 22
 
@@ -535,7 +563,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.tlTickCB = tlTickCB
     y = y - 32
 
-    -- ── 쐐기돌 ───────────────────────────────────────────────────────────────
+    return y
+end
+
+function MainFrame:_CreateSettings_MPlus(panel, content, y)
     self:_MakeSectionLabel(content, "쐐기돌", 8, y)
     y = y - 22
 
@@ -556,7 +587,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.ksLevelLabel = ksLevelLabel
     y = y - 22
 
-    -- ── 알림 크기 ────────────────────────────────────────────────────────────
+    return y
+end
+
+function MainFrame:_CreateSettings_AlertSize(panel, content, y)
     self:_MakeSectionLabel(content, "알림 크기 (펄스)", 8, y)
     y = y - 22
 
@@ -566,20 +600,6 @@ function MainFrame:_CreateSettingsTab(panel)
 
     local pulseSl = self:_MakeSlider("HGTabPulseSl", "확대 크기", 48, 160, 1, content, y)
     panel.pulseSl = pulseSl
-    y = y - 50
-
-    -- ── 리드 타임 ────────────────────────────────────────────────────────────
-    self:_MakeSectionLabel(content, "리드 타임 (알림 앞당김)", 8, y)
-    y = y - 22
-
-    local leadSl = self:_MakeSlider("HGTabLeadSl", "리드 타임 (초)", 0, 5, 0.1, content, y)
-    leadSl:SetScript("OnValueChanged", function(self, val)
-        if panel and panel._refreshing then return end
-        val = math.floor(val * 10 + 0.5) / 10  -- 0.1 단위 반올림
-        _G[self:GetName() .. "Text"]:SetText(string.format("%s: %.1fs", self._labelText, val))
-        addon.Storage:SetSetting("leadTime", val)
-    end)
-    panel.leadSl = leadSl
     y = y - 50
 
     baseSl:SetScript("OnValueChanged", function(self, val)
@@ -608,7 +628,27 @@ function MainFrame:_CreateSettingsTab(panel)
         addon.AlertFrame:ApplyIconSize()
     end)
 
-    -- ── 알림 표현 ────────────────────────────────────────────────────────────
+    return y
+end
+
+function MainFrame:_CreateSettings_LeadTime(panel, content, y)
+    self:_MakeSectionLabel(content, "리드 타임 (알림 앞당김)", 8, y)
+    y = y - 22
+
+    local leadSl = self:_MakeSlider("HGTabLeadSl", "리드 타임 (초)", 0, 5, 0.1, content, y)
+    leadSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val * 10 + 0.5) / 10  -- 0.1 단위 반올림
+        _G[self:GetName() .. "Text"]:SetText(string.format("%s: %.1fs", self._labelText, val))
+        addon.Storage:SetSetting("leadTime", val)
+    end)
+    panel.leadSl = leadSl
+    y = y - 50
+
+    return y
+end
+
+function MainFrame:_CreateSettings_AlertDisplay(panel, content, y)
     self:_MakeSectionLabel(content, "알림 표현", 8, y)
     y = y - 22
 
@@ -631,7 +671,6 @@ function MainFrame:_CreateSettingsTab(panel)
         MainFrame:_UpdateTTSGroupState()
     end)
     panel.ttsCB = ttsCB
-
     y = y - 32
 
     -- 큰 알림창(AlertFrame) 토글 — off 시 사운드/TTS 는 유지, 시각은 TimelineFrame 만 사용
@@ -647,7 +686,6 @@ function MainFrame:_CreateSettingsTab(panel)
         addon.Storage:SetSetting("alertFrameEnabled", self:GetChecked() and true or false)
     end)
     panel.alertFrameCB = alertFrameCB
-
     y = y - 32
 
     local alertSlotsSl = self:_MakeSlider("HGTabAlertSlotsSl", "큰 알림창 동시 표시 수", 1, 4, 1, content, y)
@@ -660,12 +698,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.alertSlotsSl = alertSlotsSl
     y = y - 50
 
-    -- ── TTS 세부 (show/hide 그룹) ────────────────────────────────────────────
-    local ttsGroup = CreateFrame("Frame", nil, content)
-    ttsGroup:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-    ttsGroup:SetPoint("RIGHT",   content, "RIGHT",   0, 0)
-    panel.ttsGroup = ttsGroup
+    return y
+end
 
+function MainFrame:_CreateSettings_TTS(panel, ttsGroup)
     local gy = -4
     self:_MakeSectionLabel(ttsGroup, "TTS 세부", 8, gy)
     gy = gy - 22
@@ -702,16 +738,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.volSl = volSl
     gy = gy - 50
 
-    local ttsGroupH = math.abs(gy) + 8
-    ttsGroup:SetHeight(ttsGroupH)
-    panel._ttsGroupH = ttsGroupH
+    return math.abs(gy) + 8
+end
 
-    local afterTts = CreateFrame("Frame", nil, content)
-    afterTts:SetPoint("TOPLEFT", ttsGroup, "BOTTOMLEFT", 0, -4)
-    afterTts:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-    local ay = 0
-
-    -- ── 알림 모드 ────────────────────────────────────────────────────────────
+function MainFrame:_CreateSettings_AlertMode(panel, afterTts, ay)
     self:_MakeSectionLabel(afterTts, "알림 모드", 8, ay)
     ay = ay - 22
 
@@ -754,7 +784,10 @@ function MainFrame:_CreateSettingsTab(panel)
     end
     ay = ay - 30
 
-    -- ── 알림 사운드 ─────────────────────────────────────────────────────────
+    return ay
+end
+
+function MainFrame:_CreateSettings_Sound(panel, afterTts, ay)
     self:_MakeSectionLabel(afterTts, "알림 사운드", 8, ay)
     ay = ay - 22
 
@@ -787,7 +820,10 @@ function MainFrame:_CreateSettingsTab(panel)
     end)
     ay = ay - 32
 
-    -- ── 조건 엔진 ───────────────────────────────────────────────────────────
+    return ay
+end
+
+function MainFrame:_CreateSettings_Condition(panel, afterTts, ay)
     self:_MakeSectionLabel(afterTts, "조건 엔진", 8, ay)
     ay = ay - 22
 
@@ -805,7 +841,10 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.fallbackCB = fallbackCB
     ay = ay - 32
 
-    -- ── 개발자 ───────────────────────────────────────────────────────────────
+    return ay
+end
+
+function MainFrame:_CreateSettings_Developer(panel, afterTts, ay)
     self:_MakeSectionLabel(afterTts, "개발자", 8, ay)
     ay = ay - 22
 
@@ -823,8 +862,7 @@ function MainFrame:_CreateSettingsTab(panel)
     panel.debugCB = debugCB
     ay = ay - 30
 
-    afterTts:SetHeight(math.abs(ay) + 16)
-    content:SetHeight(math.abs(y) + ttsGroupH + 4 + math.abs(ay) + 16)
+    return ay
 end
 
 function MainFrame:_RefreshSettings()

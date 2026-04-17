@@ -6,6 +6,23 @@ local MAX_ICONS = 12
 local anchor    = nil
 local pool      = {}
 local tickPool  = {}
+
+local C = {
+    UPDATE_THROTTLE      = 0.033,       -- 30fps
+    LERP_STEP            = 0.11,        -- 색 보간 per frame
+    BREATH_FREQ          = 5.0,         -- rad/s, 약 0.8Hz
+    BREATH_AMPL_AT_ZERO  = 0.08,        -- 8%
+    PREZERO_SCALE_GAIN   = 0.4,         -- 1.0 → 1.4
+    PULSE_FREQ_AT_ZERO   = 8.0,         -- rad/s, 1.27Hz
+    PULSE_ALPHA_MIN      = 0.4,
+    PULSE_ALPHA_RANGE    = 0.6,
+    GLOW_SUBLEVEL_RED    = 6,
+    GLOW_SUBLEVEL_ORANGE = 7,
+    TICK_INTERVAL        = 5,
+    RED_THRESHOLD        = 10,
+    WHITE_THRESHOLD      = 5,
+    PREZERO_THRESHOLD    = 1,
+}
 local trackLine = nil
 
 local function S(k) return addon.Storage:GetSetting(k) end
@@ -91,7 +108,7 @@ local function acquireIcon()
     btn.tex = tex
 
     -- 긴박 상태(3초 이하) 빨간 테두리 글로우
-    local glow = btn:CreateTexture(nil, "OVERLAY", nil, 6)
+    local glow = btn:CreateTexture(nil, "OVERLAY", nil, C.GLOW_SUBLEVEL_RED)
     glow:SetPoint("TOPLEFT",     btn, "TOPLEFT",     -3,  3)
     glow:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT",  3, -3)
     glow:SetColorTexture(1, 0, 0, 0.35)
@@ -100,7 +117,7 @@ local function acquireIcon()
 
     -- interrupt-critical 오렌지 border (§5C: 인터럽트 분담 마커)
     -- sublevel 7 이 최대 (OVERLAY sublevel 범위 -8~7). glow 보다 위에 오도록 7 유지.
-    local interruptGlow = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    local interruptGlow = btn:CreateTexture(nil, "OVERLAY", nil, C.GLOW_SUBLEVEL_ORANGE)
     interruptGlow:SetPoint("TOPLEFT",     btn, "TOPLEFT",     -2,  2)
     interruptGlow:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT",  2, -2)
     interruptGlow:SetColorTexture(1.0, 0.6, 0.1, 0.4)
@@ -179,7 +196,7 @@ function TimelineFrame:Init()
     local elapsed = 0
     anchor:SetScript("OnUpdate", function(_, dt)
         elapsed = elapsed + dt
-        if elapsed < 0.033 then return end
+        if elapsed < C.UPDATE_THROTTLE then return end
         elapsed = 0
         TimelineFrame:_Update()
     end)
@@ -256,9 +273,9 @@ function TimelineFrame:_Update()
             local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(data.spellID)
             ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
 
-            local ampl = math.max(0, (5 - data.remaining) / 5) * 0.08
-            local breathScale = 1.0 + ampl * math.sin(GetTime() * 5)
-            local linearMult = data.remaining <= 1.0 and (1.0 + (1.0 - data.remaining) * 0.4) or 1.0
+            local ampl = math.max(0, (C.WHITE_THRESHOLD - data.remaining) / C.WHITE_THRESHOLD) * C.BREATH_AMPL_AT_ZERO
+            local breathScale = 1.0 + ampl * math.sin(GetTime() * C.BREATH_FREQ)
+            local linearMult = data.remaining <= C.PREZERO_THRESHOLD and (1.0 + (1.0 - data.remaining) * C.PREZERO_SCALE_GAIN) or 1.0
             local scale = breathScale * linearMult
             ic.btn:SetSize(iconSize * scale, iconSize * scale)
             ic.btn:SetAlpha(1)
@@ -278,25 +295,24 @@ function TimelineFrame:_Update()
 
             -- glow lerp: target color/alpha by remaining band
             local tr, tg, tb, ta
-            if data.remaining > 10 then
+            if data.remaining > C.RED_THRESHOLD then
                 tr, tg, tb, ta = 1, 0, 0, 0        -- fade out
-            elseif data.remaining > 5 then
+            elseif data.remaining > C.WHITE_THRESHOLD then
                 tr, tg, tb, ta = 1, 0, 0, 0.5      -- red static
             else
                 tr, tg, tb, ta = 1, 1, 1, 0.6      -- white static (or pulse)
             end
 
             local gl = ic.glowLerp
-            local LERP = 0.11                       -- dt(0.033) / 0.3s ≈ 11% per frame
-            gl.r = gl.r + (tr - gl.r) * LERP
-            gl.g = gl.g + (tg - gl.g) * LERP
-            gl.b = gl.b + (tb - gl.b) * LERP
-            gl.a = gl.a + (ta - gl.a) * LERP
+            gl.r = gl.r + (tr - gl.r) * C.LERP_STEP
+            gl.g = gl.g + (tg - gl.g) * C.LERP_STEP
+            gl.b = gl.b + (tb - gl.b) * C.LERP_STEP
+            gl.a = gl.a + (ta - gl.a) * C.LERP_STEP
 
             local glowAlpha = gl.a
-            if data.remaining <= 1.0 then
-                local pulse = (math.sin(GetTime() * 8) + 1) * 0.5   -- 0..1, ~1.27Hz
-                glowAlpha = 0.4 + pulse * 0.6                        -- 0.4..1.0
+            if data.remaining <= C.PREZERO_THRESHOLD then
+                local pulse = (math.sin(GetTime() * C.PULSE_FREQ_AT_ZERO) + 1) * 0.5
+                glowAlpha = C.PULSE_ALPHA_MIN + pulse * C.PULSE_ALPHA_RANGE
             end
 
             if glowAlpha > 0.01 then
@@ -306,8 +322,8 @@ function TimelineFrame:_Update()
                 ic.glow:Hide()
             end
 
-            -- text: red while 5 < remaining ≤ 10 (matches red glow band), else white
-            if data.remaining > 5 and data.remaining <= 10 then
+            -- text: red while WHITE_THRESHOLD < remaining ≤ RED_THRESHOLD, else white
+            if data.remaining > C.WHITE_THRESHOLD and data.remaining <= C.RED_THRESHOLD then
                 ic.timeText:SetTextColor(1, 0.2, 0.2, 1)
             else
                 ic.timeText:SetTextColor(1, 1, 1, 1)
@@ -323,7 +339,7 @@ function TimelineFrame:_Update()
 
     -- ── 틱 마커 배치 ─────────────────────────────────────────────────────────────
     if showTicks then
-        local t = 5
+        local t = C.TICK_INTERVAL
         while t <= window do
             local frac = 1 - (t / window)
             local cx   = frac * travel + iconSize / 2
@@ -340,7 +356,7 @@ function TimelineFrame:_Update()
                 tick.label:SetPoint("RIGHT", anchor, "TOP", -(iconSize / 2 + 4), -cx)
             end
 
-            t = t + 5
+            t = t + C.TICK_INTERVAL
         end
     end
 end

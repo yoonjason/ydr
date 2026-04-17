@@ -5,6 +5,10 @@ local EncounterEngine = addon.EncounterEngine
 -- N1: fallback 제거 — TWW에서 COMBATLOG_OBJECT_REACTION_HOSTILE 는 항상 정의됨
 local HOSTILE_FLAG = COMBATLOG_OBJECT_REACTION_HOSTILE
 
+local function statsNew()
+    return { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
+end
+
 EncounterEngine.activeEncounterID  = nil
 EncounterEngine.activeBossData     = nil
 EncounterEngine.activeSpecData     = nil
@@ -15,7 +19,7 @@ EncounterEngine.currentPhase       = 1     -- ENCOUNTER_PHASE_UPDATE 추적
 EncounterEngine.pendingTimers      = {}
 EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → timestamp
 EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
-EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
+EncounterEngine.stats              = statsNew()
 EncounterEngine.recentTrashAlerts  = {}    -- 트래시 디듀프: spellID → timestamp
 EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
 EncounterEngine.scheduledAlerts    = {}    -- TimelineFrame 표시 + 취소(캐스트 stop) 용: { spellID, fireTime, source, [castKey], [timer] }
@@ -50,6 +54,14 @@ local function safeIndex(tbl, key)
     return ok and val or nil
 end
 addon._safeIndex = safeIndex
+
+function EncounterEngine:_statInc(key)
+    self.stats[key] = (self.stats[key] or 0) + 1
+end
+
+function EncounterEngine:_statsReset()
+    self.stats = statsNew()
+end
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -124,7 +136,7 @@ function EncounterEngine:OnEncounterEnd()
     end
 
     self:Cancel()
-    self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
+    self:_statsReset()
 end
 
 function EncounterEngine:OnChallengeModeStart(mapID)
@@ -225,7 +237,7 @@ function EncounterEngine:ScheduleTimeline(timeline)
                     if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                         self:TriggerAlert(spellID, "absolute")
                     else
-                        self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+                        self:_statInc("conditionSkipped")
                     end
                 end)
                 scheduled = scheduled + 1
@@ -289,7 +301,7 @@ function EncounterEngine:OnCombatLog(
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                     self:TriggerAlert(playerSpellID, "reactive")
                 else
-                    self.stats.conditionSkipped = self.stats.conditionSkipped + 1
+                    self:_statInc("conditionSkipped")
                 end
             end)
         end
@@ -302,7 +314,7 @@ function EncounterEngine:TriggerAlert(spellID, source)
     if self.keystoneLevel > 0 then
         local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
         if self.keystoneLevel < minLvl then
-            self.stats.keystoneSkipped = self.stats.keystoneSkipped + 1
+            self:_statInc("keystoneSkipped")
             return
         end
     end
@@ -326,12 +338,12 @@ function EncounterEngine:TriggerAlert(spellID, source)
         local start, duration, enable = GetSpellCooldown(spellID)
         if start and start > 0 and duration and duration > 1.5 and enable == 1 then
             addon.dprint("쿨다운 스킵:", spellID, "잔여:", string.format("%.1f", start + duration - GetTime()))
-            self.stats.cooldownSkipped = self.stats.cooldownSkipped + 1
+            self:_statInc("cooldownSkipped")
             return
         end
     end
 
-    self.stats.fired = self.stats.fired + 1
+    self:_statInc("fired")
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
     addon.AlertFrame:ShowAlert(spellID)
 
@@ -349,7 +361,7 @@ function EncounterEngine:OnPlayerCast(spellID)
     -- secret spellID 가드: 쓰기 시도가 에러 날 수 있으므로 pcall.
     local ok = pcall(function() self.playerCooldowns[spellID] = GetTime() end)
     if not ok then return end
-    self.stats.used = self.stats.used + 1
+    self:_statInc("used")
 
     table.insert(self.combatLog, {
         type = "used",

@@ -104,33 +104,35 @@ eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
-eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        onAddonLoaded(...)
-    elseif event == "PLAYER_LOGIN" then
-        onPlayerLogin()
-    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        onSpecChanged()
-    elseif event == "ENCOUNTER_START" then
-        onEncounterStart(...)
-    elseif event == "ENCOUNTER_END" then
-        onEncounterEnd()
-    elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-        onZoneChanged()
-    elseif event == "CHALLENGE_MODE_START" then
-        local mapID = ...
+local eventHandlers = {
+    ADDON_LOADED                  = function(name) onAddonLoaded(name) end,
+    PLAYER_LOGIN                  = function() onPlayerLogin() end,
+    PLAYER_SPECIALIZATION_CHANGED = function() onSpecChanged() end,
+    ENCOUNTER_START               = function(...) onEncounterStart(...) end,
+    ENCOUNTER_END                 = function() onEncounterEnd() end,
+    PLAYER_ENTERING_WORLD         = function() onZoneChanged() end,
+    ZONE_CHANGED_NEW_AREA         = function() onZoneChanged() end,
+    CHALLENGE_MODE_START = function(mapID)
         if C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo then
             addon.EncounterEngine:OnChallengeModeStart(mapID)
         end
-    elseif event == "CHALLENGE_MODE_COMPLETED" then
+    end,
+    CHALLENGE_MODE_COMPLETED = function()
         addon.EncounterEngine:OnChallengeModeCompleted()
-    elseif event == "UNIT_SPELLCAST_START" then
-        local unit, _, spellID = ...
-        addon.EncounterEngine:OnUnitSpellcast(unit, spellID, event)
-    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_INTERRUPTED" then
-        local unit, _, spellID = ...
+    end,
+    UNIT_SPELLCAST_START = function(unit, _, spellID)
+        addon.EncounterEngine:OnUnitSpellcast(unit, spellID, "UNIT_SPELLCAST_START")
+    end,
+    UNIT_SPELLCAST_STOP = function(unit, _, spellID)
         addon.EncounterEngine:OnUnitSpellcastStop(unit, spellID)
-    end
+    end,
+    UNIT_SPELLCAST_INTERRUPTED = function(unit, _, spellID)
+        addon.EncounterEngine:OnUnitSpellcastStop(unit, spellID)
+    end,
+}
+eventFrame:SetScript("OnEvent", function(_, event, ...)
+    local h = eventHandlers[event]
+    if h then h(...) end
 end)
 
 SLASH_HEALGUIDE1 = "/hg"
