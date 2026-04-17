@@ -384,7 +384,7 @@ function Evaluator:RunSelfTest()
         {op="not", operands={{op="not", operands={{op="not", operands={
             {op="lt", field="partyHPAvg", value=0.9}
         }}}}}}
-    }}}}}
+    }}}}}}
     check("depth exceeded → nil", self:Evaluate(deepNode, ctx, 0), nil)
 
     check("nil condition → ShouldFire true", self:ShouldFire(nil), true)
