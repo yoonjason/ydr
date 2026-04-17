@@ -724,18 +724,26 @@ function MainFrame:_CreateSettings_TTS(panel, ttsGroup)
     ttsTestBtn:SetPoint("LEFT", voicePickBtn, "RIGHT", 4, 0)
     ttsTestBtn:SetText("테스트")
     ttsTestBtn:SetScript("OnClick", function()
-        if C_VoiceChat and C_VoiceChat.SpeakText then
-            local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
-            local rate    = addon.Storage:GetSetting("ttsRate") or 5
-            local volume  = addon.Storage:GetSetting("ttsVolume") or 100
-            pcall(C_VoiceChat.SpeakText,
-                voiceID,
-                "치유의 기원",
-                Enum.VoiceTtsDestination and Enum.VoiceTtsDestination.LocalPlayback or 1,
-                rate,
-                volume
-            )
+        if not (C_VoiceChat and C_VoiceChat.SpeakText) then return end
+        -- 샘플 텍스트는 "치유의 기원"(Prayer of Mending, 33076) 스펠명을 런타임 조회.
+        -- 클라이언트 언어에 자동 대응 → 한글 클라면 "치유의 기원", enUS 면 "Prayer of Mending".
+        local sampleText = "HealGuide"
+        if C_Spell and C_Spell.GetSpellInfo then
+            local ok, info = pcall(C_Spell.GetSpellInfo, 33076)
+            if ok and info and type(info.name) == "string" and info.name ~= "" then
+                sampleText = info.name
+            end
         end
+        local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
+        local rate    = addon.Storage:GetSetting("ttsRate") or 5
+        local volume  = addon.Storage:GetSetting("ttsVolume") or 100
+        pcall(C_VoiceChat.SpeakText,
+            voiceID,
+            sampleText,
+            Enum.VoiceTtsDestination and Enum.VoiceTtsDestination.LocalPlayback or 1,
+            rate,
+            volume
+        )
     end)
     gy = gy - 28
 
