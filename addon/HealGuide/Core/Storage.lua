@@ -23,6 +23,7 @@ local DEFAULT_SETTINGS = {
     alertSoundID    = 888,
     minimapAngle    = 220,
     alertFrameEnabled = true,   -- 큰 알림창(AlertFrame) on/off. 끄면 사운드/TTS 만 재생되고 시각 알림은 TimelineFrame 만 사용.
+    alertFrameSlots   = 1,
     -- 타임라인
     timelineVisible     = true,
     timelineOrientation = "horizontal",

@@ -166,7 +166,7 @@ function TimelineFrame:Init()
     local elapsed = 0
     anchor:SetScript("OnUpdate", function(_, dt)
         elapsed = elapsed + dt
-        if elapsed < 0.1 then return end
+        if elapsed < 0.033 then return end
         elapsed = 0
         TimelineFrame:_Update()
     end)

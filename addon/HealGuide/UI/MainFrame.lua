@@ -650,6 +650,16 @@ function MainFrame:_CreateSettingsTab(panel)
 
     y = y - 32
 
+    local alertSlotsSl = self:_MakeSlider("HGTabAlertSlotsSl", "큰 알림창 동시 표시 수", 1, 4, 1, content, y)
+    alertSlotsSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("alertFrameSlots", val)
+    end)
+    panel.alertSlotsSl = alertSlotsSl
+    y = y - 50
+
     -- ── TTS 세부 (show/hide 그룹) ────────────────────────────────────────────
     local ttsGroup = CreateFrame("Frame", nil, content)
     ttsGroup:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
@@ -694,11 +704,16 @@ function MainFrame:_CreateSettingsTab(panel)
 
     local ttsGroupH = math.abs(gy) + 8
     ttsGroup:SetHeight(ttsGroupH)
-    y = y - ttsGroupH - 4
+    panel._ttsGroupH = ttsGroupH
+
+    local afterTts = CreateFrame("Frame", nil, content)
+    afterTts:SetPoint("TOPLEFT", ttsGroup, "BOTTOMLEFT", 0, -4)
+    afterTts:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    local ay = 0
 
     -- ── 알림 모드 ────────────────────────────────────────────────────────────
-    self:_MakeSectionLabel(content, "알림 모드", 8, y)
-    y = y - 22
+    self:_MakeSectionLabel(afterTts, "알림 모드", 8, ay)
+    ay = ay - 22
 
     panel.modeBtns = {}
     -- mode: 내부 키, label: 한글 라벨, desc: 툴팁 설명
@@ -713,11 +728,11 @@ function MainFrame:_CreateSettingsTab(panel)
     local modeXs = { 8, 130, 252 }
     for i, entry in ipairs(MODES) do
         local radioOk, btn = pcall(
-            CreateFrame, "CheckButton", "HGTabModeBtn" .. i, content, "UIRadioButtonTemplate")
+            CreateFrame, "CheckButton", "HGTabModeBtn" .. i, afterTts, "UIRadioButtonTemplate")
         if not radioOk then
-            btn = CreateFrame("CheckButton", "HGTabModeBtn" .. i, content, "UICheckButtonTemplate")
+            btn = CreateFrame("CheckButton", "HGTabModeBtn" .. i, afterTts, "UICheckButtonTemplate")
         end
-        btn:SetPoint("TOPLEFT", content, "TOPLEFT", modeXs[i], y + 4)
+        btn:SetPoint("TOPLEFT", afterTts, "TOPLEFT", modeXs[i], ay + 4)
         btn._mode = entry.mode
         _G["HGTabModeBtn" .. i .. "Text"]:SetText(entry.label)
 
@@ -737,11 +752,11 @@ function MainFrame:_CreateSettingsTab(panel)
         end)
         panel.modeBtns[i] = btn
     end
-    y = y - 30
+    ay = ay - 30
 
     -- ── 알림 사운드 ─────────────────────────────────────────────────────────
-    self:_MakeSectionLabel(content, "알림 사운드", 8, y)
-    y = y - 22
+    self:_MakeSectionLabel(afterTts, "알림 사운드", 8, ay)
+    ay = ay - 22
 
     local SOUND_PRESETS = {
         { id = 888,   label = "기본 (ReadyCheck)" },
@@ -751,11 +766,11 @@ function MainFrame:_CreateSettingsTab(panel)
         { id = 11466, label = "퀘스트 완료" },
         { id = 3081,  label = "경고음" },
     }
-    local soundLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    soundLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y)
+    local soundLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    soundLabel:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay)
     panel.soundLabel = soundLabel
 
-    local soundPickBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    local soundPickBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
     soundPickBtn:SetSize(80, 20)
     soundPickBtn:SetPoint("LEFT", soundLabel, "RIGHT", 8, 0)
     soundPickBtn:SetText("선택 ▾")
@@ -763,20 +778,20 @@ function MainFrame:_CreateSettingsTab(panel)
         MainFrame:_ShowSoundDropdown(btn, SOUND_PRESETS)
     end)
 
-    local soundTestBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    local soundTestBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
     soundTestBtn:SetSize(60, 20)
     soundTestBtn:SetPoint("LEFT", soundPickBtn, "RIGHT", 4, 0)
     soundTestBtn:SetText("테스트")
     soundTestBtn:SetScript("OnClick", function()
         PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
     end)
-    y = y - 32
+    ay = ay - 32
 
     -- ── 조건 엔진 ───────────────────────────────────────────────────────────
-    self:_MakeSectionLabel(content, "조건 엔진", 8, y)
-    y = y - 22
+    self:_MakeSectionLabel(afterTts, "조건 엔진", 8, ay)
+    ay = ay - 22
 
-    local fallbackCB = self:_MakeCheckbox("HGTabFallbackCB", "조건 평가 실패 시 발화 (기본: ON)", content, 8, y)
+    local fallbackCB = self:_MakeCheckbox("HGTabFallbackCB", "조건 평가 실패 시 발화 (기본: ON)", afterTts, 8, ay)
     fallbackCB:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("조건 Fallback", 1, 1, 1)
@@ -788,13 +803,13 @@ function MainFrame:_CreateSettingsTab(panel)
         addon.Storage:SetSetting("conditionFallback", self:GetChecked() and true or false)
     end)
     panel.fallbackCB = fallbackCB
-    y = y - 32
+    ay = ay - 32
 
     -- ── 개발자 ───────────────────────────────────────────────────────────────
-    self:_MakeSectionLabel(content, "개발자", 8, y)
-    y = y - 22
+    self:_MakeSectionLabel(afterTts, "개발자", 8, ay)
+    ay = ay - 22
 
-    local debugCB = self:_MakeCheckbox("HGTabDebugCB", "디버그 로그", content, 8, y)
+    local debugCB = self:_MakeCheckbox("HGTabDebugCB", "디버그 로그", afterTts, 8, ay)
     debugCB:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("디버그 모드", 1, 1, 1)
@@ -806,9 +821,10 @@ function MainFrame:_CreateSettingsTab(panel)
         addon.Storage:SetSetting("debugMode", self:GetChecked() and true or false)
     end)
     panel.debugCB = debugCB
-    y = y - 30
+    ay = ay - 30
 
-    content:SetHeight(math.abs(y) + 16)
+    afterTts:SetHeight(math.abs(ay) + 16)
+    content:SetHeight(math.abs(y) + ttsGroupH + 4 + math.abs(ay) + 16)
 end
 
 function MainFrame:_RefreshSettings()
@@ -824,6 +840,7 @@ function MainFrame:_RefreshSettings()
         panel.labelCB:SetChecked(s:GetSetting("showSpellName") and true or false)
         panel.ttsCB:SetChecked(s:GetSetting("ttsEnabled") and true or false)
         panel.alertFrameCB:SetChecked(s:GetSetting("alertFrameEnabled") ~= false)
+        panel.alertSlotsSl:SetValue(s:GetSetting("alertFrameSlots") or 1)
 
         panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
         panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
@@ -904,8 +921,10 @@ function MainFrame:_UpdateTTSGroupState()
     if not panel then return end
     if addon.Storage:GetSetting("ttsEnabled") then
         panel.ttsGroup:Show()
+        panel.ttsGroup:SetHeight(panel._ttsGroupH)
     else
         panel.ttsGroup:Hide()
+        panel.ttsGroup:SetHeight(0.01)
     end
 end
 

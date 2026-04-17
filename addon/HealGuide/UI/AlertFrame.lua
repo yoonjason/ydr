@@ -2,7 +2,7 @@ local addonName, addon = ...
 addon.AlertFrame = {}
 local AlertFrame = addon.AlertFrame
 
-local MAX_SLOTS = 4
+local DEFAULT_MAX_SLOTS = 4
 local SLOT_GAP  = 4
 local slots     = {}
 local anchor    = nil
@@ -37,7 +37,7 @@ function AlertFrame:Init()
 
     anchor.editMode = false
 
-    for i = 1, MAX_SLOTS do
+    for i = 1, DEFAULT_MAX_SLOTS do
         slots[i] = self:_CreateSlot(i)
     end
 end
@@ -124,10 +124,11 @@ function AlertFrame:_CreateSlot(index)
 end
 
 function AlertFrame:_FindAvailableSlot()
-    for i = 1, MAX_SLOTS do
+    local maxSlots = math.min(addon.Storage:GetSetting("alertFrameSlots") or 1, DEFAULT_MAX_SLOTS)
+    for i = 1, maxSlots do
         if not slots[i].inUse then return slots[i] end
     end
-    return slots[MAX_SLOTS]
+    return slots[maxSlots]
 end
 
 function AlertFrame:ShowAlert(spellID)
