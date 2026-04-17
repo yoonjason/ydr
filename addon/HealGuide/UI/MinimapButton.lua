@@ -3,7 +3,7 @@ addon.MinimapButton = {}
 local MinimapButton = addon.MinimapButton
 
 local button = nil
-local RADIUS = 80
+-- 반지름은 _SetPosition 에서 Minimap:GetWidth() 기반으로 동적 계산 (12.0 Midnight 대응).
 
 function MinimapButton:Init()
     button = CreateFrame("Button", "HealGuideMinimapButton", Minimap)
@@ -96,7 +96,11 @@ end
 
 function MinimapButton:_SetPosition(angle)
     if not button then return end
+    -- 미니맵 반지름 + 소량 바깥 오프셋. 12.0 기본 Minimap 140×140 기준 radius≈76,
+    -- 다른 사이즈/스킨에서도 링 위에 정확히 얹히도록 GetWidth 기반 동적 계산.
+    local minimapWidth = Minimap:GetWidth() or 140
+    local radius = (minimapWidth * 0.5) + 10
     local rads = math.rad(angle)
     button:ClearAllPoints()
-    button:SetPoint("CENTER", Minimap, "CENTER", RADIUS * math.cos(rads), RADIUS * math.sin(rads))
+    button:SetPoint("CENTER", Minimap, "CENTER", radius * math.cos(rads), radius * math.sin(rads))
 end

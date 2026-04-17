@@ -111,15 +111,17 @@ local function acquireIcon()
     timeText:SetPoint("CENTER")
     btn.timeText = timeText
 
-    local ic = { btn = btn, tex = tex, glow = glow, interruptGlow = interruptGlow, timeText = timeText, _inUse = true }
+    local ic = { btn = btn, tex = tex, glow = glow, interruptGlow = interruptGlow, timeText = timeText, _inUse = true, _locked = false }
     pool[#pool + 1] = ic
     return ic
 end
 
 local function releaseAllIcons()
     for _, ic in ipairs(pool) do
-        ic._inUse = false
-        ic.btn:Hide()
+        if not ic._locked then
+            ic._inUse = false
+            ic.btn:Hide()
+        end
     end
 end
 
@@ -146,6 +148,9 @@ function TimelineFrame:Init()
 
     trackLine = anchor:CreateTexture(nil, "BACKGROUND")
     trackLine:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+
+    self.firedRecently = {}  -- [spellID] = { startTime, ic }
+    self._prevVisible  = {}  -- [spellID] = remaining (previous frame)
 
     self:ApplyLayout()
     self:ApplyVisibility()
@@ -174,6 +179,19 @@ end
 
 function TimelineFrame:ApplyLayout()
     if not anchor then return end
+    -- linger 풀 클리어 (orientation 전환 시)
+    if self.firedRecently then
+        for spellID, entry in pairs(self.firedRecently) do
+            if entry.ic then
+                entry.ic._locked = false
+                entry.ic._inUse  = false
+                entry.ic.btn:SetAlpha(1)
+                entry.ic.btn:Hide()
+            end
+        end
+        self.firedRecently = {}
+    end
+
     local orientation = S("timelineOrientation") or "horizontal"
     local trackLength = S("timelineTrackLength") or 400
     local iconSize    = S("timelineIconSize")    or 36
@@ -213,6 +231,16 @@ end
 
 function TimelineFrame:_Update()
     if not addon.EncounterEngine or not addon.EncounterEngine.activeEncounterID then
+        for _, entry in pairs(self.firedRecently) do
+            if entry.ic then
+                entry.ic._locked = false
+                entry.ic._inUse  = false
+                entry.ic.btn:SetAlpha(1)
+                entry.ic.btn:Hide()
+            end
+        end
+        self.firedRecently = {}
+        self._prevVisible  = {}
         releaseAllIcons()
         releaseAllTicks()
         return
@@ -223,34 +251,56 @@ function TimelineFrame:_Update()
     local trackLength = S("timelineTrackLength") or 400
     local iconSize    = S("timelineIconSize")    or 36
     local showTicks   = S("timelineShowTicks")
+    local now         = GetTime()
 
     releaseAllIcons()
     releaseAllTicks()
 
     local upcoming = addon.EncounterEngine:GetUpcomingAlerts(20)
-    local travel   = trackLength - iconSize  -- 아이콘 중심이 움직일 수 있는 실제 거리
+    local travel   = trackLength - iconSize
 
-    -- 아이콘 배치
+    -- ── 1. 현재 프레임 visible set 구성 ─────────────────────────────────────────
+    local currentVisible = {}
+    for _, data in ipairs(upcoming) do
+        if data.remaining > 0 and data.remaining <= window then
+            currentVisible[data.spellID] = data.remaining
+        end
+    end
+
+    -- ── 2. 이전 프레임에 있었지만 사라진 spellID → linger 풀 등록 ──────────────
+    for spellID, prevRemaining in pairs(self._prevVisible) do
+        if not currentVisible[spellID] and prevRemaining < 0.5
+                and not self.firedRecently[spellID] then
+            local ic = acquireIcon()
+            if ic then
+                ic._locked = true
+                local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+                ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
+                self.firedRecently[spellID] = { startTime = now, ic = ic }
+            end
+        end
+    end
+
+    self._prevVisible = currentVisible
+
+    -- ── 3. 일반 upcoming 아이콘 배치 ────────────────────────────────────────────
     for _, data in ipairs(upcoming) do
         if data.remaining > 0 and data.remaining <= window then
             local ic = acquireIcon()
             if not ic then break end
 
             local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(data.spellID)
-            local texture   = (spellInfo and spellInfo.iconID) or 134400
-            ic.tex:SetTexture(texture)
+            ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
             ic.btn:SetSize(iconSize, iconSize)
+            ic.btn:SetAlpha(1)
             ic.btn:ClearAllPoints()
 
-            -- frac=0 → 먼 미래(왼쪽/위), frac=1 → 현재(오른쪽/아래)
             local frac = 1 - (data.remaining / window)
             local cx   = frac * travel + iconSize / 2
 
             if orientation == "horizontal" then
-                -- LEFT relPoint = 앵커 왼쪽 가운데 → 수직 중앙 정렬
                 ic.btn:SetPoint("CENTER", anchor, "LEFT", cx, 0)
             else
-                -- TOP relPoint = 앵커 위 가운데 → 수평 중앙 정렬
                 ic.btn:SetPoint("CENTER", anchor, "TOP", 0, -cx)
             end
 
@@ -265,7 +315,6 @@ function TimelineFrame:_Update()
                 ic.timeText:SetTextColor(1, 1, 1, 1)
             end
 
-            -- §5C: interrupt-critical 마커 — INTERRUPT_IDS 에 등록된 spellID + 인터럽트 가능 스펙
             if isPlayerSpecInterruptCapable() and INTERRUPT_IDS[data.spellID] then
                 ic.interruptGlow:Show()
             else
@@ -274,24 +323,67 @@ function TimelineFrame:_Update()
         end
     end
 
-    -- 5초 단위 틱 마커 배치
+    -- ── 4. linger 아이콘 배치/애니메이션 ────────────────────────────────────────
+    local lingerCx = travel + iconSize / 2  -- frac=1 고정 위치
+
+    for spellID, entry in pairs(self.firedRecently) do
+        local elapsed = now - entry.startTime
+        if elapsed > 0.5 then
+            entry.ic._locked = false
+            entry.ic._inUse  = false
+            entry.ic.btn:SetAlpha(1)
+            entry.ic.btn:Hide()
+            self.firedRecently[spellID] = nil
+        else
+            local scale, alpha
+            if elapsed < 0.2 then
+                scale = 1.0 + (elapsed / 0.2) * 0.4
+                alpha = 1.0
+            else
+                local t = (elapsed - 0.2) / 0.3
+                scale = 1.4 - t * 0.4
+                alpha = 1.0 - t
+            end
+
+            local ic = entry.ic
+            ic.btn:SetSize(iconSize * scale, iconSize * scale)
+            ic.btn:SetAlpha(alpha)
+            ic.btn:ClearAllPoints()
+
+            if orientation == "horizontal" then
+                ic.btn:SetPoint("CENTER", anchor, "LEFT", lingerCx, 0)
+            else
+                ic.btn:SetPoint("CENTER", anchor, "TOP", 0, -lingerCx)
+            end
+
+            ic.timeText:SetText("")
+            ic.glow:Show()
+            ic.timeText:SetTextColor(1, 0.2, 0.2, 1)
+
+            if isPlayerSpecInterruptCapable() and INTERRUPT_IDS[spellID] then
+                ic.interruptGlow:Show()
+            else
+                ic.interruptGlow:Hide()
+            end
+        end
+    end
+
+    -- ── 5. 틱 마커 배치 ─────────────────────────────────────────────────────────
     if showTicks then
         local t = 5
         while t <= window do
             local frac = 1 - (t / window)
             local cx   = frac * travel + iconSize / 2
-            local tick  = acquireTick()
+            local tick = acquireTick()
             tick.label:SetText(tostring(t))
             tick.diamond:ClearAllPoints()
             tick.label:ClearAllPoints()
 
             if orientation == "horizontal" then
                 tick.diamond:SetPoint("CENTER", anchor, "LEFT", cx, 0)
-                -- 라벨: 기준선 아래 (아이콘 영역 밖)
                 tick.label:SetPoint("TOP", anchor, "LEFT", cx - 4, -(iconSize / 2 + 2))
             else
                 tick.diamond:SetPoint("CENTER", anchor, "TOP", 0, -cx)
-                -- 세로 모드: 틱은 좌측에 표시
                 tick.label:SetPoint("RIGHT", anchor, "TOP", -(iconSize / 2 + 4), -cx)
             end
 
