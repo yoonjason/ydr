@@ -133,12 +133,26 @@ end
 function AlertFrame:ShowAlert(spellID)
     if not anchor then return end
 
-    local slot = self:_FindAvailableSlot()
-    if not slot then return end
-
     local spellInfo = C_Spell.GetSpellInfo(spellID)
     local name      = spellInfo and spellInfo.name   or tostring(spellID)
     local texture   = spellInfo and spellInfo.iconID or 134400
+
+    -- 사운드/TTS 는 항상 재생 (경고는 계속 듣고 싶을 수 있음).
+    -- 큰 알림창 자체는 alertFrameEnabled 설정으로 제어 — TimelineFrame 으로 대체하는 사용자용.
+    if addon.Storage:GetSetting("soundEnabled") then
+        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
+    end
+
+    local frameEnabled = addon.Storage:GetSetting("alertFrameEnabled")
+    if frameEnabled == false then
+        if addon.Storage:GetSetting("ttsEnabled") then
+            self:_SpeakTTS(name)
+        end
+        return
+    end
+
+    local slot = self:_FindAvailableSlot()
+    if not slot then return end
 
     local showName = addon.Storage:GetSetting("showSpellName")
     if showName then
@@ -167,10 +181,6 @@ function AlertFrame:ShowAlert(spellID)
     slot.inUse        = true
     slot:SetAlpha(1.0)
     slot:Show()
-
-    if addon.Storage:GetSetting("soundEnabled") then
-        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
-    end
 
     if addon.Storage:GetSetting("ttsEnabled") then
         self:_SpeakTTS(name)

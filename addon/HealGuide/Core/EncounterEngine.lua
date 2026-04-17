@@ -475,19 +475,34 @@ function EncounterEngine:TestEncounter(encounterID)
         return
     end
 
+    -- 시뮬레이션에서도 TimelineFrame 이 동작하도록 실제 인카운터 상태를 세팅.
+    -- Cancel() 호출(중지 버튼)로 전체 상태가 정리되므로 누수 없음.
+    self:Cancel()
+    self.activeEncounterID  = encounterID
+    self.activeBossData     = bossData
+    self.activeSpecData     = specData
+    self.encounterStartTime = GetTime()
+    self.cachedAlertMode    = addon.Storage:GetSetting("alertMode")
+
     local timeline  = specData.timeline  or {}
     local reactions = specData.reactions or {}
 
     print(string.format("|cff00ff00HealGuide|r 테스트 시작: encounter=%d spec=%s timeline=%d",
         encounterID, activeSpec, #timeline))
 
-    -- B2: C_Timer.NewTimer 로 교체, pendingTimers 에 등록 → 스펙 스왑 시 취소 가능
-    for i, entry in ipairs(timeline) do
-        local spellID = entry.spellID
-        local t = C_Timer.NewTimer(i * 2.0, function()
-            self:TriggerAlert(spellID, "test")
+    local function scheduleTestAlert(delay, spellID, source)
+        local fireTime = GetTime() + delay
+        local alertInfo = { spellID = spellID, fireTime = fireTime, source = source }
+        table.insert(self.scheduledAlerts, alertInfo)
+        local t = C_Timer.NewTimer(delay, function()
+            self:_RemoveScheduledAlert(alertInfo)
+            self:TriggerAlert(spellID, source)
         end)
         table.insert(self.pendingTimers, t)
+    end
+
+    for i, entry in ipairs(timeline) do
+        scheduleTestAlert(i * 2.0, entry.spellID, "test")
     end
 
     local rCount = 0
@@ -496,11 +511,7 @@ function EncounterEngine:TestEncounter(encounterID)
         if rCount >= 3 then break end
         for _, entry in ipairs(entries) do
             rCount = rCount + 1
-            local spellID = entry.spellID
-            local t = C_Timer.NewTimer(base + rCount * 2.0, function()
-                self:TriggerAlert(spellID, "test-reaction")
-            end)
-            table.insert(self.pendingTimers, t)
+            scheduleTestAlert(base + rCount * 2.0, entry.spellID, "test-reaction")
         end
         if rCount >= 3 then break end
     end

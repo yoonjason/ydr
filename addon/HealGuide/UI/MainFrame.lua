@@ -634,6 +634,22 @@ function MainFrame:_CreateSettingsTab(panel)
 
     y = y - 32
 
+    -- 큰 알림창(AlertFrame) 토글 — off 시 사운드/TTS 는 유지, 시각은 TimelineFrame 만 사용
+    local alertFrameCB = self:_MakeCheckbox("HGTabAlertFrameCB", "큰 알림창 표시", content, 8, y)
+    alertFrameCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("큰 알림창", 1, 1, 1)
+        GameTooltip:AddLine("OFF: 사운드/TTS 만 재생하고 시각 알림은 타임라인(가로/세로 바) 만 사용.\n타임라인의 cast-moment 펄스로 충분하다면 끄는 걸 권장.", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    alertFrameCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    alertFrameCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("alertFrameEnabled", self:GetChecked() and true or false)
+    end)
+    panel.alertFrameCB = alertFrameCB
+
+    y = y - 32
+
     -- ── TTS 세부 (show/hide 그룹) ────────────────────────────────────────────
     local ttsGroup = CreateFrame("Frame", nil, content)
     ttsGroup:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
@@ -807,6 +823,7 @@ function MainFrame:_RefreshSettings()
         panel.soundCB:SetChecked(s:GetSetting("soundEnabled") and true or false)
         panel.labelCB:SetChecked(s:GetSetting("showSpellName") and true or false)
         panel.ttsCB:SetChecked(s:GetSetting("ttsEnabled") and true or false)
+        panel.alertFrameCB:SetChecked(s:GetSetting("alertFrameEnabled") ~= false)
 
         panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
         panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
