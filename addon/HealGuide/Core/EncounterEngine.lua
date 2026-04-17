@@ -433,8 +433,54 @@ function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     if self.recentTrashAlerts[spellID] and (now - self.recentTrashAlerts[spellID]) < 0.5 then return end
     self.recentTrashAlerts[spellID] = now
 
-    addon.dprint("[HG-Trash]", event, "unit=" .. unit, "bossSpellID=" .. tostring(spellID), "→ response=" .. tostring(entry.responseSpellID))
-    addon.AlertFrame:ShowAlert(entry.responseSpellID)
+    local _, _, _, startMS, endMS = UnitCastingInfo(unit)
+    if not endMS or endMS <= 0 then
+        addon.dprint("[HG-Trash]", event, "unit=" .. unit, "→ instant fallback")
+        addon.AlertFrame:ShowAlert(entry.responseSpellID)
+        return
+    end
+    local fireTime = endMS / 1000
+    local delay = fireTime - GetTime()
+    if delay <= 0 then
+        addon.dprint("[HG-Trash]", event, "unit=" .. unit, "→ delay<=0 fallback")
+        addon.AlertFrame:ShowAlert(entry.responseSpellID)
+        return
+    end
+    local castOk, castKey = pcall(function() return unit .. ":" .. spellID end)
+    if not castOk then return end
+    local alertInfo = {
+        spellID  = entry.responseSpellID,
+        fireTime = fireTime,
+        source   = "trash-cast",
+        castKey  = castKey,
+    }
+    table.insert(self.scheduledAlerts, alertInfo)
+    local t = C_Timer.NewTimer(delay, function()
+        self:_RemoveScheduledAlert(alertInfo)
+        addon.AlertFrame:ShowAlert(entry.responseSpellID)
+    end)
+    alertInfo.timer = t
+    table.insert(self.pendingTimers, t)
+    addon.dprint("[HG-Trash-Cast]", castKey, "→ fire in", string.format("%.1fs", delay))
+end
+
+function EncounterEngine:OnUnitSpellcastStop(unit, spellID)
+    local ok, castKey = pcall(function() return unit .. ":" .. spellID end)
+    if not ok then return end
+    for i = #self.scheduledAlerts, 1, -1 do
+        local info = self.scheduledAlerts[i]
+        if info.castKey == castKey then
+            if info.timer and info.timer.Cancel then info.timer:Cancel() end
+            for j = #self.pendingTimers, 1, -1 do
+                if self.pendingTimers[j] == info.timer then
+                    table.remove(self.pendingTimers, j)
+                    break
+                end
+            end
+            table.remove(self.scheduledAlerts, i)
+            addon.dprint("[HG-Trash-Cast] interrupted:", castKey)
+        end
+    end
 end
 
 function EncounterEngine:OnZoneChanged()

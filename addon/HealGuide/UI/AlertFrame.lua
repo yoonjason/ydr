@@ -52,6 +52,26 @@ function AlertFrame:_CreateSlot(index)
     frame:SetFrameLevel(100)
     frame:SetPoint("TOP", anchor, "TOP", 0, -((index - 1) * (pulseSize + 12 + SLOT_GAP)))
 
+    -- slot 에서 직접 드래그 → anchor 이동 (anchor 가 1×1 px 라 직접 클릭 불가).
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function()
+        if anchor and (anchor.editMode or not addon.Storage:GetSetting("locked")) then
+            anchor:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function()
+        if not anchor then return end
+        anchor:StopMovingOrSizing()
+        local point, _, relPoint, x, y = anchor:GetPoint()
+        addon.Storage:SetSetting("alertFramePoint", {
+            point = point, relPoint = relPoint, x = x, y = y,
+        })
+        if addon.MainFrame and addon.MainFrame.UpdateCoordLabel then
+            addon.MainFrame:UpdateCoordLabel(x, y)
+        end
+    end)
+
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 0.75)

@@ -256,10 +256,10 @@ function TimelineFrame:_Update()
             local spellInfo = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(data.spellID)
             ic.tex:SetTexture((spellInfo and spellInfo.iconID) or 134400)
 
-            local scale = 1.0
-            if data.remaining <= 1.0 then
-                scale = 1.0 + (1.0 - data.remaining) * 0.4
-            end
+            local ampl = math.max(0, (5 - data.remaining) / 5) * 0.08
+            local breathScale = 1.0 + ampl * math.sin(GetTime() * 5)
+            local linearMult = data.remaining <= 1.0 and (1.0 + (1.0 - data.remaining) * 0.4) or 1.0
+            local scale = breathScale * linearMult
             ic.btn:SetSize(iconSize * scale, iconSize * scale)
             ic.btn:SetAlpha(1)
             ic.btn:ClearAllPoints()
