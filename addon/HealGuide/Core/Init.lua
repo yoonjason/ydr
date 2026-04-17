@@ -96,7 +96,9 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("CHALLENGE_MODE_START")
 eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+-- 트래시 알림은 시전 'SUCCEEDED' 가 아닌 'START' 기준으로 → 캐스트 진행 중에 미리 알림.
+-- 동일 시전의 START→SUCCEEDED 이중 발화 방지를 위해 SUCCEEDED 는 등록하지 않음.
+eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
@@ -120,7 +122,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "CHALLENGE_MODE_COMPLETED" then
         addon.EncounterEngine:OnChallengeModeCompleted()
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+    elseif event == "UNIT_SPELLCAST_START" then
         local unit, _, spellID = ...
         addon.EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     end
