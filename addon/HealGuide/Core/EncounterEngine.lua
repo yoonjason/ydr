@@ -224,9 +224,11 @@ function EncounterEngine:OnCombatLog(
     if self.cachedAlertMode == "absolute" then return end
 
     local bossSpellID = ...
-    -- 11.0+ 일부 주문의 spellID 는 secret 토큰 → 테이블 인덱스로 사용 불가.
+    -- 11.0+ secret spellID 가드 — type() 으로는 분별 불가, pcall 로 인덱스 시도.
     if type(bossSpellID) ~= "number" then return end
-    local reactions   = self.activeSpecData.reactions
+    local reactions = self.activeSpecData.reactions
+    local probeOk = pcall(function() return reactions and reactions[bossSpellID] end)
+    if not probeOk then return end
 
     -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.
     -- Bridge.scheduledBossSpells[id] 에 타임스탬프가 있으면 ENCOUNTER_TIMELINE_EVENT_ADDED
@@ -321,7 +323,9 @@ end
 function EncounterEngine:OnPlayerCast(spellID)
     if not self.activeEncounterID then return end
     if type(spellID) ~= "number" then return end
-    self.playerCooldowns[spellID] = GetTime()
+    -- secret spellID 가드: 쓰기 시도가 에러 날 수 있으므로 pcall.
+    local ok = pcall(function() self.playerCooldowns[spellID] = GetTime() end)
+    if not ok then return end
     self.stats.used = self.stats.used + 1
 
     table.insert(self.combatLog, {
@@ -405,16 +409,17 @@ end
 
 function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     if not addon.SpecMatcher:IsHealer() then return end
-    -- 11.0+ 일부 스킬(private aura / 비공개 주문)은 spellID 가 'secret' 토큰이라 테이블 인덱스 불가.
-    -- 수치형만 화이트리스트 조회. 엔트리가 number 키이므로 secret 은 어차피 매칭 안 됨.
-    if type(spellID) ~= "number" then return end
     -- 트래시 알림은 5인 던전 전용 (일반/영웅/M+). 레이드/야외 제외.
     local _, instanceType = GetInstanceInfo()
     if instanceType ~= "party" then return end
     if not unit or string.sub(unit, 1, 9) ~= "nameplate" then return end
 
+    -- 11.0+ 일부 주문의 spellID 는 secret 플래그 — type() 은 number 반환하지만
+    -- 테이블 인덱스 시 'table index is secret' 런타임 에러. pcall 로 안전 조회.
     local whitelist = addon.TrashWhitelist
-    if not whitelist or not whitelist[spellID] then return end
+    if not whitelist then return end
+    local ok, entry = pcall(function() return whitelist[spellID] end)
+    if not ok or not entry then return end
 
     -- §5B 키스톤 레벨 게이트 — M+ 진행 중일 때만 적용
     if self.keystoneLevel > 0 then
@@ -422,12 +427,12 @@ function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
         if self.keystoneLevel < minLvl then return end
     end
 
-    -- 0.5초 디듀프 (같은 nameplateN → nameplateMn 중복 이벤트 방지)
+    -- 0.5초 디듀프 (같은 nameplateN → nameplateMn 중복 이벤트 방지).
+    -- 여기까진 pcall 통과 = spellID 가 secret 아님이 보장 → 일반 인덱스 안전.
     local now = GetTime()
     if self.recentTrashAlerts[spellID] and (now - self.recentTrashAlerts[spellID]) < 0.5 then return end
     self.recentTrashAlerts[spellID] = now
 
-    local entry = whitelist[spellID]
     addon.dprint("[HG-Trash]", event, "unit=" .. unit, "bossSpellID=" .. tostring(spellID), "→ response=" .. tostring(entry.responseSpellID))
     addon.AlertFrame:ShowAlert(entry.responseSpellID)
 end
