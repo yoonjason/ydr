@@ -117,8 +117,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         onZoneChanged()
     elseif event == "CHALLENGE_MODE_START" then
+        local mapID = ...
         if C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo then
-            addon.EncounterEngine:OnChallengeModeStart()
+            addon.EncounterEngine:OnChallengeModeStart(mapID)
         end
     elseif event == "CHALLENGE_MODE_COMPLETED" then
         addon.EncounterEngine:OnChallengeModeCompleted()

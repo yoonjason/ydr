@@ -100,8 +100,8 @@ function EncounterEngine:OnEncounterEnd()
     self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
 end
 
-function EncounterEngine:OnChallengeModeStart()
-    local mapID, ksLevel, affixes = C_ChallengeMode.GetActiveKeystoneInfo()
+function EncounterEngine:OnChallengeModeStart(mapID)
+    local ksLevel, affixes = C_ChallengeMode.GetActiveKeystoneInfo()
     self.keystoneLevel  = ksLevel or 0
     self.activeAffixIDs = affixes or {}
 
