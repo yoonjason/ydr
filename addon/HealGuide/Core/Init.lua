@@ -104,6 +104,17 @@ eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
+-- Blizzard 기본 팝업 억제 (보호된 함수 호출 경고창 제거)
+UIParent:UnregisterEvent("ADDON_ACTION_BLOCKED")
+UIParent:UnregisterEvent("ADDON_ACTION_FORBIDDEN")
+local blockFrame = CreateFrame("Frame")
+blockFrame:RegisterEvent("ADDON_ACTION_BLOCKED")
+blockFrame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+blockFrame:SetScript("OnEvent", function(_, event, addonNameArg, funcName)
+    addon.dprint(string.format("[HG-block] %s addon=%s func=%s",
+        event, tostring(addonNameArg), tostring(funcName)))
+end)
+
 local eventHandlers = {
     ADDON_LOADED                  = function(name) onAddonLoaded(name) end,
     PLAYER_LOGIN                  = function() onPlayerLogin() end,

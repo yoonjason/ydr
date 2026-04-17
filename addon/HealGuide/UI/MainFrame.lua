@@ -718,6 +718,25 @@ function MainFrame:_CreateSettings_TTS(panel, ttsGroup)
     voicePickBtn:SetScript("OnClick", function(btn)
         MainFrame:_OpenVoiceMenu(btn)
     end)
+
+    local ttsTestBtn = CreateFrame("Button", "HGTabTTSTestBtn", ttsGroup, "GameMenuButtonTemplate")
+    ttsTestBtn:SetSize(60, 20)
+    ttsTestBtn:SetPoint("LEFT", voicePickBtn, "RIGHT", 4, 0)
+    ttsTestBtn:SetText("테스트")
+    ttsTestBtn:SetScript("OnClick", function()
+        if C_VoiceChat and C_VoiceChat.SpeakText then
+            local voiceID = addon.Storage:GetSetting("ttsVoiceID") or 0
+            local rate    = addon.Storage:GetSetting("ttsRate") or 5
+            local volume  = addon.Storage:GetSetting("ttsVolume") or 100
+            pcall(C_VoiceChat.SpeakText,
+                voiceID,
+                "치유의 기원",
+                Enum.VoiceTtsDestination and Enum.VoiceTtsDestination.LocalPlayback or 1,
+                rate,
+                volume
+            )
+        end
+    end)
     gy = gy - 28
 
     local rateSl = self:_MakeSlider("HGTabRateSl", "TTS 속도", 0, 10, 1, ttsGroup, gy)

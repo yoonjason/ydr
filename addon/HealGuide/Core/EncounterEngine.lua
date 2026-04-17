@@ -392,12 +392,6 @@ function EncounterEngine:GetBossHP()
     return UnitHealth(unit) / maxHP
 end
 
-function EncounterEngine:OnPhaseUpdate(phase)
-    if phase and phase > 0 then
-        self.currentPhase = phase
-        addon.dprint("페이즈 변경:", phase)
-    end
-end
 
 function EncounterEngine:_RemoveScheduledAlert(alertInfo)
     for i = #self.scheduledAlerts, 1, -1 do
