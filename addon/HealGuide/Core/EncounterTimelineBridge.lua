@@ -56,10 +56,12 @@ function Bridge:OnEventAdded(eventInfo)
     local engine = addon.EncounterEngine
     if not engine or not engine.activeSpecData then return end
 
-    local reactions = engine.activeSpecData.reactions
-    local leadIns   = engine.activeSpecData.leadIns
-    local hasReactions = reactions and reactions[bossSpellID]
-    local hasLeadIns   = leadIns and leadIns[bossSpellID]
+    local reactions = engine.activeSpecData.reactions or {}
+    local leadIns   = engine.activeSpecData.leadIns   or {}
+    -- 11.0+ secret spellID 가드 — type() 로는 분별 불가, pcall 로 테이블 인덱스 시도.
+    local probeOk, hasReactions = pcall(function() return reactions[bossSpellID] end)
+    if not probeOk then return end
+    local _, hasLeadIns = pcall(function() return leadIns[bossSpellID] end)
 
     if not hasReactions and not hasLeadIns then
         print(string.format("|cffaaaaaa[HG-NT]|r native event spellID=%d duration=%.1f (매핑 없음)",
