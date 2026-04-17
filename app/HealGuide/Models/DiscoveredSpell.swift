@@ -5,7 +5,7 @@ struct DiscoveredSpell: Identifiable, Equatable {
     var name: String
     var selected: Bool
 
-    init(spellID: Int, name: String, selected: Bool = true) {
+    init(spellID: Int, name: String, selected: Bool = false) {
         self.id = spellID
         self.name = name
         self.selected = selected
