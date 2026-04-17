@@ -112,6 +112,7 @@ local function acquireIcon()
     btn.timeText = timeText
 
     local ic = { btn = btn, tex = tex, glow = glow, interruptGlow = interruptGlow, timeText = timeText, _inUse = true }
+    ic.glowLerp = { r = 0, g = 0, b = 0, a = 0 }
     pool[#pool + 1] = ic
     return ic
 end
@@ -120,6 +121,18 @@ local function releaseAllIcons()
     for _, ic in ipairs(pool) do
         ic._inUse = false
         ic.btn:Hide()
+        ic.glow:Hide()
+        ic.interruptGlow:Hide()
+        -- glowLerp 는 리셋하지 않음: 매 프레임 release/acquire 패턴에서 리셋 시 lerp 가 동작하지 않음.
+        -- 전투 종료/orientation 전환 시 resetAllGlowLerp 로 별도 초기화.
+    end
+end
+
+local function resetAllGlowLerp()
+    for _, ic in ipairs(pool) do
+        if ic.glowLerp then
+            ic.glowLerp.r = 0; ic.glowLerp.g = 0; ic.glowLerp.b = 0; ic.glowLerp.a = 0
+        end
     end
 end
 
@@ -174,6 +187,8 @@ end
 
 function TimelineFrame:ApplyLayout()
     if not anchor then return end
+    -- orientation 전환 시 lerp 상태가 남아있으면 재배치된 아이콘에 이전 색이 잠깐 스쳐 보임.
+    resetAllGlowLerp()
 
     local orientation = S("timelineOrientation") or "horizontal"
     local trackLength = S("timelineTrackLength") or 400
@@ -216,6 +231,7 @@ function TimelineFrame:_Update()
     if not addon.EncounterEngine or not addon.EncounterEngine.activeEncounterID then
         releaseAllIcons()
         releaseAllTicks()
+        resetAllGlowLerp()
         return
     end
 
@@ -260,11 +276,40 @@ function TimelineFrame:_Update()
             local secs = math.floor(data.remaining)
             ic.timeText:SetText(tostring(secs))
 
-            if data.remaining <= 3 then
+            -- glow lerp: target color/alpha by remaining band
+            local tr, tg, tb, ta
+            if data.remaining > 10 then
+                tr, tg, tb, ta = 1, 0, 0, 0        -- fade out
+            elseif data.remaining > 5 then
+                tr, tg, tb, ta = 1, 0, 0, 0.5      -- red static
+            else
+                tr, tg, tb, ta = 1, 1, 1, 0.6      -- white static (or pulse)
+            end
+
+            local gl = ic.glowLerp
+            local LERP = 0.11                       -- dt(0.033) / 0.3s ≈ 11% per frame
+            gl.r = gl.r + (tr - gl.r) * LERP
+            gl.g = gl.g + (tg - gl.g) * LERP
+            gl.b = gl.b + (tb - gl.b) * LERP
+            gl.a = gl.a + (ta - gl.a) * LERP
+
+            local glowAlpha = gl.a
+            if data.remaining <= 1.0 then
+                local pulse = (math.sin(GetTime() * 8) + 1) * 0.5   -- 0..1, ~1.27Hz
+                glowAlpha = 0.4 + pulse * 0.6                        -- 0.4..1.0
+            end
+
+            if glowAlpha > 0.01 then
+                ic.glow:SetColorTexture(gl.r, gl.g, gl.b, glowAlpha)
                 ic.glow:Show()
-                ic.timeText:SetTextColor(1, 0.2, 0.2, 1)
             else
                 ic.glow:Hide()
+            end
+
+            -- text: red while 5 < remaining ≤ 10 (matches red glow band), else white
+            if data.remaining > 5 and data.remaining <= 10 then
+                ic.timeText:SetTextColor(1, 0.2, 0.2, 1)
+            else
                 ic.timeText:SetTextColor(1, 1, 1, 1)
             end
 
