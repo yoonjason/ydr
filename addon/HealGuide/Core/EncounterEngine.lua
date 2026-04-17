@@ -18,7 +18,7 @@ EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetT
 EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
 EncounterEngine.recentTrashAlerts  = {}    -- 트래시 디듀프: spellID → timestamp
 EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
-EncounterEngine.scheduledAlerts    = {}    -- 타이머 바용: { spellID, fireTime, source }
+EncounterEngine.scheduledAlerts    = {}    -- TimelineFrame 표시 + 취소(캐스트 stop) 용: { spellID, fireTime, source, [castKey], [timer] }
 EncounterEngine.paused             = false
 EncounterEngine.keystoneLevel      = 0
 EncounterEngine.activeDungeonKey   = ""
@@ -42,6 +42,14 @@ local function getSpellMeta(spellID)
     end
     return meta
 end
+
+-- 11.0+ secret spellID 방어: pcall 로 테이블 인덱스 시도. 실패/nil 이면 nil 반환.
+local function safeIndex(tbl, key)
+    if not tbl or type(key) ~= "number" then return nil end
+    local ok, val = pcall(function() return tbl[key] end)
+    return ok and val or nil
+end
+addon._safeIndex = safeIndex
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -212,11 +220,7 @@ function EncounterEngine:ScheduleTimeline(timeline)
             local rawDelay = entry.offset - (now - startTime) - leadTime - (meta.castTime / 1000)
             if rawDelay > 0 then
                 local entryCondition = entry.condition
-                local fireTime = GetTime() + rawDelay
-                local alertInfo = { spellID = spellID, fireTime = fireTime, source = "absolute" }
-                table.insert(self.scheduledAlerts, alertInfo)
-                local t = C_Timer.NewTimer(rawDelay, function()
-                    self:_RemoveScheduledAlert(alertInfo)
+                self:_scheduleAlert(spellID, rawDelay, "absolute", nil, function()
                     if self.paused then return end
                     if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                         self:TriggerAlert(spellID, "absolute")
@@ -224,7 +228,6 @@ function EncounterEngine:ScheduleTimeline(timeline)
                         self.stats.conditionSkipped = self.stats.conditionSkipped + 1
                     end
                 end)
-                table.insert(self.pendingTimers, t)
                 scheduled = scheduled + 1
             end
         end
@@ -249,8 +252,8 @@ function EncounterEngine:OnCombatLog(
     -- 11.0+ secret spellID 가드 — type() 으로는 분별 불가, pcall 로 인덱스 시도.
     if type(bossSpellID) ~= "number" then return end
     local reactions = self.activeSpecData.reactions
-    local probeOk = pcall(function() return reactions and reactions[bossSpellID] end)
-    if not probeOk then return end
+    local matched = safeIndex(reactions, bossSpellID)
+    if not matched then return end
 
     -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.
     -- Bridge.scheduledBossSpells[id] 에 타임스탬프가 있으면 ENCOUNTER_TIMELINE_EVENT_ADDED
@@ -269,11 +272,10 @@ function EncounterEngine:OnCombatLog(
 
     addon.dprint(string.format("[HG-CL] boss cast: name=%s spellID=%s matched=%s",
         tostring(sourceName), tostring(bossSpellID),
-        (reactions and reactions[bossSpellID]) and "YES" or "NO"))
-    if not reactions or not reactions[bossSpellID] then return end
+        matched and "YES" or "NO"))
 
     local leadTime = addon.Storage:GetSetting("leadTime") or 0
-    for _, entry in ipairs(reactions[bossSpellID]) do
+    for _, entry in ipairs(matched) do
         -- §5D: M+ 활성일 때만 minKeystone 필터 적용
         if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
         local playerSpellID = entry.spellID
@@ -282,11 +284,7 @@ function EncounterEngine:OnCombatLog(
             local rawDelay = (entry.delay or 0) - leadTime - (meta.castTime / 1000)
             local delay = math.max(0, rawDelay)
             local entryCondition = entry.condition
-            local fireTime = GetTime() + delay
-            local alertInfo = { spellID = playerSpellID, fireTime = fireTime, source = "reactive" }
-            table.insert(self.scheduledAlerts, alertInfo)
-            local t = C_Timer.NewTimer(delay, function()
-                self:_RemoveScheduledAlert(alertInfo)
+            self:_scheduleAlert(playerSpellID, delay, "reactive", nil, function()
                 if self.paused then return end
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                     self:TriggerAlert(playerSpellID, "reactive")
@@ -294,7 +292,6 @@ function EncounterEngine:OnCombatLog(
                     self.stats.conditionSkipped = self.stats.conditionSkipped + 1
                 end
             end)
-            table.insert(self.pendingTimers, t)
         end
         end  -- minKeystone 필터
     end
@@ -399,6 +396,29 @@ function EncounterEngine:_RemoveScheduledAlert(alertInfo)
     end
 end
 
+function EncounterEngine:_scheduleAlert(spellID, delay, source, castKey, onFire)
+    -- delay <= 0: 스케줄 없이 즉시 발화. scheduledAlerts/pendingTimers 삽입 생략
+    -- (1프레임 수명 좀비 엔트리가 GetUpcomingAlerts 나 TimelineFrame 에 잡히는 것 방지).
+    if delay <= 0 then
+        onFire()
+        return nil
+    end
+    local alertInfo = {
+        spellID  = spellID,
+        fireTime = GetTime() + delay,
+        source   = source,
+    }
+    if castKey then alertInfo.castKey = castKey end
+    table.insert(self.scheduledAlerts, alertInfo)
+    local timer = C_Timer.NewTimer(delay, function()
+        self:_RemoveScheduledAlert(alertInfo)
+        onFire()
+    end)
+    alertInfo.timer = timer
+    table.insert(self.pendingTimers, timer)
+    return alertInfo
+end
+
 function EncounterEngine:GetUpcomingAlerts(limit)
     local now = GetTime()
     local upcoming = {}
@@ -444,8 +464,8 @@ function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     -- 테이블 인덱스 시 'table index is secret' 런타임 에러. pcall 로 안전 조회.
     local whitelist = addon.TrashWhitelist
     if not whitelist then return end
-    local ok, entry = pcall(function() return whitelist[spellID] end)
-    if not ok or not entry then return end
+    local entry = safeIndex(whitelist, spellID)
+    if not entry then return end
 
     -- §5B 키스톤 레벨 게이트 — M+ 진행 중일 때만 적용
     if self.keystoneLevel > 0 then
@@ -474,19 +494,9 @@ function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     end
     local castOk, castKey = pcall(function() return unit .. ":" .. spellID end)
     if not castOk then return end
-    local alertInfo = {
-        spellID  = entry.responseSpellID,
-        fireTime = fireTime,
-        source   = "trash-cast",
-        castKey  = castKey,
-    }
-    table.insert(self.scheduledAlerts, alertInfo)
-    local t = C_Timer.NewTimer(delay, function()
-        self:_RemoveScheduledAlert(alertInfo)
+    self:_scheduleAlert(entry.responseSpellID, delay, "trash-cast", castKey, function()
         addon.AlertFrame:ShowAlert(entry.responseSpellID)
     end)
-    alertInfo.timer = t
-    table.insert(self.pendingTimers, t)
     addon.dprint("[HG-Trash-Cast]", castKey, "→ fire in", string.format("%.1fs", delay))
 end
 
@@ -573,19 +583,10 @@ function EncounterEngine:TestEncounter(encounterID)
     print(string.format("|cff00ff00HealGuide|r 테스트 시작: encounter=%d spec=%s timeline=%d",
         encounterID, activeSpec, #timeline))
 
-    local function scheduleTestAlert(delay, spellID, source)
-        local fireTime = GetTime() + delay
-        local alertInfo = { spellID = spellID, fireTime = fireTime, source = source }
-        table.insert(self.scheduledAlerts, alertInfo)
-        local t = C_Timer.NewTimer(delay, function()
-            self:_RemoveScheduledAlert(alertInfo)
-            self:TriggerAlert(spellID, source)
-        end)
-        table.insert(self.pendingTimers, t)
-    end
-
     for i, entry in ipairs(timeline) do
-        scheduleTestAlert(i * 2.0, entry.spellID, "test")
+        self:_scheduleAlert(entry.spellID, i * 2.0, "test", nil, function()
+            self:TriggerAlert(entry.spellID, "test")
+        end)
     end
 
     local rCount = 0
@@ -594,7 +595,9 @@ function EncounterEngine:TestEncounter(encounterID)
         if rCount >= 3 then break end
         for _, entry in ipairs(entries) do
             rCount = rCount + 1
-            scheduleTestAlert(base + rCount * 2.0, entry.spellID, "test-reaction")
+            self:_scheduleAlert(entry.spellID, base + rCount * 2.0, "test-reaction", nil, function()
+                self:TriggerAlert(entry.spellID, "test-reaction")
+            end)
         end
         if rCount >= 3 then break end
     end

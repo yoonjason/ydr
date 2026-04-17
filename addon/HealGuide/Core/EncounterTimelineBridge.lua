@@ -58,13 +58,13 @@ function Bridge:OnEventAdded(eventInfo)
 
     local reactions = engine.activeSpecData.reactions or {}
     local leadIns   = engine.activeSpecData.leadIns   or {}
-    -- 11.0+ secret spellID 가드 — type() 로는 분별 불가, pcall 로 테이블 인덱스 시도.
-    local probeOk, hasReactions = pcall(function() return reactions[bossSpellID] end)
-    if not probeOk then return end
-    local _, hasLeadIns = pcall(function() return leadIns[bossSpellID] end)
+    -- 11.0+ secret spellID 가드 — EncounterEngine 공유 헬퍼 사용
+    local hasReactions = addon._safeIndex(reactions, bossSpellID)
+    local hasLeadIns   = addon._safeIndex(leadIns, bossSpellID)
 
     if not hasReactions and not hasLeadIns then
-        print(string.format("|cffaaaaaa[HG-NT]|r native event spellID=%d duration=%.1f (매핑 없음)",
+        -- 매핑 없는 보스 이벤트는 debug 로그만 (매 보스 이벤트마다 채팅 스팸 방지).
+        addon.dprint(string.format("[HG-NT] native event spellID=%d duration=%.1f (매핑 없음)",
             bossSpellID, duration))
         return
     end
@@ -81,7 +81,7 @@ function Bridge:OnEventAdded(eventInfo)
     -- leadIns: 보스 캐스트 이전 램프 시퀀스 (offset 음수)
     -- 예: duration=10, offset=-8 → 10 + (-8) - leadTime = 2 - leadTime 뒤에 예약
     if hasLeadIns then
-        for _, entry in ipairs(leadIns[bossSpellID]) do
+        for _, entry in ipairs(hasLeadIns) do
             local playerSpellID  = entry.spellID
             local leadOffset     = entry.offset or 0  -- 음수
             local schedule       = duration + leadOffset - leadTime
@@ -107,7 +107,7 @@ function Bridge:OnEventAdded(eventInfo)
 
     -- reactions: 보스 캐스트 이후 반응 시퀀스
     if hasReactions then
-        for _, entry in ipairs(reactions[bossSpellID]) do
+        for _, entry in ipairs(hasReactions) do
             local playerSpellID  = entry.spellID
             local reactionDelay  = entry.delay or 0
             local schedule       = duration + reactionDelay - leadTime
