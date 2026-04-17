@@ -47,8 +47,12 @@ function ImportDialog:_Create()
     editBox:SetAutoFocus(false)
     editBox:SetFontObject(ChatFontNormal)
     -- 대용량 붙여넣기 최적화: 색 코드/링크 파싱 비활성화 + 바이트/글자 제한 해제
+    -- 하이퍼링크 감지 비활성화는 대용량 Lua 텍스트 (| 문자 다수) 붙여넣기 시 프리즈 방지에 결정적.
     if editBox.SetCountInvisibleLetters then
         editBox:SetCountInvisibleLetters(false)
+    end
+    if editBox.SetHyperlinksEnabled then
+        editBox:SetHyperlinksEnabled(false)
     end
     editBox:SetMaxBytes(0)
     editBox:SetMaxLetters(0)

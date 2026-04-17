@@ -31,9 +31,11 @@ function ImportParser:Parse(input)
         return nil, string.format("입력값이 너무 큽니다 (최대 %dMB).", MAX_LENGTH / (1024 * 1024))
     end
 
-    local lower = input:lower()
+    -- Lua 는 대소문자 구분 — `require` 외의 표기(Require 등)는 globals 에 없음.
+    -- DANGEROUS_PATTERNS 는 전부 소문자로 정의돼 있으므로 input:lower() 로 5MB 복사본을
+    -- 만들 필요 없이 원본에 바로 find 하면 됨. 붙여넣기 프리즈 주원인 중 하나.
     for _, pattern in ipairs(DANGEROUS_PATTERNS) do
-        if lower:find(pattern) then
+        if input:find(pattern) then
             return nil, "보안: 허용되지 않은 패턴 — " .. pattern
         end
     end
