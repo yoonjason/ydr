@@ -26,6 +26,9 @@ local ALLOWED_FIELDS = {
     raidSize             = true,
     bossHP               = true,
     bossPhase            = true,
+    keystoneLevel        = true,
+    dungeonKey           = true,
+    affixActive          = true,
 }
 
 local Collector = {}
@@ -161,6 +164,12 @@ function Evaluator:BuildContext(condition)
             context[field] = Collector.bossHP()
         elseif field == "bossPhase" then
             context[field] = Collector.bossPhase()
+        elseif field == "keystoneLevel" then
+            context[field] = addon.EncounterEngine.keystoneLevel or 0
+        elseif field == "dungeonKey" then
+            context.dungeonKey = addon.EncounterEngine.activeDungeonKey or ""
+        elseif field == "affixActive" then
+            context.activeAffixIDs = addon.EncounterEngine.activeAffixIDs or {}
         end
         -- spellOnCooldown 은 node.spellID 가 노드마다 다르므로 리프 평가 시점에 직접 호출
     end
@@ -229,6 +238,30 @@ function Evaluator:Evaluate(node, context, depth)
         local cooldownValue = Collector.spellOnCooldown(node.spellID)
         local expected = (node.value == 1) and 1 or 0
         return cooldownValue == expected
+    end
+
+    if node.field == "dungeonKey" then
+        if node.op ~= "eq" then
+            addon.dprint("ConditionEvaluator: dungeonKey 는 eq 전용")
+            return nil
+        end
+        return tostring(context.dungeonKey or "") == tostring(node.value)
+    end
+
+    if node.field == "affixActive" then
+        if node.op ~= "eq" then
+            addon.dprint("ConditionEvaluator: affixActive 는 eq 전용")
+            return nil
+        end
+        if not node.affixID then
+            addon.dprint("ConditionEvaluator: affixActive 에 affixID 누락")
+            return nil
+        end
+        local affixIDs = context.activeAffixIDs or {}
+        for _, id in ipairs(affixIDs) do
+            if id == node.affixID then return true end
+        end
+        return false
     end
 
     local lhs = context[node.field]
@@ -358,6 +391,23 @@ function Evaluator:RunSelfTest()
 
     -- spellOnCooldown: 사용 불가 op 는 nil
     check("spellOnCooldown lt → nil", self:Evaluate({op="lt", field="spellOnCooldown", spellID=12345, value=1}, ctx, 0), nil)
+
+    -- keystoneLevel 회귀 3건 (기존)
+    local ctxKs10 = { keystoneLevel = 10 }
+    local ctxKs9  = { keystoneLevel = 9  }
+    local ctxKs0  = { keystoneLevel = 0  }
+    check("keystoneLevel gte 10 (=10) → true",  self:Evaluate({op="gte", field="keystoneLevel", value=10}, ctxKs10, 0), true)
+    check("keystoneLevel gte 10 (=9)  → false", self:Evaluate({op="gte", field="keystoneLevel", value=10}, ctxKs9,  0), false)
+    check("keystoneLevel gte 10 (=0)  → false", self:Evaluate({op="gte", field="keystoneLevel", value=10}, ctxKs0,  0), false)
+
+    -- §5A 신규: dungeonKey / affixActive 3건
+    local ctxM = { dungeonKey = "MaisaraCaverns", activeAffixIDs = {152, 3} }
+    check("dungeonKey eq MaisaraCaverns → true",
+        self:Evaluate({op="eq", field="dungeonKey", value="MaisaraCaverns"}, ctxM, 0), true)
+    check("dungeonKey eq Other → false",
+        self:Evaluate({op="eq", field="dungeonKey", value="Other"}, ctxM, 0), false)
+    check("affixActive affixID=152 → true",
+        self:Evaluate({op="eq", field="affixActive", affixID=152}, ctxM, 0), true)
 
     print(string.format("|cff88ff88[HG-CE]|r 자체 테스트 완료: pass=%d fail=%d", pass, fail))
 end

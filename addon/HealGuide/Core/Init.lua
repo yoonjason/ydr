@@ -37,8 +37,8 @@ local function onAddonLoaded(name)
     if addon.MinimapButton and addon.MinimapButton.Init then
         addon.MinimapButton:Init()
     end
-    if addon.TimerBarFrame and addon.TimerBarFrame.Init then
-        addon.TimerBarFrame:Init()
+    if addon.TimelineFrame and addon.TimelineFrame.Init then
+        addon.TimelineFrame:Init()
     end
     autoImportGeneratedData()
     print("|cff00ff00HealGuide|r 로드 완료. /hg 로 설정")
@@ -53,7 +53,7 @@ local function onSpecChanged()
 end
 
 local function onEncounterStart(encounterID, encounterName, difficultyID, groupSize)
-    print(string.format("|cffffff00[HG]|r ENCOUNTER_START: id=%d name=%s",
+    addon.dprint(string.format("ENCOUNTER_START: id=%d name=%s",
         encounterID or -1, tostring(encounterName)))
     addon.EncounterEngine:OnEncounterStart(encounterID, encounterName)
 end
@@ -63,12 +63,20 @@ local function onEncounterEnd()
 end
 
 local function onCombatLog()
-    local timestamp, subevent, _, sourceGUID, _, sourceFlags, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
-    -- 플레이어 캐스트 추적 (쿨다운 스킵용)
+    local timestamp, subevent, hideCaster,
+          sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
+          destGUID, destName, destFlags, destRaidFlags,
+          spellID, spellName, spellSchool,
+          arg15, arg16 = CombatLogGetCurrentEventInfo()
+
     if subevent == "SPELL_CAST_SUCCESS" and sourceGUID == UnitGUID("player") and spellID then
         addon.EncounterEngine:OnPlayerCast(spellID)
     end
-    addon.EncounterEngine:OnCombatLog(CombatLogGetCurrentEventInfo())
+    addon.EncounterEngine:OnCombatLog(
+        timestamp, subevent, hideCaster,
+        sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
+        destGUID, destName, destFlags, destRaidFlags,
+        spellID, spellName, spellSchool, arg15, arg16)
 end
 
 local function onZoneChanged()
@@ -83,6 +91,9 @@ eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("ENCOUNTER_PHASE_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
@@ -102,6 +113,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         addon.EncounterEngine:OnPhaseUpdate(phase)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         onZoneChanged()
+    elseif event == "CHALLENGE_MODE_START" then
+        if C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo then
+            addon.EncounterEngine:OnChallengeModeStart()
+        end
+    elseif event == "CHALLENGE_MODE_COMPLETED" then
+        addon.EncounterEngine:OnChallengeModeCompleted()
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local unit, _, spellID = ...
+        addon.EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     end
 end)
 
@@ -133,7 +153,6 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         end
     elseif cmd == "lock" then
         addon.AlertFrame:ToggleLock()
-        -- 설정 탭이 열려 있으면 체크박스 동기화
         if addon.MainFrame._RefreshSettings then
             addon.MainFrame:_RefreshSettings()
         end
@@ -210,8 +229,10 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         end
     elseif cmd == "pause" then
         addon.EncounterEngine:Pause()
+        if addon.MainFrame._RefreshDataTab then addon.MainFrame:_RefreshDataTab() end
     elseif cmd == "resume" then
         addon.EncounterEngine:Resume()
+        if addon.MainFrame._RefreshDataTab then addon.MainFrame:_RefreshDataTab() end
     elseif cmd == "history" then
         if addon.CombatHistoryFrame then
             addon.CombatHistoryFrame:Toggle()
@@ -223,11 +244,32 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         if addon.MainFrame._RefreshSettings then
             addon.MainFrame:_RefreshSettings()
         end
+    elseif cmd == "timeline" then
+        local sub = args:match("^(%S+)")
+        if sub == "on" then
+            addon.Storage:SetSetting("timelineVisible", true)
+            addon.TimelineFrame:ApplyVisibility()
+            print("|cff00ff00HealGuide|r 타임라인: ON")
+        elseif sub == "off" then
+            addon.Storage:SetSetting("timelineVisible", false)
+            addon.TimelineFrame:ApplyVisibility()
+            print("|cff00ff00HealGuide|r 타임라인: OFF")
+        elseif sub == "horizontal" or sub == "vertical" then
+            addon.Storage:SetSetting("timelineOrientation", sub)
+            addon.TimelineFrame:ApplyLayout()
+            print("|cff00ff00HealGuide|r 타임라인 방향: " .. sub)
+        elseif sub == "reset" then
+            addon.TimelineFrame:ResetPosition()
+            print("|cff00ff00HealGuide|r 타임라인 위치 초기화")
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg timeline <on|off|horizontal|vertical|reset>")
+        end
     else
         print("|cff00ff00HealGuide|r 명령어: /hg, /hg import, /hg test <encID>, " ..
               "/hg lock, /hg mode <reactive|absolute|hybrid>, " ..
               "/hg size <32-128>, /hg pulse <48-160>, /hg lead <0.0-5.0>, " ..
               "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>, " ..
+              "/hg timeline <on|off|horizontal|vertical|reset>, " ..
               "/hg debug, /hg pause, /hg resume, /hg history")
     end
 end

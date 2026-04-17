@@ -15,10 +15,14 @@ EncounterEngine.currentPhase       = 1     -- ENCOUNTER_PHASE_UPDATE 추적
 EncounterEngine.pendingTimers      = {}
 EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → timestamp
 EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
-EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
+EncounterEngine.stats              = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
+EncounterEngine.recentTrashAlerts  = {}    -- 트래시 디듀프: spellID → timestamp
 EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
 EncounterEngine.scheduledAlerts    = {}    -- 타이머 바용: { spellID, fireTime, source }
 EncounterEngine.paused             = false
+EncounterEngine.keystoneLevel      = 0
+EncounterEngine.activeDungeonKey   = ""
+EncounterEngine.activeAffixIDs    = {}
 
 function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
@@ -81,10 +85,10 @@ end
 
 function EncounterEngine:OnEncounterEnd()
     local s = self.stats
-    if s.fired > 0 or s.conditionSkipped > 0 or s.cooldownSkipped > 0 then
+    if s.fired > 0 or s.conditionSkipped > 0 or s.cooldownSkipped > 0 or s.keystoneSkipped > 0 then
         print(string.format(
-            "|cff88ff88[HG]|r 전투 요약: 알림 %d개 | 조건 스킵 %d | 쿨다운 스킵 %d | 실제 사용 %d",
-            s.fired, s.conditionSkipped, s.cooldownSkipped, s.used
+            "|cff88ff88[HG]|r 전투 요약: 알림 %d개 | 조건 스킵 %d | 쿨다운 스킵 %d | 키스톤 스킵 %d | 실제 사용 %d",
+            s.fired, s.conditionSkipped, s.cooldownSkipped, s.keystoneSkipped, s.used
         ))
     end
 
@@ -93,7 +97,34 @@ function EncounterEngine:OnEncounterEnd()
     end
 
     self:Cancel()
-    self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0 }
+    self.stats = { fired = 0, conditionSkipped = 0, cooldownSkipped = 0, used = 0, keystoneSkipped = 0 }
+end
+
+function EncounterEngine:OnChallengeModeStart()
+    local mapID, ksLevel, affixes = C_ChallengeMode.GetActiveKeystoneInfo()
+    self.keystoneLevel  = ksLevel or 0
+    self.activeAffixIDs = affixes or {}
+
+    local keyMap = addon.DungeonMappings and addon.DungeonMappings.keyByMapID
+    if keyMap and mapID then
+        self.activeDungeonKey = keyMap[mapID] or ""
+        if self.activeDungeonKey == "" then
+            addon.dprint("확인 필요: mapID=" .. tostring(mapID) .. " → dungeonKey 매핑 없음")
+        end
+    else
+        addon.dprint("확인 필요: DungeonMappings.keyByMapID 미존재 (mapID=" .. tostring(mapID) .. ")")
+    end
+
+    addon.dprint("CHALLENGE_MODE_START keystoneLevel=" .. self.keystoneLevel
+        .. " dungeonKey=" .. self.activeDungeonKey
+        .. " affixes=" .. #self.activeAffixIDs)
+end
+
+function EncounterEngine:OnChallengeModeCompleted()
+    self.keystoneLevel    = 0
+    self.activeDungeonKey = ""
+    self.activeAffixIDs   = {}
+    self.recentTrashAlerts = {}
 end
 
 function EncounterEngine:_SaveCombatRecord()
@@ -109,6 +140,7 @@ function EncounterEngine:_SaveCombatRecord()
             fired            = self.stats.fired,
             conditionSkipped = self.stats.conditionSkipped,
             cooldownSkipped  = self.stats.cooldownSkipped,
+            keystoneSkipped  = self.stats.keystoneSkipped,
             used             = self.stats.used,
         },
         events = self.combatLog,
@@ -128,6 +160,7 @@ function EncounterEngine:Cancel()
     end
     self.pendingTimers      = {}
     self.recentAlerts       = {}
+    self.recentTrashAlerts  = {}
     self.playerCooldowns    = {}
     self.combatLog          = {}
     self.scheduledAlerts    = {}
@@ -152,6 +185,8 @@ function EncounterEngine:ScheduleTimeline(timeline)
     local scheduled = 0
 
     for _, entry in ipairs(timeline) do
+        -- §5D: M+ 활성(keystoneLevel > 0) 일 때만 minKeystone 필터 적용
+        if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
         local delay = entry.offset - (now - startTime) - leadTime
         if delay > 0 then
             local spellID        = entry.spellID
@@ -171,6 +206,7 @@ function EncounterEngine:ScheduleTimeline(timeline)
             table.insert(self.pendingTimers, t)
             scheduled = scheduled + 1
         end
+        end  -- minKeystone 필터
     end
     print(string.format("|cff88ff88[HG]|r absolute 타이머 %d개 예약 (lead=%.1fs)", scheduled, leadTime))
 end
@@ -212,6 +248,8 @@ function EncounterEngine:OnCombatLog(
 
     local leadTime = addon.Storage:GetSetting("leadTime") or 0
     for _, entry in ipairs(reactions[bossSpellID]) do
+        -- §5D: M+ 활성일 때만 minKeystone 필터 적용
+        if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
         local playerSpellID  = entry.spellID
         local delay          = math.max(0, (entry.delay or 0) - leadTime)
         local entryCondition = entry.condition
@@ -228,10 +266,20 @@ function EncounterEngine:OnCombatLog(
             end
         end)
         table.insert(self.pendingTimers, t)
+        end  -- minKeystone 필터
     end
 end
 
 function EncounterEngine:TriggerAlert(spellID, source)
+    -- §5B 전역 게이트: M+ 활성 중 keystoneMinLevel 미달이면 스킵
+    if self.keystoneLevel > 0 then
+        local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
+        if self.keystoneLevel < minLvl then
+            self.stats.keystoneSkipped = self.stats.keystoneSkipped + 1
+            return
+        end
+    end
+
     local alertMode = self.cachedAlertMode or addon.Storage:GetSetting("alertMode")
 
     -- hybrid 모드: 1.5초 내 동일 spellID 디듀프
@@ -352,12 +400,41 @@ function EncounterEngine:Resume()
     print("|cff00ff00HealGuide|r 알림 재개")
 end
 
+function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
+    if not addon.SpecMatcher:IsHealer() then return end
+    -- 트래시 알림은 쐐기 전용. 레이드/일반 던전에서는 CLEU 경로(OnCombatLog)가 담당.
+    if self.keystoneLevel <= 0 then return end
+    if not unit or string.sub(unit, 1, 9) ~= "nameplate" then return end
+
+    local whitelist = addon.TrashWhitelist
+    if not whitelist or not whitelist[spellID] then return end
+
+    -- §5B 키스톤 레벨 게이트 (keystoneLevel>0 은 L406 guard 로 이미 보장)
+    local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
+    if self.keystoneLevel < minLvl then return end
+
+    -- 0.5초 디듀프 (같은 nameplateN → nameplateMn 중복 이벤트 방지)
+    local now = GetTime()
+    if self.recentTrashAlerts[spellID] and (now - self.recentTrashAlerts[spellID]) < 0.5 then return end
+    self.recentTrashAlerts[spellID] = now
+
+    local entry = whitelist[spellID]
+    addon.dprint("[HG-Trash]", event, "unit=" .. unit, "bossSpellID=" .. tostring(spellID), "→ response=" .. tostring(entry.responseSpellID))
+    addon.AlertFrame:ShowAlert(entry.responseSpellID)
+end
+
 function EncounterEngine:OnZoneChanged()
     -- S4: 전투 중(인카운터 활성)이면 zone 토스트 skip
     if self.activeEncounterID then return end
 
     local _, instanceType = GetInstanceInfo()
-    if instanceType == "none" or instanceType == "pvp" or instanceType == "arena" then return end
+    if instanceType == "none" then
+        self.keystoneLevel    = 0
+        self.activeDungeonKey = ""
+        self.activeAffixIDs   = {}
+        return
+    end
+    if instanceType == "pvp" or instanceType == "arena" then return end
 
     local dungeons = addon.Storage:GetDungeons()
     local count    = 0

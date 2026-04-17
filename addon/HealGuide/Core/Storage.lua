@@ -18,8 +18,19 @@ local DEFAULT_SETTINGS = {
     leadTime        = 1.5,
     debugMode       = false,
     conditionFallback = true,
+    -- M+ 최저 키가 +2 이므로 기본값 2 는 사실상 '필터 비활성' (>=2 는 항상 통과). 사용자가 올리면 그때부터 저렙 키 알림 억제.
+    keystoneMinLevel = 2,
     alertSoundID    = 888,
     minimapAngle    = 220,
+    -- 타임라인
+    timelineVisible     = true,
+    timelineOrientation = "horizontal",
+    timelineWindow      = 30,
+    timelineIconSize    = 36,
+    timelineTrackLength = 400,
+    timelineShowTicks   = true,
+    timelineLocked      = false,
+    timelinePoint       = { point = "CENTER", relPoint = "CENTER", x = 0, y = -200 },
 }
 
 function Storage:Init()
@@ -51,6 +62,13 @@ function Storage:Init()
         db.settings.iconBaseSize  = old
         db.settings.iconPulseSize = math.floor(old * 1.5)
         db.settings.iconSize      = nil
+    end
+
+    -- timerBarPoint → timelinePoint 마이그레이션 (vertical 레이아웃으로 보존)
+    if db.settings.timerBarPoint and not db.settings.timelinePoint then
+        db.settings.timelinePoint       = db.settings.timerBarPoint
+        db.settings.timelineOrientation = "vertical"
+        db.settings.timerBarPoint       = nil
     end
 
     for k, v in pairs(DEFAULT_SETTINGS) do

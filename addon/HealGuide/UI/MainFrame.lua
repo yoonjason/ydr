@@ -189,11 +189,39 @@ function MainFrame:_CreateDataTab(panel)
     importBtn:SetScript("OnClick", function()
         addon.ImportDialog:Open()
     end)
+
+    local pauseBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    pauseBtn:SetSize(80, 22)
+    pauseBtn:SetPoint("LEFT", importBtn, "RIGHT", 4, 0)
+    pauseBtn:SetText("일시중지")
+    pauseBtn:SetScript("OnClick", function()
+        if addon.EncounterEngine.paused then
+            addon.EncounterEngine:Resume()
+        else
+            addon.EncounterEngine:Pause()
+        end
+        pauseBtn:SetText(addon.EncounterEngine.paused and "재개" or "일시중지")
+    end)
+    panel.pauseBtn = pauseBtn
+
+    local historyBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    historyBtn:SetSize(80, 22)
+    historyBtn:SetPoint("LEFT", pauseBtn, "RIGHT", 4, 0)
+    historyBtn:SetText("전투 기록")
+    historyBtn:SetScript("OnClick", function()
+        if addon.CombatHistoryFrame then
+            addon.CombatHistoryFrame:Toggle()
+        end
+    end)
 end
 
 function MainFrame:_RefreshDataTab()
     local panel = tabs[TAB_DATA]
     if not panel then return end
+
+    if panel.pauseBtn and addon.EncounterEngine then
+        panel.pauseBtn:SetText(addon.EncounterEngine.paused and "재개" or "일시중지")
+    end
 
     local spec     = addon.SpecMatcher:GetActiveSpec() or "비힐러"
     local charName = UnitName("player") or "?"
@@ -396,6 +424,119 @@ function MainFrame:_CreateSettingsTab(panel)
 
     y = y - 32
 
+    -- ── 타임라인 ─────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "타임라인", 8, y)
+    y = y - 22
+
+    local tlVisibleCB = self:_MakeCheckbox("HGTabTLVisibleCB", "타임라인 표시", content, 8, y)
+    tlVisibleCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("timelineVisible", self:GetChecked() and true or false)
+        addon.TimelineFrame:ApplyVisibility()
+    end)
+    panel.tlVisibleCB = tlVisibleCB
+
+    local tlLockCB = self:_MakeCheckbox("HGTabTLLockCB", "타임라인 잠금", content, 150, y)
+    tlLockCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("timelineLocked", self:GetChecked() and true or false)
+    end)
+    panel.tlLockCB = tlLockCB
+
+    local tlResetBtn = CreateFrame("Button", nil, content, "GameMenuButtonTemplate")
+    tlResetBtn:SetSize(88, 20)
+    tlResetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 300, y - 2)
+    tlResetBtn:SetText("위치 초기화")
+    tlResetBtn:SetScript("OnClick", function()
+        addon.TimelineFrame:ResetPosition()
+    end)
+    y = y - 32
+
+    self:_MakeSectionLabel(content, "방향", 8, y)
+    y = y - 22
+
+    panel.tlOrientBtns = {}
+    local TL_ORIENTS = { { mode = "horizontal", label = "가로" }, { mode = "vertical", label = "세로" } }
+    local tlOxs = { 8, 100 }
+    for i, entry in ipairs(TL_ORIENTS) do
+        local ok, btn = pcall(CreateFrame, "CheckButton", "HGTabTLOrient" .. i, content, "UIRadioButtonTemplate")
+        if not ok then
+            btn = CreateFrame("CheckButton", "HGTabTLOrient" .. i, content, "UICheckButtonTemplate")
+        end
+        btn:SetPoint("TOPLEFT", content, "TOPLEFT", tlOxs[i], y + 4)
+        btn._orient = entry.mode
+        _G["HGTabTLOrient" .. i .. "Text"]:SetText(entry.label)
+        btn:SetScript("OnClick", function(self)
+            if panel and panel._refreshing then return end
+            addon.Storage:SetSetting("timelineOrientation", self._orient)
+            for _, other in ipairs(panel.tlOrientBtns) do
+                other:SetChecked(other._orient == self._orient)
+            end
+            addon.TimelineFrame:ApplyLayout()
+        end)
+        panel.tlOrientBtns[i] = btn
+    end
+    y = y - 30
+
+    local tlWindowSl = self:_MakeSlider("HGTabTLWindowSl", "표시 창(초)", 10, 60, 1, content, y)
+    tlWindowSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("timelineWindow", val)
+        addon.TimelineFrame:ApplyLayout()
+    end)
+    panel.tlWindowSl = tlWindowSl
+    y = y - 50
+
+    local tlIconSl = self:_MakeSlider("HGTabTLIconSl", "아이콘 크기", 24, 64, 1, content, y)
+    tlIconSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("timelineIconSize", val)
+        addon.TimelineFrame:ApplyLayout()
+    end)
+    panel.tlIconSl = tlIconSl
+    y = y - 50
+
+    local tlTrackSl = self:_MakeSlider("HGTabTLTrackSl", "트랙 길이", 200, 800, 10, content, y)
+    tlTrackSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val / 10) * 10
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("timelineTrackLength", val)
+        addon.TimelineFrame:ApplyLayout()
+    end)
+    panel.tlTrackSl = tlTrackSl
+    y = y - 50
+
+    local tlTickCB = self:_MakeCheckbox("HGTabTLTickCB", "5초 마커 표시", content, 8, y)
+    tlTickCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("timelineShowTicks", self:GetChecked() and true or false)
+    end)
+    panel.tlTickCB = tlTickCB
+    y = y - 32
+
+    -- ── 쐐기돌 ───────────────────────────────────────────────────────────────
+    self:_MakeSectionLabel(content, "쐐기돌", 8, y)
+    y = y - 22
+
+    local ksMinSl = self:_MakeSlider("HGTabKsMinSl", "알림 레벨 하한", 2, 20, 1, content, y)
+    ksMinSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": +" .. val)
+        addon.Storage:SetSetting("keystoneMinLevel", val)
+    end)
+    panel.ksMinSl = ksMinSl
+    y = y - 50
+
+    -- §5D: 현재 키스톤 레벨 표시 — Core 가 EncounterEngine.keystoneLevel 을 업데이트
+    local ksLevelLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    ksLevelLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y)
+    ksLevelLabel:SetText("현재 키: 비 쐐기")
+    panel.ksLevelLabel = ksLevelLabel
+    y = y - 22
+
     -- ── 알림 크기 ────────────────────────────────────────────────────────────
     self:_MakeSectionLabel(content, "알림 크기 (펄스)", 8, y)
     y = y - 22
@@ -414,6 +555,7 @@ function MainFrame:_CreateSettingsTab(panel)
 
     local leadSl = self:_MakeSlider("HGTabLeadSl", "리드 타임 (초)", 0, 5, 0.1, content, y)
     leadSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
         val = math.floor(val * 10 + 0.5) / 10  -- 0.1 단위 반올림
         _G[self:GetName() .. "Text"]:SetText(string.format("%s: %.1fs", self._labelText, val))
         addon.Storage:SetSetting("leadTime", val)
@@ -422,6 +564,7 @@ function MainFrame:_CreateSettingsTab(panel)
     y = y - 50
 
     baseSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
         val = math.floor(val)
         _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
         addon.Storage:SetSetting("iconBaseSize", val)
@@ -434,6 +577,7 @@ function MainFrame:_CreateSettingsTab(panel)
     end)
 
     pulseSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
         val = math.floor(val)
         local base = addon.Storage:GetSetting("iconBaseSize") or 64
         if val < base then
@@ -635,35 +779,65 @@ end
 function MainFrame:_RefreshSettings()
     local panel = tabs[TAB_SETTINGS]
     if not panel then return end
-    local s = addon.Storage
+    panel._refreshing = true
+    -- pcall 로 감싸 에러 시에도 _refreshing 을 해제해서 설정 탭이 영구 불능 상태에 빠지지 않도록 보장
+    local ok, err = pcall(function()
+        local s = addon.Storage
 
-    panel.lockCB:SetChecked(s:GetSetting("locked") and true or false)
-    panel.soundCB:SetChecked(s:GetSetting("soundEnabled") and true or false)
-    panel.labelCB:SetChecked(s:GetSetting("showSpellName") and true or false)
-    panel.ttsCB:SetChecked(s:GetSetting("ttsEnabled") and true or false)
+        panel.lockCB:SetChecked(s:GetSetting("locked") and true or false)
+        panel.soundCB:SetChecked(s:GetSetting("soundEnabled") and true or false)
+        panel.labelCB:SetChecked(s:GetSetting("showSpellName") and true or false)
+        panel.ttsCB:SetChecked(s:GetSetting("ttsEnabled") and true or false)
 
-    panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
-    panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
-    panel.leadSl:SetValue(s:GetSetting("leadTime")  or 1.5)
-    panel.rateSl:SetValue(s:GetSetting("ttsRate")   or 5)
-    panel.volSl:SetValue(s:GetSetting("ttsVolume")  or 100)
+        panel.baseSl:SetValue(s:GetSetting("iconBaseSize")  or 64)
+        panel.pulseSl:SetValue(s:GetSetting("iconPulseSize") or 96)
+        panel.leadSl:SetValue(s:GetSetting("leadTime")  or 1.5)
+        panel.rateSl:SetValue(s:GetSetting("ttsRate")   or 5)
+        panel.volSl:SetValue(s:GetSetting("ttsVolume")  or 100)
 
-    local pos = s:GetSetting("alertFramePoint") or { x = 0, y = 200 }
-    panel.coordLabel:SetText(string.format("위치: %.0f, %.0f", pos.x or 0, pos.y or 200))
+        local pos = s:GetSetting("alertFramePoint") or { x = 0, y = 200 }
+        panel.coordLabel:SetText(string.format("위치: %.0f, %.0f", pos.x or 0, pos.y or 200))
 
-    local mode = s:GetSetting("alertMode")
-    for _, btn in ipairs(panel.modeBtns) do
-        btn:SetChecked(btn._mode == mode)
+        local mode = s:GetSetting("alertMode")
+        for _, btn in ipairs(panel.modeBtns) do
+            btn:SetChecked(btn._mode == mode)
+        end
+
+        panel.fallbackCB:SetChecked(s:GetSetting("conditionFallback") and true or false)
+        panel.debugCB:SetChecked(s:GetSetting("debugMode") and true or false)
+
+        -- 타임라인
+        panel.tlVisibleCB:SetChecked(s:GetSetting("timelineVisible") and true or false)
+        panel.tlLockCB:SetChecked(s:GetSetting("timelineLocked") and true or false)
+        panel.tlWindowSl:SetValue(s:GetSetting("timelineWindow") or 30)
+        panel.tlIconSl:SetValue(s:GetSetting("timelineIconSize") or 36)
+        panel.tlTrackSl:SetValue(s:GetSetting("timelineTrackLength") or 400)
+        panel.tlTickCB:SetChecked(s:GetSetting("timelineShowTicks") and true or false)
+        local tlOrient = s:GetSetting("timelineOrientation") or "horizontal"
+        for _, btn in ipairs(panel.tlOrientBtns) do
+            btn:SetChecked(btn._orient == tlOrient)
+        end
+
+        panel.ksMinSl:SetValue(s:GetSetting("keystoneMinLevel") or 2)
+        if panel.ksLevelLabel then
+            local ksLevel = addon.EncounterEngine and addon.EncounterEngine.keystoneLevel
+            if ksLevel and ksLevel > 0 then
+                panel.ksLevelLabel:SetText("현재 키: +" .. ksLevel)
+            else
+                panel.ksLevelLabel:SetText("현재 키: 비 쐐기")
+            end
+        end
+
+        local soundID = s:GetSetting("alertSoundID") or 888
+        panel.soundLabel:SetText("사운드: #" .. soundID)
+
+        self:_RefreshVoiceLabel()
+        self:_UpdateTTSGroupState()
+    end)
+    panel._refreshing = false
+    if not ok then
+        addon.dprint("_RefreshSettings error:", err)
     end
-
-    panel.fallbackCB:SetChecked(s:GetSetting("conditionFallback") and true or false)
-    panel.debugCB:SetChecked(s:GetSetting("debugMode") and true or false)
-
-    local soundID = s:GetSetting("alertSoundID") or 888
-    panel.soundLabel:SetText("사운드: #" .. soundID)
-
-    self:_RefreshVoiceLabel()
-    self:_UpdateTTSGroupState()
 end
 
 function MainFrame:_RefreshVoiceLabel()
@@ -741,6 +915,9 @@ function MainFrame:_ShowVoiceDropdown(anchor, entries)
         voiceDropdown = CreateFrame("Frame", "HealGuideVoiceDropdown", UIParent, "BackdropTemplate")
         voiceDropdown:SetFrameStrata("TOOLTIP")
         voiceDropdown:EnableMouse(true)
+        voiceDropdown:EnableKeyboard(true)
+        voiceDropdown:SetPropagateKeyboardInput(false)
+        tinsert(UISpecialFrames, "HealGuideVoiceDropdown")
         if voiceDropdown.SetBackdrop then
             voiceDropdown:SetBackdrop({
                 bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
@@ -749,9 +926,6 @@ function MainFrame:_ShowVoiceDropdown(anchor, entries)
                 insets = { left = 4, right = 4, top = 4, bottom = 4 },
             })
         end
-        voiceDropdown:SetScript("OnKeyDown", function(self, key)
-            if key == "ESCAPE" then self:Hide() end
-        end)
     end
 
     -- 기존 버튼 제거
@@ -806,6 +980,9 @@ function MainFrame:_ShowSoundDropdown(anchorBtn, presets)
         soundDropdown = CreateFrame("Frame", "HealGuideSoundDropdown", UIParent, "BackdropTemplate")
         soundDropdown:SetFrameStrata("TOOLTIP")
         soundDropdown:EnableMouse(true)
+        soundDropdown:EnableKeyboard(true)
+        soundDropdown:SetPropagateKeyboardInput(false)
+        tinsert(UISpecialFrames, "HealGuideSoundDropdown")
         if soundDropdown.SetBackdrop then
             soundDropdown:SetBackdrop({
                 bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
