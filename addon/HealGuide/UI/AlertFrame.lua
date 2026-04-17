@@ -20,9 +20,8 @@ function AlertFrame:Init()
     anchor:EnableMouse(true)
     anchor:RegisterForDrag("LeftButton")
     anchor:SetScript("OnDragStart", function(self)
-        if self.editMode or not addon.Storage:GetSetting("locked") then
-            self:StartMoving()
-        end
+        if addon.Storage:GetSetting("locked") then return end
+        self:StartMoving()
     end)
     anchor:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
@@ -56,9 +55,8 @@ function AlertFrame:_CreateSlot(index)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function()
-        if anchor and (anchor.editMode or not addon.Storage:GetSetting("locked")) then
-            anchor:StartMoving()
-        end
+        if not anchor or addon.Storage:GetSetting("locked") then return end
+        anchor:StartMoving()
     end)
     frame:SetScript("OnDragStop", function()
         if not anchor then return end
