@@ -238,7 +238,7 @@ M+ 키스톤으로 해당 던전 진입:
 ## 16. 알려진 한계 / 주의사항
 
 - 레이드 단일 보스 import 시 dungeonName 이 보스 이름으로 들어감
-- DungeonMappings.lua 는 TWW 시즌1 기준 — 시즌 변경 시 갱신 필요
+- DungeonMappings.lua 는 누적형 mapID→dungeonKey 테이블. 신규 M+ 던전 등장 시에만 추가. 시즌/확장팩 변경으로 재작성 불필요. ValidateActiveSeason 이 미등록 던전을 debug 로그로 고지.
 - `C_VoiceChat.GetTtsVoices()` 필드명(voiceID, name)은 Interface 110200 기준 가정; 실제 인게임 확인 필요
 - UIRadioButtonTemplate 일부 클라이언트에서 누락 시 UICheckButtonTemplate 자동 fallback
 

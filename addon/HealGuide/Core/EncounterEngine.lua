@@ -402,16 +402,19 @@ end
 
 function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     if not addon.SpecMatcher:IsHealer() then return end
-    -- 트래시 알림은 쐐기 전용. 레이드/일반 던전에서는 CLEU 경로(OnCombatLog)가 담당.
-    if self.keystoneLevel <= 0 then return end
+    -- 트래시 알림은 5인 던전 전용 (일반/영웅/M+). 레이드/야외 제외.
+    local _, instanceType = GetInstanceInfo()
+    if instanceType ~= "party" then return end
     if not unit or string.sub(unit, 1, 9) ~= "nameplate" then return end
 
     local whitelist = addon.TrashWhitelist
     if not whitelist or not whitelist[spellID] then return end
 
-    -- §5B 키스톤 레벨 게이트 (keystoneLevel>0 은 L406 guard 로 이미 보장)
-    local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
-    if self.keystoneLevel < minLvl then return end
+    -- §5B 키스톤 레벨 게이트 — M+ 진행 중일 때만 적용
+    if self.keystoneLevel > 0 then
+        local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
+        if self.keystoneLevel < minLvl then return end
+    end
 
     -- 0.5초 디듀프 (같은 nameplateN → nameplateMn 중복 이벤트 방지)
     local now = GetTime()

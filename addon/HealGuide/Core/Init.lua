@@ -46,6 +46,9 @@ end
 
 local function onPlayerLogin()
     addon.SpecMatcher:Refresh()
+    if addon.DungeonMappings and addon.DungeonMappings.ValidateActiveSeason then
+        addon.DungeonMappings:ValidateActiveSeason()
+    end
 end
 
 local function onSpecChanged()

@@ -10,12 +10,16 @@ local trackLine = nil
 
 local function S(k) return addon.Storage:GetSetting(k) end
 
--- §5C MVP 스캐폴딩: interrupt-critical spellID 목록. 데이터 수집 후 채움.
+-- 데이터 근거: docs/mplus_integration_plan.md §4
 local INTERRUPT_IDS = {
-    -- [1254306] = true,  -- Power Word: Shield (Magisters' Terrace)
-    -- [248831]  = true,  -- Dread Screech (Seat of the Triumvirate)
-    -- [396640]  = true,  -- Healing Touch (Algeth'ar Academy)
-    -- TODO: 4장 interrupt-critical 항목 전부 활성화
+    [1254306] = true, -- Power Word: Shield (Lightward Healer, Magisters' Terrace)
+    [473668]  = true, -- Pulsing Shriek (Devoted Woebringer, Windrunner's Spire)
+    [1216592] = true, -- Chain Lightning (Phantasmal Mystic, Windrunner's Spire)
+    [1257088] = true, -- Necrotic Wave (Dread Souleater, Maisara Caverns)
+    [1256008] = true, -- Hex (Ritual Hexxer, Maisara Caverns)
+    [248831]  = true, -- Dread Screech (Saprish, Seat of the Triumvirate)
+    [396640]  = true, -- Healing Touch (Overgrown Ancient, Algeth'ar Academy)
+    [1257595] = true, -- Divine Guile (Lothraxion, Nexus-Point X'enas)
 }
 
 local INTERRUPT_CAPABLE_SPECS = {
@@ -24,7 +28,7 @@ local INTERRUPT_CAPABLE_SPECS = {
     RestoDruid     = true,
 }
 
-local function isInterruptCapable()
+local function isPlayerSpecInterruptCapable()
     if not addon.SpecMatcher then return false end
     local spec = addon.SpecMatcher:GetActiveSpec()
     return spec ~= nil and INTERRUPT_CAPABLE_SPECS[spec] == true
@@ -261,7 +265,7 @@ function TimelineFrame:_Update()
             end
 
             -- §5C: interrupt-critical 마커 — INTERRUPT_IDS 에 등록된 spellID + 인터럽트 가능 스펙
-            if isInterruptCapable() and INTERRUPT_IDS[data.spellID] then
+            if isPlayerSpecInterruptCapable() and INTERRUPT_IDS[data.spellID] then
                 ic.interruptGlow:Show()
             else
                 ic.interruptGlow:Hide()
