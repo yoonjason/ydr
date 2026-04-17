@@ -91,7 +91,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
-eventFrame:RegisterEvent("ENCOUNTER_PHASE_UPDATE")
+-- ENCOUNTER_PHASE_UPDATE 는 Midnight(12.0) 에서 미존재. Phase 추적은 추후 UNIT_SPELLCAST 화이트리스트 기반으로 재설계.
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("CHALLENGE_MODE_START")
@@ -111,9 +111,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         onEncounterStart(...)
     elseif event == "ENCOUNTER_END" then
         onEncounterEnd()
-    elseif event == "ENCOUNTER_PHASE_UPDATE" then
-        local phase = ...
-        addon.EncounterEngine:OnPhaseUpdate(phase)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         onZoneChanged()
     elseif event == "CHALLENGE_MODE_START" then
