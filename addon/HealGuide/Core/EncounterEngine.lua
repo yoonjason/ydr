@@ -224,6 +224,8 @@ function EncounterEngine:OnCombatLog(
     if self.cachedAlertMode == "absolute" then return end
 
     local bossSpellID = ...
+    -- 11.0+ 일부 주문의 spellID 는 secret 토큰 → 테이블 인덱스로 사용 불가.
+    if type(bossSpellID) ~= "number" then return end
     local reactions   = self.activeSpecData.reactions
 
     -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.
@@ -318,6 +320,7 @@ end
 
 function EncounterEngine:OnPlayerCast(spellID)
     if not self.activeEncounterID then return end
+    if type(spellID) ~= "number" then return end
     self.playerCooldowns[spellID] = GetTime()
     self.stats.used = self.stats.used + 1
 
@@ -402,6 +405,9 @@ end
 
 function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     if not addon.SpecMatcher:IsHealer() then return end
+    -- 11.0+ 일부 스킬(private aura / 비공개 주문)은 spellID 가 'secret' 토큰이라 테이블 인덱스 불가.
+    -- 수치형만 화이트리스트 조회. 엔트리가 number 키이므로 secret 은 어차피 매칭 안 됨.
+    if type(spellID) ~= "number" then return end
     -- 트래시 알림은 5인 던전 전용 (일반/영웅/M+). 레이드/야외 제외.
     local _, instanceType = GetInstanceInfo()
     if instanceType ~= "party" then return end
