@@ -351,6 +351,7 @@ struct RankerCollectionTab: View {
                                     Text(entry.bossSpellName ?? "Boss #\(entry.bossSpellID)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .frame(maxWidth: 160, alignment: .leading)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                     Spacer()

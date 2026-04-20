@@ -53,6 +53,8 @@ final class RankerCollectionViewModel: ObservableObject {
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "RankerVM")
 
     private var suppressPersist: Bool = false
+    // 이름 해상 백그라운드 Task 참조 — 재수집 시 이전 Task 취소로 불필요한 API 호출 회피.
+    private var enrichTask: Task<Void, Never>?
 
     init(
         apiClient:        any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
@@ -125,6 +127,10 @@ final class RankerCollectionViewModel: ObservableObject {
             state = .failure("WarcraftLogs Client ID / Secret 을 입력해주세요.")
             return
         }
+
+        // 이전 수집의 이름 해상 Task 가 돌고 있으면 취소 — 중복 Blizzard API 호출 방지
+        enrichTask?.cancel()
+        enrichTask = nil
 
         state = .collecting(RankerCollectionProgress(total: topNCount.rawValue, completed: 0, currentName: "인증 중..."))
 
@@ -227,7 +233,7 @@ final class RankerCollectionViewModel: ObservableObject {
         state = .preview(preview, merged)
 
         // 이름 해상 — 백그라운드로 preview 업데이트. 자격증명 없거나 실패 시 숫자 유지.
-        Task { [weak self] in
+        enrichTask = Task { [weak self] in
             await self?.enrichPreviewNames(currentPreview: preview, mergedData: merged)
         }
     }
@@ -309,6 +315,8 @@ final class RankerCollectionViewModel: ObservableObject {
     // MARK: - 초기화
 
     func reset() {
+        enrichTask?.cancel()
+        enrichTask = nil
         state           = .idle
         lastSaveResult  = nil
         jaccardThreshold = 0.8

@@ -17,7 +17,7 @@ import os
 //   Authorization: Bearer <token>
 //
 // Region: 현재는 `kr` 고정. 추후 locale 확장 시 region 파라미터화.
-protocol BlizzardGameDataAPIClient {
+protocol BlizzardGameDataAPIClient: Sendable {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
     func fetchSpell(spellID: Int, locale: String, token: String) async throws -> BlizzardSpellInfo
     func fetchSpellMedia(spellID: Int, token: String) async throws -> String?

@@ -28,8 +28,12 @@ actor RankerNameResolverImpl: RankerNameResolver {
     private let apiClient: any BlizzardGameDataAPIClient
     private var encounterCache: [Int: String] = [:]
     private var spellCache:     [Int: String] = [:]
-    private var cachedToken: String?  // 세션 내 토큰 재사용
+    private var cachedToken: String?
+    private var tokenObtainedAt: Date?
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "NameResolver")
+
+    // Blizzard OAuth 토큰 기본 TTL 은 24시간. 23시간 기준으로 선제 갱신.
+    private static let tokenTTLSeconds: TimeInterval = 23 * 3600
 
     init(apiClient: any BlizzardGameDataAPIClient = BlizzardGameDataAPIClientImpl()) {
         self.apiClient = apiClient
@@ -45,18 +49,9 @@ actor RankerNameResolverImpl: RankerNameResolver {
             return .empty
         }
 
-        // 토큰 획득 (세션 내 재사용)
-        let token: String
-        if let cached = cachedToken {
-            token = cached
-        } else {
-            do {
-                token = try await apiClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
-                cachedToken = token
-            } catch {
-                logger.warning("Blizzard 토큰 발급 실패 — 이름 조회 스킵: \(error)")
-                return .empty
-            }
+        // 토큰 획득 (세션 내 재사용 + TTL 기반 선제 갱신)
+        guard let token = await ensureToken(clientID: clientID, clientSecret: clientSecret) else {
+            return .empty
         }
 
         // 캐시 히트 분리
@@ -72,9 +67,10 @@ actor RankerNameResolverImpl: RankerNameResolver {
             return true
         }
 
-        // 미스 항목 병렬 조회 (개별 실패는 nil 로 스킵)
-        let fetchedEncounters = await fetchEncountersParallel(ids: missingEncounters, token: token)
-        let fetchedSpells     = await fetchSpellsParallel(ids: missingSpells, token: token)
+        // encounter / spell 조회는 서로 독립적 → async let 으로 동시 실행
+        async let encountersFetch = fetchEncountersParallel(ids: missingEncounters, token: token)
+        async let spellsFetch     = fetchSpellsParallel(ids: missingSpells, token: token)
+        let (fetchedEncounters, fetchedSpells) = await (encountersFetch, spellsFetch)
 
         for (id, name) in fetchedEncounters {
             encounterCache[id] = name
@@ -89,6 +85,27 @@ actor RankerNameResolverImpl: RankerNameResolver {
             encounterNames: encounterResult,
             spellNames:     spellResult
         )
+    }
+
+    // MARK: - Token management
+
+    private func ensureToken(clientID: String, clientSecret: String) async -> String? {
+        if let cached = cachedToken, let obtainedAt = tokenObtainedAt,
+           Date().timeIntervalSince(obtainedAt) < Self.tokenTTLSeconds {
+            return cached
+        }
+        // 만료되었거나 미획득 상태 → 재발급
+        cachedToken = nil
+        tokenObtainedAt = nil
+        do {
+            let fresh = try await apiClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
+            cachedToken = fresh
+            tokenObtainedAt = Date()
+            return fresh
+        } catch {
+            logger.warning("Blizzard 토큰 발급 실패 — 이름 조회 스킵: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Private parallel fetch
