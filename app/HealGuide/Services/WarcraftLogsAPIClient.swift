@@ -23,6 +23,9 @@ protocol WarcraftLogsAPIClient {
     // ReportFight.talentImportCode(actorID:) — WoW 인게임 탤런트 창에 붙여넣기 가능한 export 문자열.
     // null 반환: non-player actor 또는 WCL 이 해당 파스의 탤런트를 기록 못 한 경우.
     func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String?
+    // worldData.encounter(id:).name — WCL 자체 encID 공간 기준 보스/인카운터 이름.
+    // M+ 던전의 경우 ID 가 WCL 자체 스킴이라 Blizzard journal-encounter 와 다름.
+    func fetchEncounterName(encounterID: Int, token: String) async throws -> String?
 }
 
 final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
@@ -356,6 +359,36 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
+    func fetchEncounterName(encounterID: Int, token: String) async throws -> String? {
+        let url = try graphQLURL()
+        let query = """
+        query($id: Int!) {
+          worldData {
+            encounter(id: $id) {
+              name
+            }
+          }
+        }
+        """
+        let body = GraphQLRequest(query: query, variables: ["id": .int(encounterID)])
+        let request = try buildRequest(url: url, body: body, token: token)
+        let (data, response) = try await perform(request)
+        try validate(response: response)
+
+        do {
+            let decoded = try JSONDecoder().decode(GraphQLResponse<EncounterNameQueryData>.self, from: data)
+            if let errors = decoded.errors, !errors.isEmpty {
+                throw AppError.networkError(errors[0].message)
+            }
+            return decoded.data?.worldData?.encounter?.name
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("EncounterName decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
+    }
+
     func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String? {
         let url = try graphQLURL()
 
@@ -570,6 +603,18 @@ private struct MasterDataAbilityDTO: Decodable {
     let gameID: Int
     let name: String
     let icon: String?
+}
+
+// MARK: - encounterName
+
+private struct EncounterNameQueryData: Decodable {
+    let worldData: WorldDataEnc?
+    struct WorldDataEnc: Decodable {
+        let encounter: EncounterWithName?
+        struct EncounterWithName: Decodable {
+            let name: String?
+        }
+    }
 }
 
 // MARK: - talentImportCode

@@ -24,6 +24,9 @@ protocol BlizzardGameDataAPIClient: Sendable {
     func fetchJournalEncounter(encounterID: Int, locale: String, token: String) async throws -> (name: String, abilities: [BossAbilityInfo])
     func fetchJournalInstance(instanceID: Int, locale: String, token: String) async throws -> JournalInstanceInfo
     func fetchPlayableSpecialization(specID: Int, token: String) async throws -> SpecAbilityInfo
+    // M+ 전용 엔드포인트. dungeonID 는 Challenge Mode mapID 와 일치 (인게임 C_ChallengeMode.GetMapTable).
+    func fetchMythicKeystoneDungeonIndex(locale: String, token: String) async throws -> Data
+    func fetchMythicKeystoneDungeon(dungeonID: Int, locale: String, token: String) async throws -> Data
 }
 
 struct BlizzardSpellInfo: Equatable {
@@ -254,6 +257,24 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
             }
         }
         return SpecAbilityInfo(specID: decoded.id, specName: decoded.name, spellIDs: spellIDs)
+    }
+
+    // M+ 전용 엔드포인트. 응답 스키마가 상황따라 다를 수 있어 raw Data 반환 —
+    // 테스트 UI 에서 직접 디스플레이하며 파싱 필드 확정 후에 타입 추가 가능.
+    func fetchMythicKeystoneDungeonIndex(locale: String, token: String) async throws -> Data {
+        let url = try buildURL(path: "/data/wow/mythic-keystone/dungeon/index", queryItems: [
+            URLQueryItem(name: "namespace", value: "dynamic-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ])
+        return try await performGet(url: url, token: token)
+    }
+
+    func fetchMythicKeystoneDungeon(dungeonID: Int, locale: String, token: String) async throws -> Data {
+        let url = try buildURL(path: "/data/wow/mythic-keystone/dungeon/\(dungeonID)", queryItems: [
+            URLQueryItem(name: "namespace", value: "dynamic-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ])
+        return try await performGet(url: url, token: token)
     }
 
     // MARK: - Helpers

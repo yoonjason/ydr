@@ -32,6 +32,9 @@ struct HealGuideApp: App {
 
                 TalentBuildTab(viewModel: talentBuildViewModel)
                     .tabItem { Label("탤런트 빌드", systemImage: "tree") }
+
+                IDMappingDebugTab()
+                    .tabItem { Label("ID 매핑 디버그", systemImage: "ladybug") }
             }
         }
     }

@@ -10,6 +10,7 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
     ])
     var masterDataResult: Result<[MasterDataAbility], AppError> = .success([])
     var talentImportCodeResult: Result<String?, AppError> = .success(nil)
+    var encounterNameResult: Result<String?, AppError> = .success(nil)
 
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String {
         try tokenResult.get()
@@ -42,5 +43,9 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
 
     func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String? {
         try talentImportCodeResult.get()
+    }
+
+    func fetchEncounterName(encounterID: Int, token: String) async throws -> String? {
+        try encounterNameResult.get()
     }
 }
