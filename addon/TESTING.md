@@ -353,9 +353,110 @@ M+ 키스톤으로 해당 던전 진입:
 - [ ] 레이드/M+ 인카운터 시작/종료 정상 처리
 - [ ] `/reload` 후 AceDB 프로파일 설정 전체 유지
 
+## §19 Mac 앱 랭커 수집 탭 실기 검증 (Phase 5α)
+
+### 사전 준비
+
+- [ ] Mac 앱 실행 → '로그 분석' 탭에서 WarcraftLogs Client ID/Secret 입력 후 '힐러 감지' 1회 성공 확인 (자격증명 Keychain 저장 확인)
+- [ ] '로그 분석' 탭 또는 '랭커 수집' 탭에서 'WoW AddOns 경로 (필수)' DisclosureGroup 펼쳐 '/Applications/World of Warcraft/_retail_/Interface/AddOns' 선택
+- [ ] (선택) Blizzard Game Data API Client ID/Secret 도 로그 분석 탭에서 설정 — 보스/스킬명 한국어 표시 및 탤런트 빌드 조회용
+
+### 수집 플로우
+
+- [ ] '랭커 수집' 탭 진입 → 경로 미설정이면 WoW AddOns DisclosureGroup 자동 펼침 + '필수' 배지 확인
+- [ ] 던전(윈드러너 첨탑), 난이도(Mythic+), 스펙(수양 사제), 상위 10명 선택 → '지금 수집' 클릭
+- [ ] 진행 상태: 인증 중 → 랭킹 조회 중 → 각 파스 처리 중 순서로 currentName 표시 확인
+- [ ] 수집 완료 후 '수집 결과' 카드: 수집 파스 N/10, 필터 통과, 보스 스킬 매핑 건수 표시
+- [ ] (Blizzard creds 설정한 경우) '보스별 매핑' 리스트에서 Enc 숫자가 한국어 보스명으로, Boss # 숫자가 한국어 스킬명으로 잠시 뒤 치환되는지 확인
+- [ ] 보스별 매핑 리스트가 '수집 결과' 및 '메타데이터' 박스와 겹치지 않고 내부 스크롤로만 움직이는지 확인 (이전 레이아웃 버그 회귀 방지)
+
+### 중지 버튼 (신규)
+
+- [ ] '지금 수집' 클릭 → 진행 중 빨간색 '중지' 버튼 노출 확인
+- [ ] '중지' 클릭 → 즉시 idle 상태로 복귀, 진행 UI 사라짐
+- [ ] 중지 후 재클릭 '지금 수집' → 새 수집 시작, 이전 결과 없음 확인
+
+### Lua 저장 → 애드온 인식
+
+- [ ] preview 상태에서 'HGPT_RankerData.lua 저장' 버튼 활성화 확인 (경로 설정 시점)
+- [ ] 저장 클릭 → "저장 완료 (N개 항목): /..." 초록 피드백
+- [ ] 파일시스템 확인: `<AddOns>/HealGuide/Data/HGPT_RankerData.lua` 갱신 timestamp 체크
+- [ ] WoW 실행 → `/reload` → §18 파일 로드 검증과 동일하게 `HGPT_RankerData.entries` 확인
+
+## §20 Mac 앱 누적 수집 검증 (Phase 5α)
+
+A 던전 저장 후 B 던전 저장 시 **둘 다 유지** 되는지 확인. 캐시는 `~/Library/Application Support/HealGuide/rankerCache.json`.
+
+- [ ] 수양 사제 / 윈드러너 첨탑 / M+ 수집 → 저장
+- [ ] `HGPT_RankerData.lua` 를 텍스트로 열어 entries 에 1개 엔트리 (dungeonID=12805) 있는지 확인
+- [ ] 수양 사제 / 마이사라 동굴 / M+ 수집 → 저장
+- [ ] `HGPT_RankerData.lua` 에 entries 2개 (12805, 12874) 있는지 확인
+- [ ] 수양 사제 / 윈드러너 첨탑 / M+ **재수집** → 저장 → entries 는 여전히 2개, 첫 엔트리의 `collectedAt` 만 갱신 (교체 동작)
+- [ ] 신성 사제 / 윈드러너 첨탑 / M+ 수집 → 저장 → entries 3개 (다른 스펙은 append)
+- [ ] WoW `/reload` → 랭커 데이터 탭에 엔트리 3개 표시 확인
+
+## §21 Mac 앱 탤런트 빌드 탭 실기 검증 (Phase 5α)
+
+### 수집 플로우
+
+- [ ] '탤런트 빌드' 탭 진입 → 자격증명 자동 로드 (로그 분석 탭과 공유)
+- [ ] 수양 사제 / 윈드러너 첨탑 / M+ / 상위 10명 → '빌드 조회' 클릭
+- [ ] 진행 상태: 인증 → 랭킹 조회 → 각 랭커별 탤런트 조회 진행바 갱신 확인
+- [ ] 완료 후 '수집 요약' 카드: 샘플 수 N/10명 (import 문자열 획득), 빌드 종류 K개 표시
+- [ ] 빈도 내림차순으로 '#1 빌드', '#2 빌드' ... 카드 표시
+- [ ] 각 카드에 usageCount/totalSamples 및 비율(%) 표시
+
+### WCL 리포트 링크 (신규)
+
+- [ ] 카드의 '사용 랭커 (N명)' 섹션에서 각 랭커 이름이 파란색 링크로 표시
+- [ ] 이름 클릭 시 브라우저에서 `https://www.warcraftlogs.com/reports/{code}#fight={fightID}` 열림
+- [ ] 옆의 `(reportCode#fight=N)` 모노스페이스 라벨 표시 확인
+
+### Import 문자열 + 복사 (핵심 기능)
+
+- [ ] importCode 영역 기본 1줄 표시 + '전체 보기' 링크
+- [ ] '전체 보기' 클릭 시 전체 문자열 펼쳐짐 + 드래그 선택 가능 확인
+- [ ] '접기' 클릭 시 1줄로 복귀
+- [ ] '복사' 버튼 클릭 → 피드백에 '#N 빌드 복사 완료 — WoW 탤런트 창에서 붙여넣기 하세요.' 표시
+- [ ] **핵심**: WoW 인게임 → 탤런트 창 (`N` 키) → '로드 가져오기' 또는 기존 빌드 import → 복사된 문자열 Cmd+V 붙여넣기 → **탤런트 트리가 그대로 적용되는지 확인**
+
+### 중지 버튼
+
+- [ ] '빌드 조회' 클릭 후 '중지' 버튼 노출
+- [ ] 진행 중 중지 → idle 복귀 → 재수집 정상
+
+### 엣지 케이스
+
+- [ ] WCL 자격증명 없는 상태에서 '빌드 조회' → failure state 에 안내 문구 표시
+- [ ] 인터넷 끊긴 상태에서 조회 → 토큰 실패 failure state
+- [ ] 일부 파스의 talentImportCode 가 null 인 경우 → 나머지로 집계 진행 확인
+- [ ] 이름 '-서버' 형식 (예: `Mintchu-Azshara`) 이 섞여 와도 정상 매칭 (baseName 가드)
+
+## §22 전체 기능 통합 회귀 (Phase 5α)
+
+- [ ] 로그 분석 탭: 기존 힐러 감지 / 주문 선택 / Lua 생성 / 복사 / 파일 저장 전부 정상
+- [ ] 랭커 수집 탭 후 로그 분석 탭으로 전환 → Keychain/UserDefaults 자격증명 공유 정상
+- [ ] 탤런트 빌드 탭 후 랭커 수집 탭 → 마찬가지로 자격증명 공유
+- [ ] `/reload` 상태에서 애드온이 `HGPT_Data` (기존) + `HGPT_RankerData` (신규) 모두 인식
+- [ ] 랭커 데이터 적용 OFF → 기존 알림 정상 / ON → 레이어드 조회로 랭커 경로 우선
+- [ ] 기존 Phase 1~4 기능 완전 회귀 없음
+
+## §23 잠재 이슈 — 실기에서 반드시 관찰할 항목
+
+이전 분석/리뷰에서 식별된 "실기로만 확정 가능한" 잠재 리스크 체크리스트.
+
+- [ ] **encounterID 매핑**: Lua 의 `data[encID]` 키가 인게임 `ENCOUNTER_START` 의 encounterID 와 실제로 일치하는지. 불일치 시 랭커 알림이 전혀 트리거 안 됨. `/run print(addon.EncounterEngine.activeEncounterID)` 로 실제 값 확인해 Lua 키와 대조
+- [ ] **bossSpellID 매핑**: `data[encID][bossSpellID]` 의 bossSpellID 가 인게임 `COMBAT_LOG_EVENT_UNFILTERED` 의 spellID 와 일치 (이론상 같은 Blizzard spellID 이지만 확인)
+- [ ] **talentImportCode 포맷 호환성**: WCL 이 내려준 문자열이 현재 패치 WoW 탤런트 창에서 정상 import 되는지. 패치 직후엔 포맷 버전 mismatch 가능성 있음
+- [ ] **이름 매칭률**: 탤런트 빌드 수집 시 `samples.count` 가 `requestedRankers` 와 크게 차이나는지 (예: 10명 중 3명만 샘플). 차이 크면 resolveActorID 실패가 많다는 뜻 → 로그 확인 필요
+
 ## 문제 발생 시
 
 1. `/console scriptErrors 1` 켜고 재현
 2. `/reload` 후 에러 메시지 수집
 3. `HealGuideDB.lua` 또는 `HealGuideCharDB.lua` 파일 내용 확인 (구조 손상 여부)
 4. 관련 파일과 라인 번호로 이슈 정리
+5. Mac 앱 측 오류는 Console.app → 'HealGuide' 프로세스 필터 → subsystem `com.yeongseok.healguide` 검색
+   - category `CharacterRankings` — WCL 디코딩 에러 (원본 응답 앞 1500자 포함)
+   - category `NameResolver` — Blizzard 이름 해상 실패
+   - category `RankerVM` / `TalentBuildVM` — 수집 플로우 워닝
