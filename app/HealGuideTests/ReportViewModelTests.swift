@@ -143,7 +143,8 @@ final class ReportViewModelTests: XCTestCase {
 
         if case .spellSelection(let healer) = vm.state {
             XCTAssertEqual(healer.id, 7)
-            XCTAssertFalse(vm.selectedSpellIDs.isEmpty)
+            // 신규 정책 (2026-04-20): 스킬 선택 진입 시 빈 Set 으로 시작 — 사용자가 명시적으로 선택해야 함
+            XCTAssertTrue(vm.selectedSpellIDs.isEmpty)
         } else {
             XCTFail("expected .spellSelection, got \(vm.state)")
         }

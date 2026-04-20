@@ -130,9 +130,12 @@ final class RankerCollectionViewModel: ObservableObject {
         collectTask?.cancel()
         lastSaveResult = nil
         isSaved = false
+        // Task tail 에서 collectTask = nil 을 쓰지 않는 이유:
+        // cancel() + startCollect 연타 시 이전 Task 의 tail 이 뒤늦게 실행되면
+        // 새로 생성된 collectTask 참조를 덮어써 '중지' 버튼이 무력화되는 버그 방지.
+        // 완료된 Task 참조는 다음 startCollect 또는 cancelCollect/reset 에서 정리됨.
         collectTask = Task { [weak self] in
             await self?.collect()
-            self?.collectTask = nil
         }
     }
 
