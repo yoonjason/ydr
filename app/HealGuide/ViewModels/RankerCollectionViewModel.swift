@@ -29,8 +29,10 @@ final class RankerCollectionViewModel: ObservableObject {
     @Published var clientID:     String = ""
     @Published var clientSecret: String = ""
 
-    // WoW AddOns 경로
-    @Published var wowAddonsPath: String = ""
+    // WoW AddOns 경로 (리포트 탭과 동일 UserDefaults 키 공유)
+    @Published var wowAddonsPath: String = "" {
+        didSet { persistWowAddonsPath() }
+    }
 
     // 출력 상태
     @Published var state:           ViewState = .idle
@@ -47,6 +49,8 @@ final class RankerCollectionViewModel: ObservableObject {
     private let cacheService:   RankerCacheService
     private let keychain:       any KeychainStoring
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "RankerVM")
+
+    private var suppressPersist: Bool = false
 
     init(
         apiClient:      any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
@@ -68,6 +72,8 @@ final class RankerCollectionViewModel: ObservableObject {
     // MARK: - 초기화
 
     func onAppear() {
+        suppressPersist = true
+        defer { suppressPersist = false }
         if clientID.isEmpty, let id = keychain.loadClientID() {
             clientID = id
         }
@@ -77,6 +83,11 @@ final class RankerCollectionViewModel: ObservableObject {
         if wowAddonsPath.isEmpty {
             wowAddonsPath = UserDefaults.standard.string(forKey: "wowAddonsPath") ?? ""
         }
+    }
+
+    private func persistWowAddonsPath() {
+        guard !suppressPersist else { return }
+        UserDefaults.standard.set(wowAddonsPath, forKey: "wowAddonsPath")
     }
 
     // MARK: - 탤런트 스트링 검증 (실시간)

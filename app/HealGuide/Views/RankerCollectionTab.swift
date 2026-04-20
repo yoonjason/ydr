@@ -7,6 +7,7 @@ struct RankerCollectionTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 credentialsSection
+                wowPathSection
                 Divider()
                 inputSection
                 Divider()
@@ -17,6 +18,41 @@ struct RankerCollectionTab: View {
         }
         .frame(minWidth: 560, minHeight: 600)
         .onAppear { viewModel.onAppear() }
+    }
+
+    // MARK: - WoW AddOns 경로
+
+    @ViewBuilder
+    private var wowPathSection: some View {
+        DisclosureGroup("WoW AddOns 경로 (HGPT_RankerData.lua 저장)") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Lua 파일 저장을 위해 WoW Interface/AddOns 폴더 경로를 지정하세요. 리포트 탭과 공유됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    TextField("/Applications/World of Warcraft/_retail_/Interface/AddOns", text: $viewModel.wowAddonsPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("선택") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories    = true
+                        panel.canChooseFiles          = false
+                        panel.allowsMultipleSelection = false
+                        panel.message = "WoW Interface/AddOns 폴더를 선택하세요"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            viewModel.wowAddonsPath = url.path
+                        }
+                    }
+                }
+                if !viewModel.wowAddonsPath.isEmpty {
+                    Text("설정됨 — \(viewModel.wowAddonsPath)")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 
     // MARK: - 자격증명
