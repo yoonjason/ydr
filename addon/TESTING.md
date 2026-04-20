@@ -308,6 +308,51 @@ M+ 키스톤으로 해당 던전 진입:
 5. 사운드를 "Alarm Clock"으로 변경 → 테스트 버튼 → 다른 소리 확인
 6. `/reload` 후 모든 테마 설정 유지 확인
 
+## §18 랭커 데이터 탭 (Phase 5α)
+
+### 파일 로드 검증
+
+- [ ] `/reload` 후 `HGPT_RankerData` 전역이 존재하는지 확인 (`/dump HGPT_RankerData`)
+- [ ] `HGPT_RankerData.entries` 가 배열이고 `_meta` / `data` 필드를 가지는지 확인
+
+### 탭 UI 검증
+
+- [ ] `/hg` 열기 → '랭커 데이터' 탭 버튼이 네 번째로 표시됨
+- [ ] 탭 클릭 시 패널 전환, 다른 탭 내용 숨겨짐
+- [ ] 더미 데이터 존재 시 배너가 "데이터 최신 상태"(초록) 표시
+- [ ] `HGPT_RankerData = nil` 로 덮어쓴 뒤 `/hg` → 탭에 "데이터 없음 — Mac 앱에서 수집하세요"(빨강) 표시
+- [ ] `collectedAt` 을 15일 이전 날짜로 바꾼 더미 데이터 로드 → 배너가 "N일 경과 — 갱신 권장"(노랑) 표시
+
+### 엔트리 목록 검증
+
+- [ ] 더미 데이터 1개 엔트리가 목록에 행으로 표시됨
+- [ ] 행 텍스트: 스펙 · 던전명 · 난이도 · 수집일 · 랭커 수 포함 확인
+- [ ] ▶ 화살표 클릭 시 상세 펼치기, 재클릭 시 접힘
+- [ ] 상세 펼침 시 컬럼 헤더(보스 스킬 / 힐 스킬 / delay / ±stddev / quorum) 표시
+- [ ] 더미 데이터의 매핑 행(bossSpellID 440802 → spellID 33206, 47788)이 표시됨
+- [ ] 여러 엔트리 동시 클릭 시 각 엔트리 독립적으로 동작
+
+### 전체 토글 검증
+
+- [ ] '랭커 데이터 적용' 체크박스 ON → `Storage:GetSetting("useRankerData")` == true
+- [ ] 체크박스 OFF → `Storage:GetSetting("useRankerData")` == false
+- [ ] `/reload` 후 체크박스 상태 유지 (AceDB 영속화 확인)
+
+### 레이어드 조회 검증
+
+- [ ] 더미 데이터의 bossSpellID(440802)가 매핑된 encounterID로 `OnCombatLog` 시뮬레이션 시
+  랭커 데이터 경로로 알림 발화 확인 (debugMode ON, `[HG-CL]` 로그 확인)
+- [ ] `useRankerData = false` 설정 후 동일 조건에서 `activeSpecData.reactions` 경로로 fallback 확인
+- [ ] 랭커 데이터에 없는 bossSpellID는 기존 reactions 경로로 정상 처리 확인
+- [ ] `HGPT_RankerData = nil` 상태에서도 기존 알림 기능 완전 정상 동작
+
+### 기존 기능 무영향 확인
+
+- [ ] 데이터 탭, 설정 탭, 미리보기 탭 기능 모두 정상 동작
+- [ ] AlertFrame / TimelineFrame / MinimapButton 무영향
+- [ ] 레이드/M+ 인카운터 시작/종료 정상 처리
+- [ ] `/reload` 후 AceDB 프로파일 설정 전체 유지
+
 ## 문제 발생 시
 
 1. `/console scriptErrors 1` 켜고 재현

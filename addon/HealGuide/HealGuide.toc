@@ -16,6 +16,7 @@ libs/LibSharedMedia-3.0/LibSharedMedia-3.0.lua
 Data/DungeonMappings.lua
 Data/TrashWhitelist.lua
 Data/HealGuide_Generated.lua
+Data/HGPT_RankerData.lua
 Core/Init.lua
 Core/Storage.lua
 Core/SpecMatcher.lua
@@ -23,9 +24,11 @@ Core/ImportParser.lua
 Core/ConditionEvaluator.lua
 Core/EncounterEngine.lua
 Core/EncounterTimelineBridge.lua
+Core/RankerDataLoader.lua
 UI/AlertFrame.lua
 UI/TimelineFrame.lua
 UI/MinimapButton.lua
 UI/CombatHistoryFrame.lua
 UI/ImportDialog.lua
 UI/MainFrame.lua
+UI/RankerDataTab.lua

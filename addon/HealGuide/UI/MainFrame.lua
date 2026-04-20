@@ -9,6 +9,7 @@ local activeTab    = 1
 local TAB_DATA     = 1
 local TAB_SETTINGS = 2
 local TAB_PREVIEW  = 3
+local TAB_RANKER   = 4
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
@@ -55,6 +56,8 @@ function MainFrame:_ShowTab(idx)
         self:_RefreshDataTab()
     elseif idx == TAB_SETTINGS then
         self:_RefreshSettings()
+    elseif idx == TAB_RANKER then
+        self:_RefreshRankerTab()
     end
 end
 
@@ -89,7 +92,7 @@ function MainFrame:_Create()
     self:_CreateStaticPopups()
 
     local inset    = mainFrame.InsetBg
-    local tabNames = { "데이터", "설정", "미리보기" }
+    local tabNames = { "데이터", "설정", "미리보기", "랭커 데이터" }
     local tabBtns  = {}
 
     for i, name in ipairs(tabNames) do
@@ -117,6 +120,7 @@ function MainFrame:_Create()
     self:_CreateDataTab(tabs[TAB_DATA])
     self:_CreateSettingsTab(tabs[TAB_SETTINGS])
     self:_CreatePreviewTab(tabs[TAB_PREVIEW])
+    self:_CreateRankerTab(tabs[TAB_RANKER])
     self:_ShowTab(TAB_DATA)
 end
 

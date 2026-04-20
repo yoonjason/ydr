@@ -263,8 +263,16 @@ function EncounterEngine:OnCombatLog(
     local bossSpellID = ...
     -- 11.0+ secret spellID 가드 — type() 으로는 분별 불가, pcall 로 인덱스 시도.
     if type(bossSpellID) ~= "number" then return end
-    local reactions = self.activeSpecData.reactions
-    local matched = safeIndex(reactions, bossSpellID)
+
+    -- 레이어드 조회: 랭커 데이터 우선 → activeSpecData.reactions fallback
+    local matched = nil
+    local activeSpec = addon.SpecMatcher and addon.SpecMatcher:GetActiveSpec()
+    if addon.RankerDataLoader and activeSpec then
+        matched = addon.RankerDataLoader:LookupBossReactions(activeSpec, self.activeEncounterID, bossSpellID)
+    end
+    if not matched then
+        matched = safeIndex(self.activeSpecData.reactions, bossSpellID)
+    end
     if not matched then return end
 
     -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.

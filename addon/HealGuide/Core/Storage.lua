@@ -44,6 +44,8 @@ local DEFAULTS = {
             alertFontName  = "Friz Quadrata TT",
             alertFontSize  = 14,
             alertSoundName = "ReadyCheck",
+            -- Phase 5α: 랭커 데이터 적용 여부
+            useRankerData  = true,
         },
     },
 }
