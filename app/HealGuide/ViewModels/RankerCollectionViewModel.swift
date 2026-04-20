@@ -377,4 +377,20 @@ final class RankerCollectionViewModel: ObservableObject {
     var availablePresets: [TalentPreset] {
         TalentPresetCatalog.presets(for: selectedSpec)
     }
+
+    var availableDungeons: [DungeonInfo] {
+        switch selectedDifficulty {
+        case .mythicPlus:
+            return DungeonInfo.currentSeason
+        case .heroic, .normal:
+            return DungeonInfo.currentSeason.filter { $0.supportsNormalHeroic }
+        }
+    }
+
+    func resetDungeonSelectionIfNeeded() {
+        guard let current = selectedDungeon else { return }
+        if !availableDungeons.contains(current) {
+            selectedDungeon = availableDungeons.first
+        }
+    }
 }

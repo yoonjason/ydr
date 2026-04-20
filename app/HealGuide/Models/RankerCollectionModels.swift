@@ -5,27 +5,21 @@ import Foundation
 struct DungeonInfo: Identifiable, Hashable {
     let id: Int       // WarcraftLogs encounter ID for the full-run characterRankings query
     let name: String
+    let supportsNormalHeroic: Bool  // false = 쐐기 전용 (구 확장 재활용 던전)
 
     // TODO: Update this list each season.
     // IDs correspond to WarcraftLogs worldData.encounter(id:).characterRankings encounterId.
     static let currentSeason: [DungeonInfo] = [
-        // TWW Season 2
-        DungeonInfo(id: 13161, name: "신병의 요새 (The Rookery)"),
-        DungeonInfo(id: 13157, name: "신더브루 목장 (Cinderbrew Meadery)"),
-        DungeonInfo(id: 13230, name: "작전명: 수문 (Operation: Floodgate)"),
-        DungeonInfo(id: 13228, name: "성스러운 불꽃 수도원 (Priory of Sacred Flame)"),
-        DungeonInfo(id: 61458, name: "금광!! (The Motherlode!!)"),
-        DungeonInfo(id: 61565, name: "메카곤: 작업장 (Mechagon: Workshop)"),
-        DungeonInfo(id: 12648, name: "어둠꽃 열곡 (Darkflame Cleft)"),
-        DungeonInfo(id: 61691, name: "고통의 전당 (Theater of Pain)"),
-        // TWW Season 1 (for historical data)
-        DungeonInfo(id: 12660, name: "아라카라, 메아리의 도시 (Ara-Kara)"),
-        DungeonInfo(id: 12669, name: "실의 도시 (City of Threads)"),
-        DungeonInfo(id: 60673, name: "그림 배톨 (Grim Batol)"),
-        DungeonInfo(id: 2290,  name: "티르나 시크의 안개 (Mists of Tirna Scithe)"),
-        DungeonInfo(id: 12662, name: "여명의 땅 (The Dawnbreaker)"),
-        DungeonInfo(id: 12652, name: "석실 (The Stonevault)"),
-        DungeonInfo(id: 61440, name: "보랄러스 공방전 (Siege of Boralus)"),
+        // 한밤(Midnight) 시즌 1 — 신규 던전 (일반/영웅/쐐기 모두 지원)
+        DungeonInfo(id: 12805,  name: "윈드러너 첨탑 (Windrunner Spire)",          supportsNormalHeroic: true),
+        DungeonInfo(id: 12811,  name: "마법학자의 정원 (Magisters' Terrace)",        supportsNormalHeroic: true),
+        DungeonInfo(id: 12874,  name: "마이사라 동굴 (Maisara Caverns)",            supportsNormalHeroic: true),
+        DungeonInfo(id: 12915,  name: "공결탑 제나스 (Nexus-Point Xenas)",          supportsNormalHeroic: true),
+        // 한밤(Midnight) 시즌 1 — 구 확장 재활용 던전 (쐐기만 지원)
+        DungeonInfo(id: 112526, name: "알게타르 대학 (Algeth'ar Academy)",          supportsNormalHeroic: false),
+        DungeonInfo(id: 361753, name: "삼두정의 권좌 (Seat of the Triumvirate)",    supportsNormalHeroic: false),
+        DungeonInfo(id: 61209,  name: "하늘탑 (Skyreach)",                         supportsNormalHeroic: false),
+        DungeonInfo(id: 10658,  name: "사론의 구덩이 (Pit of Saron)",              supportsNormalHeroic: false),
     ]
 }
 

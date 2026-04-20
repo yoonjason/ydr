@@ -59,7 +59,7 @@ struct RankerCollectionTab: View {
                         .frame(width: 80, alignment: .leading)
                     Picker("", selection: $viewModel.selectedDungeon) {
                         Text("선택...").tag(Optional<DungeonInfo>.none)
-                        ForEach(DungeonInfo.currentSeason) { dungeon in
+                        ForEach(viewModel.availableDungeons) { dungeon in
                             Text(dungeon.name).tag(Optional(dungeon))
                         }
                     }
@@ -79,6 +79,9 @@ struct RankerCollectionTab: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 240)
+                    .onChange(of: viewModel.selectedDifficulty) { _, _ in
+                        viewModel.resetDungeonSelectionIfNeeded()
+                    }
                 }
 
                 // 스펙
