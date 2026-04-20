@@ -9,6 +9,7 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
         HealerCandidate(id: 330, name: "MockHealer", className: "Priest", specName: "Discipline", server: nil)
     ])
     var masterDataResult: Result<[MasterDataAbility], AppError> = .success([])
+    var talentImportCodeResult: Result<String?, AppError> = .success(nil)
 
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String {
         try tokenResult.get()
@@ -37,5 +38,9 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
 
     func fetchMasterData(reportCode: String, token: String) async throws -> [MasterDataAbility] {
         try masterDataResult.get()
+    }
+
+    func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String? {
+        try talentImportCodeResult.get()
     }
 }

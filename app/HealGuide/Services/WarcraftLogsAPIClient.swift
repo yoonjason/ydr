@@ -20,6 +20,9 @@ protocol WarcraftLogsAPIClient {
         token: String
     ) async throws -> [CastEvent]
     func fetchMasterData(reportCode: String, token: String) async throws -> [MasterDataAbility]
+    // ReportFight.talentImportCode(actorID:) — WoW 인게임 탤런트 창에 붙여넣기 가능한 export 문자열.
+    // null 반환: non-player actor 또는 WCL 이 해당 파스의 탤런트를 기록 못 한 경우.
+    func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String?
 }
 
 final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
@@ -353,6 +356,48 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
+    func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String? {
+        let url = try graphQLURL()
+
+        // reportData.report(code:).fights(fightIDs:)[0].talentImportCode(actorID:) → String?
+        let query = """
+        query($code: String!, $fightIDs: [Int]!, $actorID: Int!) {
+          reportData {
+            report(code: $code) {
+              fights(fightIDs: $fightIDs) {
+                talentImportCode(actorID: $actorID)
+              }
+            }
+          }
+        }
+        """
+
+        let body = GraphQLRequest(
+            query: query,
+            variables: [
+                "code":     .string(reportCode),
+                "fightIDs": .intArray([fightID]),
+                "actorID":  .int(actorID)
+            ]
+        )
+        let request = try buildRequest(url: url, body: body, token: token)
+        let (data, response) = try await perform(request)
+        try validate(response: response)
+
+        do {
+            let decoded = try JSONDecoder().decode(GraphQLResponse<TalentImportQueryData>.self, from: data)
+            if let errors = decoded.errors, !errors.isEmpty {
+                throw AppError.networkError(errors[0].message)
+            }
+            return decoded.data?.reportData?.report?.fights?.first?.talentImportCode
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("TalentImportCode decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
+    }
+
     private func graphQLURL() throws -> URL {
         var components = URLComponents()
         components.scheme = "https"
@@ -527,6 +572,24 @@ private struct MasterDataAbilityDTO: Decodable {
     let gameID: Int
     let name: String
     let icon: String?
+}
+
+// MARK: - talentImportCode
+
+private struct TalentImportQueryData: Decodable {
+    let reportData: TalentImportReportData?
+}
+
+private struct TalentImportReportData: Decodable {
+    let report: TalentImportReport?
+}
+
+private struct TalentImportReport: Decodable {
+    let fights: [TalentImportFight]?
+}
+
+private struct TalentImportFight: Decodable {
+    let talentImportCode: String?
 }
 
 // MARK: - playerDetails

@@ -19,6 +19,7 @@ struct HealGuideApp: App {
     )
 
     @StateObject private var rankerViewModel = RankerCollectionViewModel()
+    @StateObject private var talentBuildViewModel = TalentBuildViewModel()
 
     var body: some Scene {
         WindowGroup {
@@ -28,6 +29,9 @@ struct HealGuideApp: App {
 
                 RankerCollectionTab(viewModel: rankerViewModel)
                     .tabItem { Label("랭커 수집", systemImage: "person.2.badge.gearshape") }
+
+                TalentBuildTab(viewModel: talentBuildViewModel)
+                    .tabItem { Label("탤런트 빌드", systemImage: "tree") }
             }
         }
     }
