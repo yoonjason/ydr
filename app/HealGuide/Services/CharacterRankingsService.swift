@@ -48,7 +48,7 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
         let query = """
         query(
           $encounterId: Int!, $className: String!, $specName: String!,
-          $serverRegion: String, $difficulty: Int, $limit: Int
+          $serverRegion: String, $difficulty: Int
         ) {
           worldData {
             encounter(id: $encounterId) {
@@ -57,7 +57,6 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
                 specName: $specName
                 serverRegion: $serverRegion
                 difficulty: $difficulty
-                limit: $limit
               )
             }
           }
@@ -69,7 +68,6 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
             "className":    .string(className),
             "specName":     .string(specName),
             "serverRegion": .string(serverRegion),
-            "limit":        .int(limit),
         ]
         if let difficulty {
             variables["difficulty"] = .int(difficulty)
@@ -86,7 +84,8 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
                 throw AppError.networkError(errors[0].message)
             }
             let scalar = decoded.data?.worldData?.encounter?.characterRankings
-            return (scalar?.rankings ?? []).map { ranking in
+            let allRankings = scalar?.rankings ?? []
+            return Array(allRankings.prefix(limit)).map { ranking in
                 let talentIDs = Set((ranking.talents ?? []).map(\.id))
                 return RankerParse(
                     id: "\(ranking.report.code)-\(ranking.report.fightID)",
