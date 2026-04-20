@@ -44,17 +44,20 @@ final class RankerCollectionViewModel: ObservableObject {
     private let filterService:  TalentFilterServiceImpl
     private let merger:         RankerDataMergerImpl
     private let serializer:     RankerLuaSerializer
+    private let cacheService:   RankerCacheService
     private let keychain:       any KeychainStoring
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "RankerVM")
 
     init(
         apiClient:      any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
         rankingService: any CharacterRankingsService   = CharacterRankingsServiceImpl(),
-        keychain:       any KeychainStoring            = FileCredentialStore()
+        keychain:       any KeychainStoring            = FileCredentialStore(),
+        cacheService:   RankerCacheService             = RankerCacheService()
     ) {
         self.apiClient      = apiClient
         self.rankingService = rankingService
         self.keychain       = keychain
+        self.cacheService   = cacheService
         self.filterService  = TalentFilterServiceImpl()
         self.merger         = RankerDataMergerImpl()
         self.serializer     = RankerLuaSerializer()
@@ -214,9 +217,10 @@ final class RankerCollectionViewModel: ObservableObject {
             return
         }
 
+        let entries   = cacheService.merge(data)
         let filePath  = serializer.filePath(wowAddonsPath: wowAddonsPath)
         let directory = (filePath as NSString).deletingLastPathComponent
-        let content   = serializer.serialize(data)
+        let content   = serializer.serialize(entries)
 
         do {
             try FileManager.default.createDirectory(
@@ -224,8 +228,8 @@ final class RankerCollectionViewModel: ObservableObject {
                 withIntermediateDirectories: true
             )
             try content.write(toFile: filePath, atomically: true, encoding: .utf8)
-            lastSaveResult = "저장 완료: \(filePath)"
-            logger.info("HGPT_RankerData.lua 저장: \(filePath)")
+            lastSaveResult = "저장 완료 (\(entries.count)개 항목): \(filePath)"
+            logger.info("HGPT_RankerData.lua 저장: \(filePath) (\(entries.count) entries)")
         } catch {
             lastSaveResult = "저장 실패: \(error.localizedDescription)"
             logger.error("HGPT_RankerData.lua 저장 실패: \(error)")

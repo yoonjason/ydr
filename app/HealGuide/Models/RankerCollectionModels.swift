@@ -103,7 +103,7 @@ struct WelfordAccumulator {
 
 // MARK: - 병합 결과 단위
 
-struct RankerResponseEntry {
+struct RankerResponseEntry: Codable {
     let spellID: Int
     let delay:   Double
     let stddev:  Double
@@ -113,7 +113,7 @@ struct RankerResponseEntry {
 
 // MARK: - HGPT_RankerData (Lua 스키마 대응)
 
-struct HGPTRankerDataMeta {
+struct HGPTRankerDataMeta: Codable {
     let version:             Int
     let collectedAt:         String   // ISO8601 KST
     let region:              String
@@ -132,6 +132,48 @@ struct HGPTRankerData {
     let meta:          HGPTRankerDataMeta
     // [encounterID: [bossSpellID: [entries]]]
     let encounterData: [Int: [Int: [RankerResponseEntry]]]
+}
+
+extension HGPTRankerData: Codable {
+    enum CodingKeys: String, CodingKey {
+        case meta, encounterData
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        meta = try container.decode(HGPTRankerDataMeta.self, forKey: .meta)
+
+        let stringKeyed = try container.decode(
+            [String: [String: [RankerResponseEntry]]].self,
+            forKey: .encounterData
+        )
+        var result: [Int: [Int: [RankerResponseEntry]]] = [:]
+        for (encStr, bossMap) in stringKeyed {
+            guard let encID = Int(encStr) else { continue }
+            var innerMap: [Int: [RankerResponseEntry]] = [:]
+            for (bossStr, responses) in bossMap {
+                guard let bossID = Int(bossStr) else { continue }
+                innerMap[bossID] = responses
+            }
+            result[encID] = innerMap
+        }
+        encounterData = result
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(meta, forKey: .meta)
+
+        var stringKeyed: [String: [String: [RankerResponseEntry]]] = [:]
+        for (encID, bossMap) in encounterData {
+            var innerMap: [String: [RankerResponseEntry]] = [:]
+            for (bossID, responses) in bossMap {
+                innerMap[String(bossID)] = responses
+            }
+            stringKeyed[String(encID)] = innerMap
+        }
+        try container.encode(stringKeyed, forKey: .encounterData)
+    }
 }
 
 // MARK: - 진행 상태
