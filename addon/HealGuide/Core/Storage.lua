@@ -5,6 +5,7 @@ local Storage = addon.Storage
 -- ── AceDB 스키마 ──────────────────────────────────────────────────────────────
 
 local DEFAULTS = {
+    global  = { _charDbMigratedV2 = false },
     profile = {
         version  = 2,
         dungeons = {},
@@ -70,6 +71,9 @@ function Storage:Init()
     -- 프로파일 전환 콜백: UI 갱신
     db.RegisterCallback(self, "OnProfileChanged", function(target, event, database, newProfile)
         target:RebuildEncounterIndex()
+        if addon.EncounterEngine and addon.EncounterEngine.OnEncounterEnd then
+            addon.EncounterEngine:OnEncounterEnd()
+        end
         if addon.MainFrame then
             if addon.MainFrame._RefreshSettings then addon.MainFrame:_RefreshSettings() end
             if addon.MainFrame._RefreshDataTab  then addon.MainFrame:_RefreshDataTab()  end
@@ -84,6 +88,9 @@ function Storage:Init()
 
     db.RegisterCallback(self, "OnProfileReset", function(target, event, database, profileName)
         target:RebuildEncounterIndex()
+        if addon.EncounterEngine and addon.EncounterEngine.OnEncounterEnd then
+            addon.EncounterEngine:OnEncounterEnd()
+        end
         if addon.MainFrame and addon.MainFrame._RefreshSettings then
             addon.MainFrame:_RefreshSettings()
         end
@@ -101,9 +108,9 @@ end
 -- ── 마이그레이션 ──────────────────────────────────────────────────────────────
 
 function Storage:_MigrateFromCharDB()
-    if db.profile._charDbMigrated then return end
+    if db.global._charDbMigratedV2 then return end
     if type(HealGuideCharDB) ~= "table" then
-        db.profile._charDbMigrated = true
+        db.global._charDbMigratedV2 = true
         return
     end
 
@@ -130,9 +137,9 @@ function Storage:_MigrateFromCharDB()
             settings.timerBarPoint       = nil
         end
 
-        -- nil 키만 복사 (AceDB 기본값보다 구버전 값 우선)
+        -- 기존 HealGuideCharDB 값을 우선하되, DEFAULTS 에 정의된 키만 허용
         for k, v in pairs(settings) do
-            if db.profile.settings[k] == nil then
+            if DEFAULTS.profile.settings[k] ~= nil then
                 db.profile.settings[k] = v
             end
         end
@@ -146,7 +153,7 @@ function Storage:_MigrateFromCharDB()
         end
     end
 
-    db.profile._charDbMigrated = true
+    db.global._charDbMigratedV2 = true
 end
 
 -- ── 프로파일 API ──────────────────────────────────────────────────────────────

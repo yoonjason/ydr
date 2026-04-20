@@ -332,6 +332,8 @@ function AlertFrame:ApplyTheme()
         if slot.nameText then
             if fontPath then
                 slot.nameText:SetFont(fontPath, fontSize, "")
+            else
+                slot.nameText:SetFontObject("GameFontNormalLarge")
             end
             slot.nameText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
         end
