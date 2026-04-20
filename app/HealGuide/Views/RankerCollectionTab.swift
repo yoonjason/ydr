@@ -324,12 +324,16 @@ struct RankerCollectionTab: View {
                         LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(preview.bossEntries, id: \.compositeID) { entry in
                                 HStack {
-                                    Text("Enc \(entry.encounterID)")
+                                    Text(entry.encounterName ?? "Enc \(entry.encounterID)")
                                         .font(.caption)
-                                        .frame(width: 70, alignment: .leading)
-                                    Text("Boss #\(entry.bossSpellID)")
+                                        .frame(width: 140, alignment: .leading)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    Text(entry.bossSpellName ?? "Boss #\(entry.bossSpellID)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                     Spacer()
                                     Text("힐 스킬 \(entry.mappingCount)개")
                                         .font(.caption)

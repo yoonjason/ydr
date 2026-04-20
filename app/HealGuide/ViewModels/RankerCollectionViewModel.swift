@@ -41,32 +41,38 @@ final class RankerCollectionViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let apiClient:      any WarcraftLogsAPIClient
-    private let rankingService: any CharacterRankingsService
-    private let filterService:  any TalentFilterService
-    private let merger:         any RankerDataMerger
-    private let serializer:     RankerLuaSerializer
-    private let cacheService:   RankerCacheService
-    private let keychain:       any KeychainStoring
+    private let apiClient:        any WarcraftLogsAPIClient
+    private let rankingService:   any CharacterRankingsService
+    private let filterService:    any TalentFilterService
+    private let merger:           any RankerDataMerger
+    private let serializer:       RankerLuaSerializer
+    private let cacheService:     RankerCacheService
+    private let keychain:         any KeychainStoring
+    private let blizzardKeychain: any KeychainStoring
+    private let nameResolver:     any RankerNameResolver
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "RankerVM")
 
     private var suppressPersist: Bool = false
 
     init(
-        apiClient:      any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
-        rankingService: any CharacterRankingsService   = CharacterRankingsServiceImpl(),
-        filterService:  any TalentFilterService        = TalentFilterServiceImpl(),
-        merger:         any RankerDataMerger           = RankerDataMergerImpl(),
-        keychain:       any KeychainStoring            = FileCredentialStore(),
-        cacheService:   RankerCacheService             = RankerCacheService()
+        apiClient:        any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
+        rankingService:   any CharacterRankingsService   = CharacterRankingsServiceImpl(),
+        filterService:    any TalentFilterService        = TalentFilterServiceImpl(),
+        merger:           any RankerDataMerger           = RankerDataMergerImpl(),
+        keychain:         any KeychainStoring            = FileCredentialStore(),
+        blizzardKeychain: any KeychainStoring            = FileCredentialStore(fileName: "blizzard_credentials.json"),
+        nameResolver:     any RankerNameResolver         = RankerNameResolverImpl(),
+        cacheService:     RankerCacheService             = RankerCacheService()
     ) {
-        self.apiClient      = apiClient
-        self.rankingService = rankingService
-        self.filterService  = filterService
-        self.merger         = merger
-        self.keychain       = keychain
-        self.cacheService   = cacheService
-        self.serializer     = RankerLuaSerializer()
+        self.apiClient        = apiClient
+        self.rankingService   = rankingService
+        self.filterService    = filterService
+        self.merger           = merger
+        self.keychain         = keychain
+        self.blizzardKeychain = blizzardKeychain
+        self.nameResolver     = nameResolver
+        self.cacheService     = cacheService
+        self.serializer       = RankerLuaSerializer()
     }
 
     // MARK: - 초기화
@@ -219,6 +225,57 @@ final class RankerCollectionViewModel: ObservableObject {
         )
 
         state = .preview(preview, merged)
+
+        // 이름 해상 — 백그라운드로 preview 업데이트. 자격증명 없거나 실패 시 숫자 유지.
+        Task { [weak self] in
+            await self?.enrichPreviewNames(currentPreview: preview, mergedData: merged)
+        }
+    }
+
+    // MARK: - 이름 해상 (Blizzard API)
+
+    private func enrichPreviewNames(currentPreview: RankerPreviewResult, mergedData: HGPTRankerData) async {
+        let clientID     = loadBlizzardClientID()
+        let clientSecret = loadBlizzardClientSecret()
+        guard !clientID.isEmpty, !clientSecret.isEmpty else { return }
+
+        let encounterIDs = Set(currentPreview.bossEntries.map(\.encounterID))
+        let spellIDs     = Set(currentPreview.bossEntries.map(\.bossSpellID))
+
+        let resolved = await nameResolver.resolveNames(
+            encounterIDs: encounterIDs,
+            spellIDs:     spellIDs,
+            clientID:     clientID,
+            clientSecret: clientSecret
+        )
+
+        // enrich 도중 사용자가 다른 상태로 전환했으면 덮어쓰지 않음
+        guard case .preview(let current, let data) = state, data.meta.collectedAt == mergedData.meta.collectedAt else {
+            return
+        }
+
+        let enrichedEntries = current.bossEntries.map { entry -> RankerPreviewResult.BossEntry in
+            var copy = entry
+            copy.encounterName = resolved.encounterNames[entry.encounterID]
+            copy.bossSpellName = resolved.spellNames[entry.bossSpellID]
+            return copy
+        }
+
+        let enrichedPreview = RankerPreviewResult(
+            parsesCollected:       current.parsesCollected,
+            parsesFiltered:        current.parsesFiltered,
+            bossEntries:           enrichedEntries,
+            highVarianceWarnings:  current.highVarianceWarnings
+        )
+        state = .preview(enrichedPreview, data)
+    }
+
+    private func loadBlizzardClientID() -> String {
+        blizzardKeychain.loadClientID() ?? ""
+    }
+
+    private func loadBlizzardClientSecret() -> String {
+        blizzardKeychain.load() ?? ""
     }
 
     // MARK: - 병합 결과 저장

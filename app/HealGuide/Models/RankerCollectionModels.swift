@@ -187,6 +187,9 @@ struct RankerPreviewResult {
         let encounterID:  Int
         let bossSpellID:  Int
         let mappingCount: Int
+        // Blizzard API 해상 이후 채워짐. 자격증명 미설정 또는 조회 실패 시 nil.
+        var encounterName: String? = nil
+        var bossSpellName: String? = nil
 
         // encounterID + bossSpellID 조합을 SwiftUI ForEach ID로 사용 (보스 스펠이
         // 여러 encounter에 걸쳐 재사용될 수 있어 bossSpellID 단독은 충돌 가능).
