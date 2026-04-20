@@ -548,8 +548,6 @@ private struct RawEventPayload: Decodable {
     let abilityGameID: Int?
 }
 
-// MARK: - playerDetails
-
 // MARK: - masterData
 
 private struct MasterDataQueryData: Decodable {

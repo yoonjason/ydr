@@ -194,7 +194,7 @@ struct TalentBuildTab: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button {
-                        viewModel.copyImportCode(group.importCode)
+                        viewModel.copyImportCode(group.importCode, rank: rank)
                     } label: {
                         Label("복사", systemImage: "doc.on.doc")
                     }
@@ -209,17 +209,37 @@ struct TalentBuildTab: View {
                     FlowText(samples: group.samples)
                 }
 
-                Text(group.importCode)
+                ImportCodeView(code: group.importCode)
+            }
+            .padding(8)
+        }
+    }
+
+    // 복사 버튼이 주 수단이지만 사용자가 전체 코드를 확인하고 싶을 수 있어
+    // 접힘/펼침 토글과 전체 선택 가능한 selectable 상태를 동시 제공.
+    private struct ImportCodeView: View {
+        let code: String
+        @State private var expanded: Bool = false
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(code)
                     .font(.system(.caption2, design: .monospaced))
                     .textSelection(.enabled)
                     .padding(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.secondary.opacity(0.1))
                     .cornerRadius(6)
-                    .lineLimit(3)
+                    .lineLimit(expanded ? nil : 1)
                     .truncationMode(.tail)
+
+                Button(expanded ? "접기" : "전체 보기") {
+                    expanded.toggle()
+                }
+                .font(.caption2)
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
             }
-            .padding(8)
         }
     }
 

@@ -133,7 +133,10 @@ final class TalentBuildViewModel: ObservableObject {
         }
 
         // 3. 파스별 actor ID → talentImportCode 조회
+        // playerDetails 는 (reportCode, fightID) 가 같으면 동일 응답이므로 세션 내 캐싱
         var samples: [TalentImportSample] = []
+        var playerDetailsCache: [String: [HealerCandidate]] = [:]
+
         for (index, parse) in parses.enumerated() {
             if Task.isCancelled { state = .idle; return }
             state = .collecting(
@@ -147,7 +150,8 @@ final class TalentBuildViewModel: ObservableObject {
                     reportCode:    parse.reportCode,
                     fightID:       parse.fightID,
                     characterName: parse.characterName,
-                    token:         token
+                    token:         token,
+                    cache:         &playerDetailsCache
                 )
                 guard let actorID else { continue }
 
@@ -203,32 +207,49 @@ final class TalentBuildViewModel: ObservableObject {
 
     // MARK: - Clipboard
 
-    func copyImportCode(_ code: String) {
+    func copyImportCode(_ code: String, rank: Int) {
         pasteboard.write(code)
-        lastCopyFeedback = "복사 완료 — WoW 탤런트 창에서 붙여넣기 하세요."
+        lastCopyFeedback = "#\(rank) 빌드 복사 완료 — WoW 탤런트 창에서 붙여넣기 하세요."
     }
 
     // MARK: - Private
 
     // PlayerDetails 에서 characterName 이 일치하는 actor 의 ID 획득.
+    // cache: 동일 (reportCode, fightID) 에 대한 중복 네트워크 호출 방지.
     private func resolveActorID(
         reportCode:    String,
         fightID:       Int,
         characterName: String,
-        token:         String
+        token:         String,
+        cache:         inout [String: [HealerCandidate]]
     ) async throws -> Int? {
-        let players = try await apiClient.fetchPlayerDetails(
-            reportCode: reportCode, fightID: fightID, token: token
-        )
-        // 이름 정확 일치 우선, 실패 시 스펙 매칭으로 폴백
-        if let exact = players.first(where: { $0.name == characterName }) {
+        let key = "\(reportCode)/\(fightID)"
+        let players: [HealerCandidate]
+        if let cached = cache[key] {
+            players = cached
+        } else {
+            players = try await apiClient.fetchPlayerDetails(
+                reportCode: reportCode, fightID: fightID, token: token
+            )
+            cache[key] = players
+        }
+
+        // WCL 의 characterName 과 playerDetails.name 은 '캐릭터명-서버명' 포함
+        // 여부가 케이스마다 달라 서버명을 제거한 베이스 이름으로 비교한다.
+        let targetBase = baseName(characterName)
+        if let exact = players.first(where: { baseName($0.name) == targetBase }) {
             return exact.id
         }
+        // 이름 매칭 실패 시 스펙 매칭으로 폴백
         let specMatched = players.first {
             $0.className == selectedSpec.warcraftLogsClassName &&
             $0.specName  == selectedSpec.warcraftLogsSpecName
         }
         return specMatched?.id
+    }
+
+    private func baseName(_ raw: String) -> String {
+        raw.components(separatedBy: "-").first ?? raw
     }
 
     // MARK: - Derived
