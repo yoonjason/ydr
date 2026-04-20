@@ -126,11 +126,13 @@ struct HGPTRankerData {
     let meta:          HGPTRankerDataMeta
     // [encounterID: [bossSpellID: [entries]]]
     let encounterData: [Int: [Int: [RankerResponseEntry]]]
+    // Blizzard Journal Encounter API 로 해상한 한국어 이름. 없으면 애드온이 EJ_GetEncounterInfo 로 폴백.
+    var encounterNames: [Int: String]
 }
 
 extension HGPTRankerData: Codable {
     enum CodingKeys: String, CodingKey {
-        case meta, encounterData
+        case meta, encounterData, encounterNames
     }
 
     init(from decoder: Decoder) throws {
@@ -152,6 +154,12 @@ extension HGPTRankerData: Codable {
             result[encID] = innerMap
         }
         encounterData = result
+
+        // 구 포맷 역호환: encounterNames 없으면 빈 딕셔너리로 폴백
+        let rawNames = (try? container.decode([String: String].self, forKey: .encounterNames)) ?? [:]
+        encounterNames = rawNames.reduce(into: [:]) { acc, pair in
+            if let id = Int(pair.key) { acc[id] = pair.value }
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -167,6 +175,9 @@ extension HGPTRankerData: Codable {
             stringKeyed[String(encID)] = innerMap
         }
         try container.encode(stringKeyed, forKey: .encounterData)
+
+        let stringNames = encounterNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
+        try container.encode(stringNames, forKey: .encounterNames)
     }
 }
 

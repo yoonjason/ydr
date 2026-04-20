@@ -120,6 +120,36 @@ final class RankerCollectionViewModelTests: XCTestCase {
         XCTAssertEqual(mockMerger.buildPreviewCallCount, 0, "idle 상태에서는 merger를 호출하지 않음")
     }
 
+    // MARK: - isSaved / hasUnsavedPreview 불변식
+
+    func test_hasUnsavedPreview_true_afterPreviewWithoutSave() {
+        let viewModel = makeViewModel()
+        viewModel.state = .preview(dummyPreview(), dummyData())
+        XCTAssertFalse(viewModel.isSaved, "초기 진입 시 isSaved 는 false")
+        XCTAssertTrue(viewModel.hasUnsavedPreview, "preview 상태이고 저장 전이면 미저장")
+    }
+
+    func test_hasUnsavedPreview_false_inIdleState() {
+        let viewModel = makeViewModel()
+        viewModel.state = .idle
+        viewModel.isSaved = true
+        XCTAssertFalse(viewModel.hasUnsavedPreview, "preview 상태가 아니면 미저장 표시 없음")
+    }
+
+    func test_startCollect_resetsIsSavedFlag() {
+        let viewModel = makeViewModel()
+        viewModel.isSaved = true
+        viewModel.startCollect()
+        XCTAssertFalse(viewModel.isSaved, "startCollect 호출 시 isSaved 는 false 로 리셋")
+    }
+
+    func test_reset_clearsIsSavedFlag() {
+        let viewModel = makeViewModel()
+        viewModel.isSaved = true
+        viewModel.reset()
+        XCTAssertFalse(viewModel.isSaved, "reset 호출 시 isSaved 는 false 로 리셋")
+    }
+
     // MARK: - B-6: buildPairs 정렬 + 조기 종료 엣지 케이스
 
     func test_buildPairs_reversedInput_correctDelay() {
@@ -350,7 +380,8 @@ final class RankerCollectionViewModelTests: XCTestCase {
                 talentFilterString: false,
                 talentFilterSimilarity: 0.0
             ),
-            encounterData: [:]
+            encounterData: [:],
+            encounterNames: [:]
         )
     }
 

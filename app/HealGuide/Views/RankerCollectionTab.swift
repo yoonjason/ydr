@@ -309,7 +309,27 @@ struct RankerCollectionTab: View {
     private func previewView(preview: RankerPreviewResult, data: HGPTRankerData) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // 요약
-            GroupBox(label: Text("수집 결과").font(.headline)) {
+            GroupBox(label: HStack {
+                Text("수집 결과").font(.headline)
+                if viewModel.hasUnsavedPreview {
+                    Text("미저장")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.2))
+                        .foregroundStyle(.orange)
+                        .cornerRadius(4)
+                }
+                Spacer()
+                Button("저장") { viewModel.saveLua() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!viewModel.canSaveToFile)
+                if !viewModel.canSaveToFile {
+                    Text("AddOns 경로 미설정")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 20) {
                         statItem(label: "수집 파스", value: "\(preview.parsesCollected)명")
@@ -373,18 +393,6 @@ struct RankerCollectionTab: View {
 
             // 메타데이터 패널
             metadataPanel(meta: data.meta)
-
-            // 병합 / 저장
-            HStack {
-                Button("HGPT_RankerData.lua 저장") { viewModel.saveLua() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!viewModel.canSaveToFile)
-                if !viewModel.canSaveToFile {
-                    Text("WoW AddOns 경로 미설정")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
 
             if let saveResult = viewModel.lastSaveResult {
                 Text(saveResult)

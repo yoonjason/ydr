@@ -52,6 +52,9 @@ struct RankerLuaSerializer {
         for encID in entry.encounterData.keys.sorted() {
             guard let bossMap = entry.encounterData[encID] else { continue }
             lines.append("                [\(encID)] = {")
+            if let name = entry.encounterNames[encID] {
+                lines.append("                    _name = \"\(escapeLua(name))\",")
+            }
             for bossID in bossMap.keys.sorted() {
                 guard let responses = bossMap[bossID], !responses.isEmpty else { continue }
                 lines.append("                    [\(bossID)] = {")

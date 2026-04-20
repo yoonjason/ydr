@@ -12,6 +12,10 @@ local eventFrame = CreateFrame("Frame")
 -- 전투 로그 전용 분리 프레임 (추가 격리)
 local clFrame    = CreateFrame("Frame")
 
+-- Forward declaration: onAddonLoaded / onPlayerLogin 내부에서 호출하므로 위에서 local 선언.
+-- 실제 함수 본문은 아래쪽의 StaticPopup 블록에서 할당.
+local _hgInstallPopupBlocker
+
 local function autoImportGeneratedData()
     if type(HealGuide_Generated) ~= "table" then return end
     local data = HealGuide_Generated
@@ -26,6 +30,10 @@ local function autoImportGeneratedData()
 end
 
 local function onAddonLoaded(name)
+    -- Blizzard_StaticPopup_Game 이 on-demand 로드될 때 블로커 재설치
+    if name == "Blizzard_StaticPopup_Game" then
+        _hgInstallPopupBlocker()
+    end
     if name ~= addonName then return end
     addon.Storage:Init()
     addon.SpecMatcher:Init()
@@ -45,10 +53,12 @@ local function onAddonLoaded(name)
 end
 
 local function onPlayerLogin()
+    addon.Storage:InitDualSpec()
     addon.SpecMatcher:Refresh()
     if addon.DungeonMappings and addon.DungeonMappings.ValidateActiveSeason then
         addon.DungeonMappings:ValidateActiveSeason()
     end
+    _hgInstallPopupBlocker()
 end
 
 local function onSpecChanged()
@@ -115,6 +125,58 @@ blockFrame:SetScript("OnEvent", function(_, event, addonNameArg, funcName)
         event, tostring(addonNameArg), tostring(funcName)))
 end)
 
+-- StaticPopup 경로로 올라오는 "애드온 차단" 팝업 억제.
+-- Midnight 12.0 에서 StaticPopup 시스템이 Blizzard_StaticPopup_Game 이라는 on-demand 애드온으로
+-- 분리되어, HealGuide ADDON_LOADED 시점에는 StaticPopupDialogs 테이블이 아직 없을 수 있음.
+-- 따라서 설치 루틴을 함수화해서 여러 시점에 재시도.
+local _hgPopupInstalled = false
+_hgInstallPopupBlocker = function()
+    local installed = false
+    if StaticPopupDialogs then
+        for _, key in ipairs({ "ADDON_ACTION_FORBIDDEN", "ADDON_ACTION_BLOCKED" }) do
+            local entry = StaticPopupDialogs[key]
+            if entry and not entry._hgNeutered then
+                StaticPopupDialogs[key] = {
+                    text         = "",
+                    timeout      = 0,
+                    whileDead    = true,
+                    hideOnEscape = true,
+                    showAlert    = false,
+                    OnShow       = function(self) self:Hide() end,
+                    _hgNeutered  = true,
+                }
+                installed = true
+            end
+        end
+    end
+    if type(StaticPopup_Show) == "function" and not _hgPopupInstalled then
+        hooksecurefunc("StaticPopup_Show", function(which)
+            if which == "ADDON_ACTION_FORBIDDEN" or which == "ADDON_ACTION_BLOCKED" then
+                for i = 1, STATICPOPUP_NUMDIALOGS or 4 do
+                    local dlg = _G["StaticPopup" .. i]
+                    if dlg and dlg.which == which then dlg:Hide() end
+                end
+            end
+        end)
+        _hgPopupInstalled = true
+        installed = true
+    end
+    for i = 1, (STATICPOPUP_NUMDIALOGS or 4) do
+        local dlg = _G["StaticPopup" .. i]
+        if dlg and not dlg._hgHooked then
+            dlg._hgHooked = true
+            dlg:HookScript("OnShow", function(self)
+                if self.which == "ADDON_ACTION_FORBIDDEN" or self.which == "ADDON_ACTION_BLOCKED" then
+                    self:Hide()
+                end
+            end)
+            installed = true
+        end
+    end
+    return installed
+end
+_hgInstallPopupBlocker()
+
 local eventHandlers = {
     ADDON_LOADED                  = function(name) onAddonLoaded(name) end,
     PLAYER_LOGIN                  = function() onPlayerLogin() end,
@@ -171,6 +233,36 @@ SlashCmdList["HEALGUIDE"] = function(msg)
             addon.EncounterEngine:TestEncounter(encID)
         else
             print("|cff00ff00HealGuide|r 사용법: /hg test <encounterID> 또는 /hg test condition")
+        end
+    elseif cmd == "rankertest" then
+        local sub        = args:match("^(%S+)")
+        local encID      = tonumber(args)
+        local activeSpec = addon.SpecMatcher and addon.SpecMatcher:GetActiveSpec()
+        if sub == "cancel" then
+            if addon.EncounterEngine:IsRankerTestRunning() then
+                addon.EncounterEngine:CancelRankerTest()
+            else
+                print("|cff00ff00HealGuide|r 진행 중인 랭커 테스트 없음")
+            end
+        elseif not activeSpec then
+            print("|cff00ff00HealGuide|r 힐러 스펙이 아닙니다.")
+        elseif not encID then
+            print("|cff00ff00HealGuide|r 사용법: /hg rankertest <encounterID> | /hg rankertest cancel")
+        elseif not (addon.RankerDataLoader and addon.RankerDataLoader:IsDataAvailable()) then
+            print("|cff00ff00HealGuide|r 랭커 데이터 없음 — Mac 앱에서 수집하세요")
+        else
+            local found = nil
+            for _, e in ipairs(addon.RankerDataLoader:GetEntries()) do
+                if e._meta and e._meta.spec == activeSpec and e.data and e.data[encID] then
+                    found = { _meta = e._meta, data = { [encID] = e.data[encID] } }
+                    break
+                end
+            end
+            if found then
+                addon.EncounterEngine:TestRankerEntry(found)
+            else
+                print(string.format("|cff00ff00HealGuide|r 랭커 데이터 없음: spec=%s encID=%d", activeSpec, encID))
+            end
         end
     elseif cmd == "lock" then
         addon.AlertFrame:ToggleLock()
@@ -258,12 +350,26 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         if addon.CombatHistoryFrame then
             addon.CombatHistoryFrame:Toggle()
         end
+    elseif cmd == "reload" then
+        print("|cff00ff00HealGuide|r UI 새로고침 중...")
+        ReloadUI()
     elseif cmd == "debug" then
         local current = addon.Storage:GetSetting("debugMode")
         addon.Storage:SetSetting("debugMode", not current)
         print("|cff00ff00HealGuide|r 디버그: " .. (not current and "ON" or "OFF"))
         if addon.MainFrame._RefreshSettings then
             addon.MainFrame:_RefreshSettings()
+        end
+    elseif cmd == "policy" then
+        local p = args:match("^(%S+)")
+        if p == "off" or p == "merge" or p == "exclusive" then
+            addon.Storage:SetSetting("rankerPolicy", p)
+            if addon.MainFrame and addon.MainFrame._RefreshRankerTab then
+                addon.MainFrame:_RefreshRankerTab()
+            end
+            print("|cff00ff00HealGuide|r 랭커 정책: " .. p)
+        else
+            print("|cff00ff00HealGuide|r 사용법: /hg policy <off|merge|exclusive>")
         end
     elseif cmd == "timeline" then
         local sub = args:match("^(%S+)")
@@ -290,7 +396,8 @@ SlashCmdList["HEALGUIDE"] = function(msg)
               "/hg lock, /hg mode <reactive|absolute|hybrid>, " ..
               "/hg size <32-128>, /hg pulse <48-160>, /hg lead <0.0-5.0>, " ..
               "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>, " ..
+              "/hg policy <off|merge|exclusive>, " ..
               "/hg timeline <on|off|horizontal|vertical|reset>, " ..
-              "/hg debug, /hg pause, /hg resume, /hg history")
+              "/hg debug, /hg pause, /hg resume, /hg history, /hg reload")
     end
 end

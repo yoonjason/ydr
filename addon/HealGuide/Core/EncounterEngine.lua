@@ -71,10 +71,23 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
         return
     end
 
+    local activeSpec = addon.SpecMatcher:GetActiveSpec()
     local bossData, dungeonKey = addon.Storage:GetEncounterData(encounterID)
     if not bossData then
-        print(string.format("|cffff8888[HG]|r encounterID 매칭 없음: %d (등록된 던전에 해당 ID 없음)", encounterID))
-        -- 등록된 encounterID 목록 출력 (진단용)
+        local policy = addon.Storage:GetSetting("rankerPolicy") or "merge"
+        if policy ~= "off" and addon.RankerDataLoader and addon.RankerDataLoader:HasEncounterData(activeSpec, encounterID) then
+            self.activeEncounterID  = encounterID
+            self.activeBossData     = nil
+            self.activeSpecData     = { reactions = {}, timeline = {}, leadIns = {} }
+            self.encounterStartTime = GetTime()
+            self.cachedAlertMode    = addon.Storage:GetSetting("alertMode")
+            self.currentPhase = 1
+            self.bossUnitID = self:_FindBossUnit()
+            local entryCount = addon.RankerDataLoader:CountEntries(activeSpec, encounterID)
+            print(string.format("|cff88ff88[HG]|r 랭커 전용 모드: encounter=%d spec=%s 랭커매핑=%d개", encounterID, activeSpec, entryCount))
+            return
+        end
+        print(string.format("|cffff8888[HG]|r HGPT_Data 와 랭커 데이터 모두에 encounterID %d 없음", encounterID))
         local db = HealGuideCharDB
         if db and db.encounterIndex then
             local ids = {}
@@ -85,7 +98,6 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
         return
     end
 
-    local activeSpec = addon.SpecMatcher:GetActiveSpec()
     local specData   = bossData.specs and bossData.specs[activeSpec]
     if not specData then
         print(string.format("|cffff8888[HG]|r 스펙 데이터 없음: 활성=%s, 등록된 키: %s",
@@ -264,14 +276,18 @@ function EncounterEngine:OnCombatLog(
     -- 11.0+ secret spellID 가드 — type() 으로는 분별 불가, pcall 로 인덱스 시도.
     if type(bossSpellID) ~= "number" then return end
 
-    -- 레이어드 조회: 랭커 데이터 우선 → activeSpecData.reactions fallback
-    local matched = nil
+    -- rankerPolicy 기반 조회
+    local policy     = addon.Storage:GetSetting("rankerPolicy") or "merge"
     local activeSpec = addon.SpecMatcher and addon.SpecMatcher:GetActiveSpec()
-    if addon.RankerDataLoader and activeSpec then
+    local matched    = nil
+
+    if policy ~= "off" and addon.RankerDataLoader and activeSpec then
         matched = addon.RankerDataLoader:LookupBossReactions(activeSpec, self.activeEncounterID, bossSpellID)
     end
-    if not matched then
-        matched = safeIndex(self.activeSpecData.reactions, bossSpellID)
+    if not matched and policy ~= "exclusive" then
+        if self.activeSpecData.reactions and next(self.activeSpecData.reactions) then
+            matched = safeIndex(self.activeSpecData.reactions, bossSpellID)
+        end
     end
     if not matched then return end
 
@@ -566,7 +582,33 @@ end
 function EncounterEngine:TestEncounter(encounterID)
     local bossData, _ = addon.Storage:GetEncounterData(encounterID)
     if not bossData then
-        print("|cff00ff00HealGuide|r 등록된 데이터 없음 (encounterID=" .. encounterID .. ")")
+        -- 랭커 전용 경로: OnEncounterStart 가 랭커 데이터 기반으로 activeSpecData 를 빈 구조로 활성화
+        self:OnEncounterStart(encounterID, "TEST")
+        if not self.activeSpecData then
+            print("|cff00ff00HealGuide|r 등록된 데이터 없음 (encounterID=" .. encounterID .. ")")
+            return
+        end
+        local activeSpec = addon.SpecMatcher:GetActiveSpec()
+        if activeSpec and addon.RankerDataLoader then
+            for _, entry in ipairs(addon.RankerDataLoader:GetEntries()) do
+                local meta = entry._meta
+                if meta and meta.spec == activeSpec then
+                    local encData = entry.data and entry.data[encounterID]
+                    if encData then
+                        for bossSpellID, _ in pairs(encData) do
+                            print(string.format("|cff00ff00HealGuide|r 랭커 시뮬: bossSpellID=%d 시전", bossSpellID))
+                            self:OnCombatLog(
+                                GetTime(), "SPELL_CAST_SUCCESS", false,
+                                "Creature-Test", "TEST_BOSS", HOSTILE_FLAG, 0,
+                                "", "", 0, 0,
+                                bossSpellID, "TEST", 0)
+                            break
+                        end
+                        break
+                    end
+                end
+            end
+        end
         return
     end
 
@@ -619,4 +661,119 @@ function EncounterEngine:TestEncounter(encounterID)
     if #timeline == 0 and rCount == 0 then
         print("|cff00ff00HealGuide|r 표시할 알림 항목이 없습니다.")
     end
+end
+
+function EncounterEngine:TestRankerEntry(entry)
+    if InCombatLockdown() then
+        print("|cff00ff00HealGuide|r 전투 중에는 테스트를 실행할 수 없습니다.")
+        return
+    end
+
+    -- 진행 중인 랭커 테스트 취소
+    if self._rankerTestTimers then
+        for _, t in ipairs(self._rankerTestTimers) do pcall(function() t:Cancel() end) end
+    end
+    self._rankerTestTimers = {}
+
+    local meta = entry._meta or {}
+    local spec  = meta.spec
+    local data  = entry.data or {}
+
+    if not spec then
+        print("|cff00ff00HealGuide|r 랭커 테스트: spec 정보 없음")
+        return
+    end
+
+    -- 모든 encID × bossSpellID 플래트닝
+    local items = {}
+    for encID, encData in pairs(data) do
+        for bossSpellID, _ in pairs(encData) do
+            items[#items + 1] = { encID = encID, bossSpellID = bossSpellID }
+        end
+    end
+
+    if #items == 0 then
+        print("|cff00ff00HealGuide|r 랭커 테스트: 보스 스킬 없음")
+        return
+    end
+
+    -- 엔진 상태 백업 (CancelRankerTest 에서도 접근 가능하도록 인스턴스 필드에 저장)
+    self._rankerTestSavedState = {
+        encounterID = self.activeEncounterID,
+        specData    = self.activeSpecData,
+        alertMode   = self.cachedAlertMode,
+    }
+
+    -- 알림 발동에 필요한 최소 상태 주입 (activeSpecData nil 가드)
+    self.activeSpecData  = self.activeSpecData or { reactions = {}, leadIns = {}, timeline = {} }
+    self.cachedAlertMode = addon.Storage:GetSetting("alertMode")
+
+    local timers  = self._rankerTestTimers
+    local INTERVAL = 2.5
+    local total   = #items
+    local matched = 0
+    local failed  = 0
+
+    print(string.format("|cff00ff00HealGuide|r 랭커 데이터 테스트 시작: spec=%s (%d개 보스 스킬)",
+        spec, total))
+
+    local function scheduleTimer(delay, fn)
+        local t = C_Timer.NewTimer(delay, fn)
+        timers[#timers + 1] = t
+    end
+
+    for i, item in ipairs(items) do
+        local encID     = item.encID
+        local bossSpell = item.bossSpellID
+        scheduleTimer((i - 1) * INTERVAL, function()
+            self.activeEncounterID = encID
+            local reactions = addon.RankerDataLoader:LookupBossReactions(spec, encID, bossSpell)
+            if reactions and #reactions > 0 then
+                matched = matched + 1
+                for _, r in ipairs(reactions) do
+                    self:TriggerAlert(r.spellID, "ranker-test")
+                end
+            else
+                failed = failed + 1
+                print(string.format("|cffffff00[HG]|r 매칭 실패: encID=%d bossSpellID=%d", encID, bossSpell))
+            end
+        end)
+    end
+
+    -- 결과 요약 + 상태 복원
+    scheduleTimer(total * INTERVAL, function()
+        print(string.format("|cff00ff00HealGuide|r 랭커 테스트 완료: %d개 보스 스킬 중 %d개 알림 발동, %d개 매칭 실패",
+            total, matched, failed))
+        local saved = self._rankerTestSavedState
+        if saved then
+            self.activeEncounterID     = saved.encounterID
+            self.activeSpecData        = saved.specData
+            self.cachedAlertMode       = saved.alertMode
+            self._rankerTestSavedState = nil
+        end
+        self._rankerTestTimers = nil
+        if self.onRankerTestFinished then self.onRankerTestFinished() end
+    end)
+end
+
+function EncounterEngine:IsRankerTestRunning()
+    return self._rankerTestTimers ~= nil and #self._rankerTestTimers > 0
+end
+
+function EncounterEngine:CancelRankerTest()
+    if self._rankerTestTimers then
+        for _, t in ipairs(self._rankerTestTimers) do
+            pcall(function() t:Cancel() end)
+        end
+    end
+    self._rankerTestTimers = nil
+    local saved = self._rankerTestSavedState
+    if saved then
+        self.activeEncounterID     = saved.encounterID
+        self.activeSpecData        = saved.specData
+        self.cachedAlertMode       = saved.alertMode
+        self._rankerTestSavedState = nil
+    end
+    print("|cff00ff00HealGuide|r 랭커 테스트 중지")
+    if self.onRankerTestFinished then self.onRankerTestFinished() end
 end

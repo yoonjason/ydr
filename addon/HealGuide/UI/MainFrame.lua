@@ -18,6 +18,7 @@ function MainFrame:Init()
 end
 
 function MainFrame:Toggle()
+    if not mainFrame then return end
     if mainFrame:IsShown() then
         mainFrame:Hide()
     else

@@ -44,8 +44,8 @@ local DEFAULTS = {
             alertFontName  = "Friz Quadrata TT",
             alertFontSize  = 14,
             alertSoundName = "ReadyCheck",
-            -- Phase 5α: 랭커 데이터 적용 여부
-            useRankerData  = true,
+            -- Phase 5α: 랭커 데이터 정책 (off | merge | exclusive)
+            rankerPolicy   = "merge",
         },
     },
 }
@@ -61,14 +61,19 @@ function Storage:Init()
     local AceDB = LibStub("AceDB-3.0")
     db = AceDB:New("HealGuideDB", DEFAULTS, true)
 
-    -- LibDualSpec 연동 (설치된 경우)
-    local LibDualSpec = LibStub("LibDualSpec-1.0", true)
-    if LibDualSpec then
-        LibDualSpec:EnhanceDatabase(db, "HealGuide")
-    end
+    -- LibDualSpec 연동: PLAYER_LOGIN 이후(charKey 확정 후)에 호출해야 안전.
+    -- Init 시점(ADDON_LOADED)에는 UnitName("player") 이 nil일 수 있어 db.charKey 가 nil.
+    -- Storage:InitDualSpec() 을 PLAYER_LOGIN 핸들러에서 호출할 것.
 
     -- 구버전 캐릭터별 SavedVariable 에서 현재 프로파일로 1회 마이그레이션
     self:_MigrateFromCharDB()
+
+    -- useRankerData(bool) → rankerPolicy(string) 1회 마이그레이션
+    local s = db.profile.settings
+    if s.useRankerData ~= nil then
+        s.rankerPolicy  = s.useRankerData and "merge" or "off"
+        s.useRankerData = nil
+    end
 
     -- 프로파일 전환 콜백: UI 갱신
     db.RegisterCallback(self, "OnProfileChanged", function(target, event, database, newProfile)
@@ -105,6 +110,16 @@ function Storage:Init()
     end)
 
     self:RebuildEncounterIndex()
+end
+
+-- PLAYER_LOGIN 이후 호출 — charKey 가 확정된 시점에 EnhanceDatabase 실행
+function Storage:InitDualSpec()
+    if not db then return end
+    if not db.charKey then return end  -- 만약에도 nil이면 조용히 스킵
+    local LibDualSpec = LibStub("LibDualSpec-1.0", true)
+    if LibDualSpec then
+        LibDualSpec:EnhanceDatabase(db, "HealGuide")
+    end
 end
 
 -- ── 마이그레이션 ──────────────────────────────────────────────────────────────

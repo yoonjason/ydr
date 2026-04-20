@@ -43,9 +43,10 @@ function RankerDataLoader:GetMaxDaysSinceCollection()
 end
 
 -- (spec, encID, bossSpellID) 조합에 매칭되는 랭커 데이터 반환.
--- 매칭 없거나 useRankerData 꺼져 있으면 nil.
+-- 호출부(EncounterEngine / Bridge / TestRankerEntry)가 이미 rankerPolicy 를 확인하고
+-- 진입하므로 여기서는 정책 체크를 생략 — OnCombatLog 핫패스에서 매 캐스트마다
+-- GetSetting 호출하는 비용 제거.
 function RankerDataLoader:LookupBossReactions(spec, encID, bossSpellID)
-    if not addon.Storage:GetSetting("useRankerData") then return nil end
     if not spec or not encID or not bossSpellID then return nil end
     if not self:IsDataAvailable() then return nil end
 
@@ -60,4 +61,57 @@ function RankerDataLoader:LookupBossReactions(spec, encID, bossSpellID)
         end
     end
     return nil
+end
+
+function RankerDataLoader:HasEncounterData(spec, encID)
+    if not spec or not encID then return false end
+    if not self:IsDataAvailable() then return false end
+    for _, entry in ipairs(HGPT_RankerData.entries) do
+        local meta = entry._meta
+        if meta and meta.spec == spec then
+            if entry.data and entry.data[encID] then return true end
+        end
+    end
+    return false
+end
+
+function RankerDataLoader:CountEntries(spec, encID)
+    if not spec or not encID then return 0 end
+    if not self:IsDataAvailable() then return 0 end
+    local count = 0
+    for _, entry in ipairs(HGPT_RankerData.entries) do
+        local meta = entry._meta
+        if meta and meta.spec == spec then
+            local encData = entry.data and entry.data[encID]
+            if encData then
+                -- _name 등 문자열 메타 키 제외, 정수 bossSpellID 만 카운트
+                for k in pairs(encData) do
+                    if type(k) == "number" then count = count + 1 end
+                end
+            end
+        end
+    end
+    return count
+end
+
+-- encID → 보스 이름 캐시 (세션 내 유지)
+local encNameCache = {}
+
+-- 보스 이름 해상: optionalName(맥앱 _name) > EJ_GetEncounterInfo > 폴백
+function RankerDataLoader:GetEncounterName(encID, optionalName)
+    if optionalName and optionalName ~= "" then
+        encNameCache[encID] = optionalName
+        return optionalName
+    end
+    if encNameCache[encID] then return encNameCache[encID] end
+    if EJ_GetEncounterInfo then
+        local ok, name = pcall(EJ_GetEncounterInfo, encID)
+        if ok and type(name) == "string" and name ~= "" then
+            encNameCache[encID] = name
+            return name
+        end
+    end
+    local fallback = "Enc " .. tostring(encID)
+    encNameCache[encID] = fallback
+    return fallback
 end

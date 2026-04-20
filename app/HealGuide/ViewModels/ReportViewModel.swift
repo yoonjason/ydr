@@ -166,7 +166,13 @@ final class ReportViewModel: ObservableObject {
                 atPath: directory,
                 withIntermediateDirectories: true
             )
-            let fileContent = output.luaText.replacingOccurrences(of: "return {", with: "HealGuide_Generated = {", options: [], range: output.luaText.startIndex..<output.luaText.index(output.luaText.startIndex, offsetBy: min(output.luaText.count, 10)))
+            // 첫 줄 "return {" 만 정확히 한 번 교체 (offset 기반보다 명확).
+            let fileContent: String
+            if output.luaText.hasPrefix("return {") {
+                fileContent = "HealGuide_Generated = {" + output.luaText.dropFirst("return {".count)
+            } else {
+                fileContent = output.luaText
+            }
             try fileContent.write(toFile: filePath, atomically: true, encoding: .utf8)
             lastSaveResult = "저장 완료: \(filePath)"
             logger.info("Lua 파일 저장: \(filePath)")
@@ -208,49 +214,57 @@ final class ReportViewModel: ObservableObject {
             let token = try await blizzardAPIClient.fetchAccessToken(
                 clientID: blizzardClientID, clientSecret: blizzardClientSecret
             )
-            let knownIDs = spellCatalogStore.knownSpellIDs()
+            // mutable: 세션 내에서 이미 처리한 ID 추적해 이중 해상 방지
+            var knownIDs = spellCatalogStore.knownSpellIDs()
             let now = Date()
             var newRecords: [SpellCatalogRecord] = []
 
+            // Blizzard Playable Spec API 기반 탐색
             for spec in HealerSpec.allCases {
                 let specInfo = try? await blizzardAPIClient.fetchPlayableSpecialization(
                     specID: spec.blizzardSpecID, token: token
                 )
                 guard let spellIDs = specInfo?.spellIDs else { continue }
-                let missing = spellIDs.filter { !knownIDs.contains($0) }
-                for spellID in missing {
-                    let krName: String
-                    if let info = try? await blizzardAPIClient.fetchSpell(
-                        spellID: spellID, locale: "ko_KR", token: token
-                    ) {
-                        krName = info.name
-                    } else {
-                        krName = "Spell #\(spellID)"
-                    }
-                    let enName: String
-                    if let info = try? await blizzardAPIClient.fetchSpell(
-                        spellID: spellID, locale: "en_US", token: token
-                    ) {
-                        enName = info.name
-                    } else {
-                        enName = "Spell #\(spellID)"
-                    }
-                    newRecords.append(SpellCatalogRecord(
-                        spellID: spellID,
-                        nameKR: krName,
-                        nameEN: enName,
-                        firstSeenAt: now,
-                        source: .blizzardAPI
-                    ))
+                for spellID in spellIDs where !knownIDs.contains(spellID) {
+                    newRecords.append(await resolveSpellRecord(spellID: spellID, source: .blizzardAPI, token: token, now: now))
+                    knownIDs.insert(spellID)
                 }
             }
+
+            // 하드코딩 카탈로그 스킬 중 아직 이름 없는 것 해상
+            let allCatalogIDs = Set(HealerSpec.allCases.flatMap { SpecSpellCatalog.spellIDs(for: $0) })
+            for spellID in allCatalogIDs.subtracting(knownIDs) {
+                newRecords.append(await resolveSpellRecord(spellID: spellID, source: .baseline, token: token, now: now))
+            }
+
             if !newRecords.isEmpty {
                 try? spellCatalogStore.upsertMany(newRecords)
-                logger.info("Playable Spec 베이스라인 갱신: \(newRecords.count)개 스킬 추가")
+                logger.info("베이스라인 갱신 완료: \(newRecords.count)개 스킬")
             }
         } catch {
-            logger.warning("Playable Spec 베이스라인 갱신 실패: \(error)")
+            logger.warning("베이스라인 갱신 실패: \(error)")
         }
+    }
+
+    private func resolveSpellRecord(
+        spellID: Int,
+        source: SpellCatalogRecord.Source,
+        token: String,
+        now: Date
+    ) async -> SpellCatalogRecord {
+        let krName: String
+        if let info = try? await blizzardAPIClient.fetchSpell(spellID: spellID, locale: "ko_KR", token: token) {
+            krName = info.name
+        } else {
+            krName = "Spell #\(spellID)"
+        }
+        let enName: String
+        if let info = try? await blizzardAPIClient.fetchSpell(spellID: spellID, locale: "en_US", token: token) {
+            enName = info.name
+        } else {
+            enName = "Spell #\(spellID)"
+        }
+        return SpellCatalogRecord(spellID: spellID, nameKR: krName, nameEN: enName, firstSeenAt: now, source: source)
     }
 
     func loadCombatHistory() {
@@ -364,8 +378,7 @@ final class ReportViewModel: ObservableObject {
             state = .failure(.noHealers)
             return
         }
-        let catalog = spellResolver.spells(for: spec)
-        selectedSpellIDs = Set(catalog.map(\.id))
+        selectedSpellIDs = []
         state = .spellSelection(healer: healer)
     }
 

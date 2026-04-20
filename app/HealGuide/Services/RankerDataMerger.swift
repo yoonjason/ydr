@@ -29,7 +29,7 @@ struct RankerDataMergerImpl: RankerDataMerger {
         meta:   HGPTRankerDataMeta
     ) -> HGPTRankerData {
         guard !parses.isEmpty else {
-            return HGPTRankerData(meta: meta, encounterData: [:])
+            return HGPTRankerData(meta: meta, encounterData: [:], encounterNames: [:])
         }
 
         let totalParses = parses.count
@@ -77,7 +77,7 @@ struct RankerDataMergerImpl: RankerDataMerger {
             }
         }
 
-        return HGPTRankerData(meta: meta, encounterData: encounterData)
+        return HGPTRankerData(meta: meta, encounterData: encounterData, encounterNames: [:])
     }
 
     // MARK: - 미리보기 결과 생성

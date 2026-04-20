@@ -33,7 +33,8 @@ final class RankerLuaSerializerTests: XCTestCase {
         spec: String = "DiscPriest",
         dungeonID: Int = 12660,
         difficulty: String = "Mythic+",
-        rankersUsed: Int = 8
+        rankersUsed: Int = 8,
+        encounterNames: [Int: String] = [:]
     ) -> HGPTRankerData {
         HGPTRankerData(
             meta: makeMeta(spec: spec, dungeonID: dungeonID, difficulty: difficulty, rankersUsed: rankersUsed),
@@ -43,7 +44,8 @@ final class RankerLuaSerializerTests: XCTestCase {
                         RankerResponseEntry(spellID: 33206, delay: 2.3, stddev: 0.4, count: 8, quorum: "8/10")
                     ]
                 ]
-            ]
+            ],
+            encounterNames: encounterNames
         )
     }
 
@@ -118,11 +120,61 @@ final class RankerLuaSerializerTests: XCTestCase {
             talentFilterString: false,
             talentFilterSimilarity: 0.0
         )
-        let entry = HGPTRankerData(meta: metaWithSpecialChars, encounterData: [:])
+        let entry = HGPTRankerData(meta: metaWithSpecialChars, encounterData: [:], encounterNames: [:])
         let output = serializer.serialize([entry])
 
         XCTAssertTrue(output.contains("\\\"따옴표\\\""), "큰따옴표가 이스케이프되어야 함")
         XCTAssertTrue(output.contains("\\\\역슬래시\\\\"), "역슬래시가 이스케이프되어야 함")
+    }
+
+    // MARK: - Encounter Name (_name) Tests
+
+    func test_encounterName_presentWhenResolved() {
+        let entry = makeEntry(encounterNames: [2902: "울그루가시"])
+        let output = serializer.serialize([entry])
+
+        XCTAssertTrue(output.contains("_name = \"울그루가시\""), "_name 필드가 한국어 이름으로 출력되어야 함")
+        // 이름 줄은 encID 블록 안에 있어야 함
+        let nameRange = output.range(of: "_name = \"울그루가시\"")
+        let encRange  = output.range(of: "[2902] = {")
+        XCTAssertNotNil(nameRange)
+        XCTAssertNotNil(encRange)
+        if let nr = nameRange, let er = encRange {
+            XCTAssertTrue(er.lowerBound < nr.lowerBound, "_name 은 해당 encID 블록 내부에 있어야 함")
+        }
+    }
+
+    func test_encounterName_absentWhenNotResolved() {
+        let entry = makeEntry(encounterNames: [:])
+        let output = serializer.serialize([entry])
+
+        XCTAssertFalse(output.contains("_name"), "이름 미해상 시 _name 필드 자체가 없어야 함")
+    }
+
+    func test_encounterName_luaEscaped() {
+        let entry = makeEntry(encounterNames: [2902: "보스 \"따옴표\""])
+        let output = serializer.serialize([entry])
+
+        XCTAssertTrue(output.contains("_name = \"보스 \\\"따옴표\\\"\""), "이름 내 따옴표가 이스케이프되어야 함")
+    }
+
+    func test_encounterName_onlyPresentForMatchingEncounter() {
+        let meta = makeMeta()
+        let entry = HGPTRankerData(
+            meta: meta,
+            encounterData: [
+                2902: [440802: [RankerResponseEntry(spellID: 33206, delay: 1.0, stddev: 0.1, count: 5, quorum: "5/10")]],
+                9999: [123456: [RankerResponseEntry(spellID: 64843, delay: 2.0, stddev: 0.2, count: 5, quorum: "5/10")]]
+            ],
+            encounterNames: [2902: "울그루가시"]  // 9999는 이름 없음
+        )
+        let output = serializer.serialize([entry])
+
+        XCTAssertTrue(output.contains("_name = \"울그루가시\""), "이름이 있는 encounter 는 _name 출력")
+        // encounter 9999 블록에는 _name 이 없어야 함.
+        // 출력 전체에서 _name 출현 횟수가 정확히 1 (=2902 분만) 인지 확인.
+        let nameMatches = output.components(separatedBy: "_name").count - 1
+        XCTAssertEqual(nameMatches, 1, "_name 은 이름이 있는 encounter 에서만 1회 출력되어야 함")
     }
 
     // MARK: - Cache Service Tests

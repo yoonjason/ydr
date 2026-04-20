@@ -38,6 +38,8 @@ final class RankerCollectionViewModel: ObservableObject {
     @Published var state:           ViewState = .idle
     @Published var lastSaveResult:  String?
     @Published var talentParseError: String?
+    // 현재 preview 가 파일에 저장되었는지. 메시지 문자열 매칭 대신 명시적 플래그로 관리.
+    @Published var isSaved:         Bool = false
 
     // MARK: - Dependencies
 
@@ -126,10 +128,18 @@ final class RankerCollectionViewModel: ObservableObject {
     // View 진입점. 이전 Task 취소 후 새 수집 시작.
     func startCollect() {
         collectTask?.cancel()
+        lastSaveResult = nil
+        isSaved = false
         collectTask = Task { [weak self] in
             await self?.collect()
             self?.collectTask = nil
         }
+    }
+
+    // 현재 preview 결과가 파일에 아직 저장되지 않았는지 여부.
+    var hasUnsavedPreview: Bool {
+        guard case .preview = state else { return false }
+        return !isSaved
     }
 
     // 진행 중인 수집 취소. enrich 도 함께 취소. state → idle.
@@ -298,7 +308,9 @@ final class RankerCollectionViewModel: ObservableObject {
             bossEntries:           enrichedEntries,
             highVarianceWarnings:  current.highVarianceWarnings
         )
-        state = .preview(enrichedPreview, data)
+        var enrichedData = data
+        enrichedData.encounterNames = resolved.encounterNames
+        state = .preview(enrichedPreview, enrichedData)
     }
 
     private func loadBlizzardClientID() -> String {
@@ -330,9 +342,11 @@ final class RankerCollectionViewModel: ObservableObject {
             )
             try content.write(toFile: filePath, atomically: true, encoding: .utf8)
             lastSaveResult = "저장 완료 (\(entries.count)개 항목): \(filePath)"
+            isSaved = true
             logger.info("HGPT_RankerData.lua 저장: \(filePath) (\(entries.count) entries)")
         } catch {
             lastSaveResult = "저장 실패: \(error.localizedDescription)"
+            isSaved = false
             logger.error("HGPT_RankerData.lua 저장 실패: \(error)")
         }
     }
@@ -346,6 +360,7 @@ final class RankerCollectionViewModel: ObservableObject {
         enrichTask = nil
         state           = .idle
         lastSaveResult  = nil
+        isSaved         = false
         jaccardThreshold = 0.8
     }
 

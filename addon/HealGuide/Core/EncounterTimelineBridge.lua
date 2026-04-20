@@ -56,14 +56,22 @@ function Bridge:OnEventAdded(eventInfo)
     local engine = addon.EncounterEngine
     if not engine or not engine.activeSpecData then return end
 
-    local reactions = engine.activeSpecData.reactions or {}
-    local leadIns   = engine.activeSpecData.leadIns   or {}
-    -- 11.0+ secret spellID 가드 — EncounterEngine 공유 헬퍼 사용
-    local hasReactions = addon._safeIndex(reactions, bossSpellID)
-    local hasLeadIns   = addon._safeIndex(leadIns, bossSpellID)
+    -- EncounterEngine:OnCombatLog 와 동일한 rankerPolicy 분기
+    local policy     = addon.Storage:GetSetting("rankerPolicy") or "merge"
+    local activeSpec = addon.SpecMatcher and addon.SpecMatcher:GetActiveSpec()
+    local reactions = nil
 
-    if not hasReactions and not hasLeadIns then
-        -- 매핑 없는 보스 이벤트는 debug 로그만 (매 보스 이벤트마다 채팅 스팸 방지).
+    if policy ~= "off" and addon.RankerDataLoader and activeSpec then
+        reactions = addon.RankerDataLoader:LookupBossReactions(activeSpec, engine.activeEncounterID, bossSpellID)
+    end
+    if not reactions and policy ~= "exclusive" then
+        reactions = addon._safeIndex(engine.activeSpecData.reactions or {}, bossSpellID)
+    end
+
+    -- leadIns 는 랭커 데이터 포맷에 없으므로 항상 로컬 activeSpecData 에서만 조회
+    local leadInEntries = addon._safeIndex(engine.activeSpecData.leadIns or {}, bossSpellID)
+
+    if not reactions and not leadInEntries then
         addon.dprint(string.format("[HG-NT] native event spellID=%d duration=%.1f (매핑 없음)",
             bossSpellID, duration))
         return
@@ -80,25 +88,20 @@ function Bridge:OnEventAdded(eventInfo)
 
     -- leadIns: 보스 캐스트 이전 램프 시퀀스 (offset 음수)
     -- 예: duration=10, offset=-8 → 10 + (-8) - leadTime = 2 - leadTime 뒤에 예약
-    if hasLeadIns then
-        for _, entry in ipairs(hasLeadIns) do
+    if leadInEntries then
+        for _, entry in ipairs(leadInEntries) do
             local playerSpellID  = entry.spellID
             local leadOffset     = entry.offset or 0  -- 음수
             local schedule       = duration + leadOffset - leadTime
             local entryCondition = entry.condition
-            if schedule > 0 then
-                local t = C_Timer.NewTimer(schedule, function()
+            if schedule > -0.5 then
+                engine:_scheduleAlert(playerSpellID, math.max(0, schedule), "leadIn", nil, function()
                     if addon.ConditionEvaluator:ShouldFire(entryCondition) then
                         engine:TriggerAlert(playerSpellID, "leadIn")
+                    else
+                        engine:_statInc("conditionSkipped")
                     end
                 end)
-                table.insert(engine.pendingTimers, t)
-                scheduledCount = scheduledCount + 1
-            elseif schedule > -0.5 then
-                -- 이미 거의 지났으면 즉시 표시 (램프 후반부)
-                if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                    engine:TriggerAlert(playerSpellID, "leadIn-immediate")
-                end
                 scheduledCount = scheduledCount + 1
             end
             -- schedule < -0.5: 너무 늦음, 스킵
@@ -106,30 +109,24 @@ function Bridge:OnEventAdded(eventInfo)
     end
 
     -- reactions: 보스 캐스트 이후 반응 시퀀스
-    if hasReactions then
-        for _, entry in ipairs(hasReactions) do
+    if reactions then
+        for _, entry in ipairs(reactions) do
             local playerSpellID  = entry.spellID
             local reactionDelay  = entry.delay or 0
             local schedule       = duration + reactionDelay - leadTime
             local entryCondition = entry.condition
-            if schedule > 0 then
-                local t = C_Timer.NewTimer(schedule, function()
-                    if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                        engine:TriggerAlert(playerSpellID, "native")
-                    end
-                end)
-                table.insert(engine.pendingTimers, t)
-                scheduledCount = scheduledCount + 1
-            else
+            engine:_scheduleAlert(playerSpellID, math.max(0, schedule), "native", nil, function()
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                    engine:TriggerAlert(playerSpellID, "native-immediate")
+                    engine:TriggerAlert(playerSpellID, "native")
+                else
+                    engine:_statInc("conditionSkipped")
                 end
-                scheduledCount = scheduledCount + 1
-            end
+            end)
+            scheduledCount = scheduledCount + 1
         end
     end
 
     print(string.format("|cff88ff88[HG-NT]|r boss spellID=%d duration=%.1f → %d개 알림 예약 (lead=%.1f, leadIns=%s reactions=%s)",
         bossSpellID, duration, scheduledCount, leadTime,
-        hasLeadIns and "Y" or "N", hasReactions and "Y" or "N"))
+        leadInEntries and "Y" or "N", reactions and "Y" or "N"))
 end
