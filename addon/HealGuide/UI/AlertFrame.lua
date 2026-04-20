@@ -7,6 +7,25 @@ local SLOT_GAP  = 4
 local slots     = {}
 local anchor    = nil
 
+local function getLSM()
+    return LibStub and LibStub("LibSharedMedia-3.0", true)
+end
+
+local function playAlertSound()
+    local s = addon.Storage
+    if not s:GetSetting("soundEnabled") then return end
+    local LSM       = getLSM()
+    local soundName = s:GetSetting("alertSoundName")
+    if LSM and soundName and soundName ~= "None" then
+        local path = LSM:Fetch("sound", soundName, true)
+        if path and path ~= "" then
+            PlaySoundFile(path, "Master")
+            return
+        end
+    end
+    PlaySound(s:GetSetting("alertSoundID") or 888)
+end
+
 function AlertFrame:Init()
     anchor = CreateFrame("Frame", "HealGuideAlertAnchor", UIParent)
     anchor:SetSize(1, 1)
@@ -70,21 +89,36 @@ function AlertFrame:_CreateSlot(index)
         end
     end)
 
+    local bgColor = addon.Storage:GetSetting("alertBgColor") or { r = 0, g = 0, b = 0, a = 0.75 }
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.75)
+    bg:SetColorTexture(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+    frame.bg = bg
 
     local icon = frame:CreateTexture(nil, "ARTWORK")
     icon:SetSize(baseSize, baseSize)
     icon:SetPoint("LEFT", frame, "LEFT", 6, 0)
     frame.icon = icon
 
-    local nameText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local LSM      = getLSM()
+    local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
+    local fontSize = addon.Storage:GetSetting("alertFontSize") or 14
+    local fontPath = LSM and LSM:Fetch("font", fontName, true)
+
+    local nameText = frame:CreateFontString(nil, "OVERLAY")
+    if fontPath then
+        nameText:SetFont(fontPath, fontSize, "")
+    else
+        nameText:SetFontObject("GameFontNormalLarge")
+    end
     nameText:SetPoint("LEFT",  icon,  "RIGHT", 8, 4)
     nameText:SetPoint("RIGHT", frame, "RIGHT", -40, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     frame.nameText = nameText
+
+    local textColor = addon.Storage:GetSetting("alertTextColor") or { r = 1, g = 1, b = 1, a = 1 }
+    nameText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
 
     local countdownText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     countdownText:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
@@ -158,9 +192,7 @@ function AlertFrame:ShowAlert(spellID)
 
     -- 사운드/TTS 는 항상 재생 (경고는 계속 듣고 싶을 수 있음).
     -- 큰 알림창 자체는 alertFrameEnabled 설정으로 제어 — TimelineFrame 으로 대체하는 사용자용.
-    if addon.Storage:GetSetting("soundEnabled") then
-        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
-    end
+    playAlertSound()
 
     local frameEnabled = addon.Storage:GetSetting("alertFrameEnabled")
     if frameEnabled == false then
@@ -280,5 +312,28 @@ function AlertFrame:ToggleLock()
         print("|cff00ff00HealGuide|r 알림 프레임 잠금 해제 (드래그 가능)")
     else
         print("|cff00ff00HealGuide|r 알림 프레임 잠금")
+    end
+end
+
+-- 테마(폰트·색상) 설정 변경 시 기존 슬롯에 즉시 반영
+function AlertFrame:ApplyTheme()
+    if not anchor then return end
+    local LSM       = getLSM()
+    local fontName  = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
+    local fontSize  = addon.Storage:GetSetting("alertFontSize") or 14
+    local fontPath  = LSM and LSM:Fetch("font", fontName, true)
+    local bgColor   = addon.Storage:GetSetting("alertBgColor")   or { r = 0, g = 0, b = 0,   a = 0.75 }
+    local textColor = addon.Storage:GetSetting("alertTextColor") or { r = 1, g = 1, b = 1,   a = 1.0  }
+
+    for _, slot in ipairs(slots) do
+        if slot.bg then
+            slot.bg:SetColorTexture(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+        end
+        if slot.nameText then
+            if fontPath then
+                slot.nameText:SetFont(fontPath, fontSize, "")
+            end
+            slot.nameText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
+        end
     end
 end

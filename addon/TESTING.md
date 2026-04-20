@@ -242,9 +242,75 @@ M+ 키스톤으로 해당 던전 진입:
 - `C_VoiceChat.GetTtsVoices()` 필드명(voiceID, name)은 Interface 110200 기준 가정; 실제 인게임 확인 필요
 - UIRadioButtonTemplate 일부 클라이언트에서 누락 시 UICheckButtonTemplate 자동 fallback
 
+## 17. Phase 4a: AceDB 프로파일 + LibSharedMedia 테마
+
+### 마이그레이션 검증
+
+- [ ] 기존 `HealGuideCharDB` 데이터가 있는 캐릭터로 로그인
+- [ ] `/reload` 후 던전 데이터·설정이 그대로 유지됨
+- [ ] `HealGuideDB.profiles["<캐릭터명> - <서버명>"]` 에 마이그레이션된 데이터 확인
+- [ ] `db.profile._charDbMigrated == true` 플래그 존재 (2회 실행 방지)
+
+### 프로파일 관리
+
+설정 탭 → **프로파일** 섹션:
+
+- [ ] "현재: `<프로파일명>`" 레이블이 올바른 현재 프로파일 표시
+- [ ] **전환 ▾** 드롭다운: 다른 프로파일 목록 표시, 클릭 시 전환 + 레이블 갱신
+- [ ] **새로 만들기**: 이름 입력 팝업 → 새 프로파일 생성 + 자동 전환
+- [ ] **복사**: 새 이름 입력 팝업 → 현재 프로파일 데이터 복사 + 전환
+- [ ] **삭제**: 다른 프로파일 드롭다운 → 확인 팝업 → 삭제
+- [ ] **리셋**: 확인 팝업 → 현재 프로파일을 기본값으로 초기화
+- [ ] 프로파일 전환 시 설정 탭·데이터 탭이 자동 갱신
+- [ ] 프로파일 전환 시 AlertFrame·TimelineFrame 테마 즉시 반영
+- [ ] 현재 활성 프로파일은 삭제 목록에서 제외 확인
+
+### 테마 설정
+
+설정 탭 → **테마** 섹션:
+
+**사운드:**
+- [ ] "사운드: ReadyCheck" 기본값 표시
+- [ ] **선택 ▾** 드롭다운: LibSharedMedia 등록 사운드 목록 표시 (None / ReadyCheck / Alarm Clock 등)
+- [ ] 선택 후 레이블 갱신
+- [ ] **테스트** 버튼: 선택한 LSM 사운드 재생 (PlaySoundFile 경로)
+- [ ] "None" 선택 시 사운드 미재생
+
+**폰트:**
+- [ ] "폰트: Friz Quadrata TT" 기본값 표시
+- [ ] **선택 ▾** 드롭다운: LibSharedMedia 등록 폰트 목록 표시
+- [ ] 선택 후 AlertFrame 알림 텍스트에 즉시 반영
+- [ ] TimelineFrame 아이콘 시간 텍스트에도 즉시 반영
+
+**폰트 크기 슬라이더 (8-24):**
+- [ ] 드래그 시 AlertFrame·TimelineFrame 폰트 크기 즉시 반영
+
+**배경 색상 (견본 버튼):**
+- [ ] 클릭 시 ColorPickerFrame 열림 (불투명도 슬라이더 포함)
+- [ ] 색상 변경 시 AlertFrame 슬롯 배경 즉시 갱신
+- [ ] 취소 시 이전 색상으로 복구
+
+**텍스트 색상 (견본 버튼):**
+- [ ] 클릭 시 ColorPickerFrame 열림
+- [ ] 색상 변경 시 AlertFrame nameText 즉시 갱신
+
+### LibDualSpec 검증
+
+- [ ] 스펙 전환 시 해당 스펙에 할당된 프로파일로 자동 스왑 (SetDualSpecProfile로 미리 설정 필요)
+- [ ] `db.SetDualSpecProfile("프로파일명", 1)` → 스펙 1 전환 시 자동 스왑
+
+### 인게임 확인 체크리스트
+
+1. `/hg` 열기 → 설정 탭 → 프로파일 섹션 확인
+2. 새 프로파일 "테스트" 생성 → 알림 크기 변경 → 원래 프로파일로 전환 → 크기 복구 확인
+3. 테마 탭에서 배경색을 빨간색으로 변경 → 알림 테스트 → 빨간 배경 확인
+4. 폰트를 "Arial Narrow"로 변경 → 알림 테스트 → 폰트 변경 확인
+5. 사운드를 "Alarm Clock"으로 변경 → 테스트 버튼 → 다른 소리 확인
+6. `/reload` 후 모든 테마 설정 유지 확인
+
 ## 문제 발생 시
 
 1. `/console scriptErrors 1` 켜고 재현
 2. `/reload` 후 에러 메시지 수집
-3. `HealGuideCharDB.lua` 파일 내용 확인 (구조 손상 여부)
+3. `HealGuideDB.lua` 또는 `HealGuideCharDB.lua` 파일 내용 확인 (구조 손상 여부)
 4. 관련 파일과 라인 번호로 이슈 정리

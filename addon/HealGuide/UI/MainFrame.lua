@@ -419,6 +419,8 @@ function MainFrame:_CreateSettingsTab(panel)
     local ay = 0
     ay = self:_CreateSettings_AlertMode(panel, afterTts, ay)
     ay = self:_CreateSettings_Sound(panel, afterTts, ay)
+    ay = self:_CreateSettings_Theme(panel, afterTts, ay)
+    ay = self:_CreateSettings_Profile(panel, afterTts, ay)
     ay = self:_CreateSettings_Condition(panel, afterTts, ay)
     ay = self:_CreateSettings_Developer(panel, afterTts, ay)
     afterTts:SetHeight(math.abs(ay) + 16)
@@ -850,6 +852,417 @@ function MainFrame:_CreateSettings_Sound(panel, afterTts, ay)
     return ay
 end
 
+-- ── 색상 피커 헬퍼 ───────────────────────────────────────────────────────────
+
+local function openColorPicker(r, g, b, a, onChange)
+    if InCombatLockdown() then
+        print("|cff00ff00HealGuide|r 전투 중에는 색상 변경 불가")
+        return
+    end
+    if ColorPickerFrame.SetupColorPickerAndShow then
+        -- WoW 10.x+ API
+        ColorPickerFrame:SetupColorPickerAndShow({
+            hasOpacity  = true,
+            r = r, g = g, b = b,
+            opacity     = 1.0 - (a or 1.0),
+            swatchFunc  = function()
+                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                local na = 1.0 - OpacitySliderFrame:GetValue()
+                onChange(nr, ng, nb, na)
+            end,
+            opacityFunc = function()
+                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                local na = 1.0 - OpacitySliderFrame:GetValue()
+                onChange(nr, ng, nb, na)
+            end,
+            cancelFunc  = function(prev)
+                onChange(prev.r or r, prev.g or g, prev.b or b,
+                    1.0 - (prev.opacity or (1.0 - (a or 1.0))))
+            end,
+            previousValues = { r = r, g = g, b = b, opacity = 1.0 - (a or 1.0) },
+        })
+    else
+        -- 레거시 API 폴백
+        ColorPickerFrame.func        = function()
+            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+            local na = OpacitySliderFrame and (1.0 - OpacitySliderFrame:GetValue()) or (a or 1.0)
+            onChange(nr, ng, nb, na)
+        end
+        ColorPickerFrame.hasOpacity  = true
+        ColorPickerFrame.opacityFunc = ColorPickerFrame.func
+        ColorPickerFrame.cancelFunc  = function() onChange(r, g, b, a) end
+        ColorPickerFrame:SetColorRGB(r, g, b)
+        if OpacitySliderFrame then OpacitySliderFrame:SetValue(1.0 - (a or 1.0)) end
+        ShowUIPanel(ColorPickerFrame)
+    end
+end
+
+-- ── 색상 견본 버튼 생성 헬퍼 ────────────────────────────────────────────────
+
+local function makeColorSwatch(parent, x, y, settingKey, onChanged)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(22, 22)
+    btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+
+    local border = btn:CreateTexture(nil, "BACKGROUND")
+    border:SetAllPoints()
+    border:SetColorTexture(0.5, 0.5, 0.5, 1)
+
+    local swatch = btn:CreateTexture(nil, "ARTWORK")
+    swatch:SetPoint("TOPLEFT",     btn, "TOPLEFT",     1, -1)
+    swatch:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1,  1)
+    btn.swatch = swatch
+
+    local function refresh()
+        local c = addon.Storage:GetSetting(settingKey)
+            or { r = 1, g = 1, b = 1, a = 1 }
+        swatch:SetColorTexture(c.r, c.g, c.b, 1)
+    end
+    refresh()
+
+    btn:SetScript("OnClick", function()
+        local c = addon.Storage:GetSetting(settingKey)
+            or { r = 1, g = 1, b = 1, a = 1 }
+        openColorPicker(c.r, c.g, c.b, c.a, function(r, g, b, a)
+            addon.Storage:SetSetting(settingKey, { r = r, g = g, b = b, a = a })
+            swatch:SetColorTexture(r, g, b, 1)
+            if onChanged then onChanged() end
+        end)
+    end)
+
+    btn.Refresh = refresh
+    return btn
+end
+
+-- ── Tab 2 섹션: 테마 ─────────────────────────────────────────────────────────
+
+function MainFrame:_CreateSettings_Theme(panel, afterTts, ay)
+    self:_MakeSectionLabel(afterTts, "테마", 8, ay)
+    ay = ay - 22
+
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+
+    -- 사운드 (LSM)
+    local themeSoundLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    themeSoundLabel:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay)
+    panel.themeSoundLabel = themeSoundLabel
+
+    local themeSoundBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    themeSoundBtn:SetSize(80, 20)
+    themeSoundBtn:SetPoint("LEFT", themeSoundLabel, "RIGHT", 8, 0)
+    themeSoundBtn:SetText("선택 ▾")
+    themeSoundBtn:SetScript("OnClick", function(btn)
+        local sounds = LSM and LSM:List("sound") or {}
+        MainFrame:_ShowGenericDropdown("HGThemeSoundDd", btn, sounds, function(name)
+            addon.Storage:SetSetting("alertSoundName", name)
+            themeSoundLabel:SetText("사운드: " .. name)
+        end)
+    end)
+
+    local themeSoundTestBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    themeSoundTestBtn:SetSize(60, 20)
+    themeSoundTestBtn:SetPoint("LEFT", themeSoundBtn, "RIGHT", 4, 0)
+    themeSoundTestBtn:SetText("테스트")
+    themeSoundTestBtn:SetScript("OnClick", function()
+        local soundName = addon.Storage:GetSetting("alertSoundName")
+        if LSM and soundName and soundName ~= "None" then
+            local path = LSM:Fetch("sound", soundName, true)
+            if path and path ~= "" then
+                PlaySoundFile(path, "Master")
+                return
+            end
+        end
+        PlaySound(addon.Storage:GetSetting("alertSoundID") or 888)
+    end)
+    ay = ay - 28
+
+    -- 폰트 (LSM)
+    local themeFontLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    themeFontLabel:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay)
+    panel.themeFontLabel = themeFontLabel
+
+    local themeFontBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    themeFontBtn:SetSize(80, 20)
+    themeFontBtn:SetPoint("LEFT", themeFontLabel, "RIGHT", 8, 0)
+    themeFontBtn:SetText("선택 ▾")
+    themeFontBtn:SetScript("OnClick", function(btn)
+        local fonts = LSM and LSM:List("font") or {}
+        MainFrame:_ShowGenericDropdown("HGThemeFontDd", btn, fonts, function(name)
+            addon.Storage:SetSetting("alertFontName", name)
+            themeFontLabel:SetText("폰트: " .. name)
+            addon.AlertFrame:ApplyTheme()
+            addon.TimelineFrame:ApplyTheme()
+        end)
+    end)
+    ay = ay - 28
+
+    -- 폰트 크기 슬라이더
+    local themeFontSl = self:_MakeSlider("HGTabThemeFontSl", "폰트 크기", 8, 24, 1, afterTts, ay)
+    themeFontSl:SetScript("OnValueChanged", function(self, val)
+        if panel and panel._refreshing then return end
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        addon.Storage:SetSetting("alertFontSize", val)
+        addon.AlertFrame:ApplyTheme()
+        addon.TimelineFrame:ApplyTheme()
+    end)
+    panel.themeFontSl = themeFontSl
+    ay = ay - 50
+
+    -- 배경 색상
+    local bgColorLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    bgColorLabel:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay)
+    bgColorLabel:SetText("배경 색상")
+
+    local bgSwatch = makeColorSwatch(afterTts, 90, ay - 2, "alertBgColor", function()
+        addon.AlertFrame:ApplyTheme()
+    end)
+    panel.bgSwatch = bgSwatch
+
+    -- 텍스트 색상
+    local textColorLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    textColorLabel:SetPoint("LEFT", bgSwatch, "RIGHT", 20, 0)
+    textColorLabel:SetText("텍스트 색상")
+
+    local textSwatch = makeColorSwatch(afterTts, 0, ay - 2, "alertTextColor", function()
+        addon.AlertFrame:ApplyTheme()
+    end)
+    textSwatch:ClearAllPoints()
+    textSwatch:SetPoint("LEFT", textColorLabel, "RIGHT", 8, 0)
+    panel.textSwatch = textSwatch
+
+    ay = ay - 32
+
+    return ay
+end
+
+-- ── Tab 2 섹션: 프로파일 ─────────────────────────────────────────────────────
+
+function MainFrame:_CreateSettings_Profile(panel, afterTts, ay)
+    self:_MakeSectionLabel(afterTts, "프로파일", 8, ay)
+    ay = ay - 22
+
+    -- 현재 프로파일 레이블 + 선택 드롭다운
+    local profileLabel = afterTts:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    profileLabel:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay)
+    panel.profileLabel = profileLabel
+
+    local profileSelectBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    profileSelectBtn:SetSize(80, 20)
+    profileSelectBtn:SetPoint("LEFT", profileLabel, "RIGHT", 8, 0)
+    profileSelectBtn:SetText("전환 ▾")
+    profileSelectBtn:SetScript("OnClick", function(btn)
+        local profiles = addon.Storage:GetProfiles()
+        local current  = addon.Storage:GetCurrentProfile()
+        local names    = {}
+        for _, name in ipairs(profiles) do
+            if name ~= current then
+                names[#names + 1] = name
+            end
+        end
+        if #names == 0 then
+            print("|cff00ff00HealGuide|r 다른 프로파일이 없습니다.")
+            return
+        end
+        MainFrame:_ShowGenericDropdown("HGProfileSelectDd", btn, names, function(name)
+            addon.Storage:SetProfile(name)
+            -- _RefreshSettings는 OnProfileChanged 콜백에서 자동 호출
+        end)
+    end)
+    ay = ay - 28
+
+    -- 버튼 행: 새로 만들기 / 복사 / 삭제 / 리셋
+    local newBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    newBtn:SetSize(84, 20)
+    newBtn:SetPoint("TOPLEFT", afterTts, "TOPLEFT", 8, ay - 2)
+    newBtn:SetText("새로 만들기")
+    newBtn:SetScript("OnClick", function()
+        StaticPopup_Show("HEALGUIDE_PROFILE_NEW")
+    end)
+
+    local copyBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    copyBtn:SetSize(60, 20)
+    copyBtn:SetPoint("LEFT", newBtn, "RIGHT", 2, 0)
+    copyBtn:SetText("복사")
+    copyBtn:SetScript("OnClick", function()
+        StaticPopup_Show("HEALGUIDE_PROFILE_COPY")
+    end)
+
+    local deleteBtn = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    deleteBtn:SetSize(60, 20)
+    deleteBtn:SetPoint("LEFT", copyBtn, "RIGHT", 2, 0)
+    deleteBtn:SetText("|cffff8888삭제|r")
+    deleteBtn:SetScript("OnClick", function(btn)
+        local profiles = addon.Storage:GetProfiles()
+        local current  = addon.Storage:GetCurrentProfile()
+        local others   = {}
+        for _, name in ipairs(profiles) do
+            if name ~= current then others[#others + 1] = name end
+        end
+        if #others == 0 then
+            print("|cff00ff00HealGuide|r 삭제할 다른 프로파일이 없습니다.")
+            return
+        end
+        MainFrame:_ShowGenericDropdown("HGProfileDeleteDd", btn, others, function(name)
+            StaticPopup_Show("HEALGUIDE_PROFILE_DELETE", nil, nil, { profileName = name })
+        end)
+    end)
+
+    local resetBtn2 = CreateFrame("Button", nil, afterTts, "GameMenuButtonTemplate")
+    resetBtn2:SetSize(60, 20)
+    resetBtn2:SetPoint("LEFT", deleteBtn, "RIGHT", 2, 0)
+    resetBtn2:SetText("리셋")
+    resetBtn2:SetScript("OnClick", function()
+        StaticPopup_Show("HEALGUIDE_PROFILE_RESET")
+    end)
+    ay = ay - 30
+
+    -- 프로파일 관련 StaticPopup 등록 (최초 1회)
+    if not StaticPopupDialogs["HEALGUIDE_PROFILE_NEW"] then
+        StaticPopupDialogs["HEALGUIDE_PROFILE_NEW"] = {
+            text       = "새 프로파일 이름을 입력하세요:",
+            button1    = "만들기",
+            button2    = "취소",
+            hasEditBox = true,
+            OnAccept   = function(self)
+                local eb   = self.EditBox or self.editBox
+                local name = eb:GetText():match("^%s*(.-)%s*$")
+                if name ~= "" then
+                    addon.Storage:CreateProfile(name)
+                end
+            end,
+            timeout      = 0,
+            whileDead    = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+
+        StaticPopupDialogs["HEALGUIDE_PROFILE_COPY"] = {
+            text       = "복사할 새 프로파일 이름을 입력하세요:",
+            button1    = "복사",
+            button2    = "취소",
+            hasEditBox = true,
+            OnShow     = function(self)
+                local eb = self.EditBox or self.editBox
+                eb:SetText(addon.Storage:GetCurrentProfile() .. " (복사)")
+                eb:HighlightText()
+            end,
+            OnAccept   = function(self)
+                local eb   = self.EditBox or self.editBox
+                local name = eb:GetText():match("^%s*(.-)%s*$")
+                if name == "" then return end
+                -- 새 프로파일 생성 후 현재 데이터 복사
+                local current = addon.Storage:GetCurrentProfile()
+                addon.Storage:CreateProfile(name)          -- new profile, now active
+                addon.Storage:CopyFromProfile(current)     -- copy old → new (now current)
+            end,
+            timeout      = 0,
+            whileDead    = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+
+        StaticPopupDialogs["HEALGUIDE_PROFILE_DELETE"] = {
+            text       = "프로파일 '%s'을(를) 삭제하시겠습니까?",
+            button1    = "삭제",
+            button2    = "취소",
+            OnAccept   = function(self)
+                local name = self.data and self.data.profileName
+                if name then
+                    addon.Storage:DeleteProfile(name)
+                    if addon.MainFrame._RefreshSettings then
+                        addon.MainFrame:_RefreshSettings()
+                    end
+                end
+            end,
+            timeout      = 0,
+            whileDead    = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+
+        StaticPopupDialogs["HEALGUIDE_PROFILE_RESET"] = {
+            text       = "현재 프로파일을 기본값으로 초기화하시겠습니까?",
+            button1    = "초기화",
+            button2    = "취소",
+            OnAccept   = function()
+                addon.Storage:ResetProfile()
+            end,
+            timeout      = 0,
+            whileDead    = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+    end
+
+    return ay
+end
+
+-- ── 범용 드롭다운 ─────────────────────────────────────────────────────────────
+
+local genericDropdowns = {}
+
+function MainFrame:_ShowGenericDropdown(ddName, anchor, items, onSelect)
+    -- 같은 드롭다운이 열려있으면 닫기
+    local dd = genericDropdowns[ddName]
+    if dd and dd:IsShown() then dd:Hide(); return end
+
+    if not dd then
+        dd = CreateFrame("Frame", ddName, UIParent, "BackdropTemplate")
+        dd:SetFrameStrata("TOOLTIP")
+        dd:EnableMouse(true)
+        dd:EnableKeyboard(true)
+        dd:SetPropagateKeyboardInput(false)
+        tinsert(UISpecialFrames, ddName)
+        if dd.SetBackdrop then
+            dd:SetBackdrop({
+                bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true, tileSize = 16, edgeSize = 12,
+                insets = { left = 4, right = 4, top = 4, bottom = 4 },
+            })
+        end
+        dd._buttons = {}
+        genericDropdowns[ddName] = dd
+    end
+
+    for _, b in ipairs(dd._buttons) do b:Hide() end
+    dd._buttons = {}
+
+    local ROW_H, PAD = 18, 6
+    local maxW = 120
+
+    for i, item in ipairs(items) do
+        local btn = CreateFrame("Button", nil, dd)
+        btn:SetHeight(ROW_H)
+        btn:SetPoint("TOPLEFT",  dd, "TOPLEFT",  PAD, -PAD - (i - 1) * ROW_H)
+        btn:SetPoint("TOPRIGHT", dd, "TOPRIGHT", -PAD, -PAD - (i - 1) * ROW_H)
+
+        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.15)
+
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("LEFT", btn, "LEFT", 2, 0)
+        fs:SetJustifyH("LEFT")
+        fs:SetText(item)
+        local w = fs:GetStringWidth() + 20
+        if w > maxW then maxW = w end
+
+        local selectedItem = item
+        btn:SetScript("OnClick", function()
+            onSelect(selectedItem)
+            dd:Hide()
+        end)
+        dd._buttons[i] = btn
+    end
+
+    dd:SetSize(math.min(maxW, 320), PAD * 2 + #items * ROW_H)
+    dd:ClearAllPoints()
+    dd:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    dd:Show()
+end
+
 function MainFrame:_CreateSettings_Condition(panel, afterTts, ay)
     self:_MakeSectionLabel(afterTts, "조건 엔진", 8, ay)
     ay = ay - 22
@@ -948,6 +1361,24 @@ function MainFrame:_RefreshSettings()
 
         local soundID = s:GetSetting("alertSoundID") or 888
         panel.soundLabel:SetText("사운드: #" .. soundID)
+
+        -- 테마
+        if panel.themeSoundLabel then
+            panel.themeSoundLabel:SetText("사운드: " .. (s:GetSetting("alertSoundName") or "ReadyCheck"))
+        end
+        if panel.themeFontLabel then
+            panel.themeFontLabel:SetText("폰트: " .. (s:GetSetting("alertFontName") or "Friz Quadrata TT"))
+        end
+        if panel.themeFontSl then
+            panel.themeFontSl:SetValue(s:GetSetting("alertFontSize") or 14)
+        end
+        if panel.bgSwatch   then panel.bgSwatch:Refresh()   end
+        if panel.textSwatch then panel.textSwatch:Refresh()  end
+
+        -- 프로파일
+        if panel.profileLabel then
+            panel.profileLabel:SetText("현재: " .. addon.Storage:GetCurrentProfile())
+        end
 
         self:_RefreshVoiceLabel()
         self:_UpdateTTSGroupState()

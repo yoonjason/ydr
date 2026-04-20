@@ -2,94 +2,203 @@ local addonName, addon = ...
 addon.Storage = {}
 local Storage = addon.Storage
 
-local DEFAULT_SETTINGS = {
-    soundEnabled    = true,
-    alertMode       = "reactive",
-    alertFramePoint = { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 },
-    displaySeconds  = 2.0,
-    locked          = false,
-    showSpellName   = false,
-    iconBaseSize    = 64,
-    iconPulseSize   = 96,
-    ttsEnabled      = false,
-    ttsVoiceID      = 0,
-    ttsRate         = 5,
-    ttsVolume       = 100,
-    leadTime        = 1.5,
-    debugMode       = false,
-    conditionFallback = true,
-    -- M+ 최저 키가 +2 이므로 기본값 2 는 사실상 '필터 비활성' (>=2 는 항상 통과). 사용자가 올리면 그때부터 저렙 키 알림 억제.
-    keystoneMinLevel = 2,
-    alertSoundID    = 888,
-    minimapAngle    = 220,
-    alertFrameEnabled = true,   -- 큰 알림창(AlertFrame) on/off. 끄면 사운드/TTS 만 재생되고 시각 알림은 TimelineFrame 만 사용.
-    alertFrameSlots   = 1,
-    -- 타임라인
-    timelineVisible     = true,
-    timelineOrientation = "horizontal",
-    timelineWindow      = 30,
-    timelineIconSize    = 36,
-    timelineTrackLength = 400,
-    timelineShowTicks   = true,
-    timelineLocked      = false,
-    timelinePoint       = { point = "CENTER", relPoint = "CENTER", x = 0, y = -200 },
+-- ── AceDB 스키마 ──────────────────────────────────────────────────────────────
+
+local DEFAULTS = {
+    profile = {
+        version  = 2,
+        dungeons = {},
+        settings = {
+            soundEnabled      = true,
+            alertMode         = "reactive",
+            alertFramePoint   = { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 },
+            displaySeconds    = 2.0,
+            locked            = false,
+            showSpellName     = false,
+            iconBaseSize      = 64,
+            iconPulseSize     = 96,
+            ttsEnabled        = false,
+            ttsVoiceID        = 0,
+            ttsRate           = 5,
+            ttsVolume         = 100,
+            leadTime          = 1.5,
+            debugMode         = false,
+            conditionFallback = true,
+            keystoneMinLevel  = 2,
+            alertSoundID      = 888,
+            minimapAngle      = 220,
+            alertFrameEnabled = true,
+            alertFrameSlots   = 1,
+            timelineVisible      = true,
+            timelineOrientation  = "horizontal",
+            timelineWindow       = 30,
+            timelineIconSize     = 36,
+            timelineTrackLength  = 400,
+            timelineShowTicks    = true,
+            timelineLocked       = false,
+            timelinePoint        = { point = "CENTER", relPoint = "CENTER", x = 0, y = -200 },
+            -- Phase 4a: 테마
+            alertBgColor   = { r = 0,   g = 0,   b = 0,   a = 0.75 },
+            alertTextColor = { r = 1,   g = 1,   b = 1,   a = 1.0  },
+            alertFontName  = "Friz Quadrata TT",
+            alertFontSize  = 14,
+            alertSoundName = "ReadyCheck",
+        },
+    },
 }
 
+-- ── 내부 상태 ─────────────────────────────────────────────────────────────────
+
+local db              = nil
+local encounterIndex  = {}  -- 파생 인덱스 (영속화하지 않음, 로드 시 재빌드)
+
+-- ── Init ─────────────────────────────────────────────────────────────────────
+
 function Storage:Init()
-    HealGuideCharDB = HealGuideCharDB or {}
-    local db = HealGuideCharDB
+    local AceDB = LibStub("AceDB-3.0")
+    db = AceDB:New("HealGuideDB", DEFAULTS, true)
 
-    db.version        = db.version        or 1
-    db.dungeons       = db.dungeons       or {}
-    db.encounterIndex = db.encounterIndex or {}
-    db.settings       = db.settings       or {}
-
-    -- 마이그레이션은 DEFAULT_SETTINGS 주입 이전에 실행해야 함.
-    -- 이후에 돌리면 DEFAULT 가 새 키를 이미 채워버려 `not db.settings.alertFramePoint`
-    -- 가드가 항상 false 가 되어 구버전 위치가 유실된다.
-
-    -- 구버전 framePosition → alertFramePoint 마이그레이션
-    if db.settings.framePosition and not db.settings.alertFramePoint then
-        local old = db.settings.framePosition
-        db.settings.alertFramePoint = {
-            point = "CENTER", relPoint = "CENTER",
-            x = old.x or 0, y = old.y or 200,
-        }
-        db.settings.framePosition = nil
+    -- LibDualSpec 연동 (설치된 경우)
+    local LibDualSpec = LibStub("LibDualSpec-1.0", true)
+    if LibDualSpec then
+        LibDualSpec:EnhanceDatabase(db, "HealGuide")
     end
 
-    -- 구버전 iconSize → iconBaseSize / iconPulseSize 마이그레이션
-    if db.settings.iconSize ~= nil then
-        local old = db.settings.iconSize
-        db.settings.iconBaseSize  = old
-        db.settings.iconPulseSize = math.floor(old * 1.5)
-        db.settings.iconSize      = nil
-    end
+    -- 구버전 캐릭터별 SavedVariable 에서 현재 프로파일로 1회 마이그레이션
+    self:_MigrateFromCharDB()
 
-    -- timerBarPoint → timelinePoint 마이그레이션 (vertical 레이아웃으로 보존)
-    if db.settings.timerBarPoint and not db.settings.timelinePoint then
-        db.settings.timelinePoint       = db.settings.timerBarPoint
-        db.settings.timelineOrientation = "vertical"
-        db.settings.timerBarPoint       = nil
-    end
-
-    for k, v in pairs(DEFAULT_SETTINGS) do
-        if db.settings[k] == nil then
-            db.settings[k] = v
+    -- 프로파일 전환 콜백: UI 갱신
+    db.RegisterCallback(self, "OnProfileChanged", function(target, event, database, newProfile)
+        target:RebuildEncounterIndex()
+        if addon.MainFrame then
+            if addon.MainFrame._RefreshSettings then addon.MainFrame:_RefreshSettings() end
+            if addon.MainFrame._RefreshDataTab  then addon.MainFrame:_RefreshDataTab()  end
         end
-    end
+        if addon.AlertFrame and addon.AlertFrame.ApplyTheme then
+            addon.AlertFrame:ApplyTheme()
+        end
+        if addon.TimelineFrame and addon.TimelineFrame.ApplyTheme then
+            addon.TimelineFrame:ApplyTheme()
+        end
+    end)
+
+    db.RegisterCallback(self, "OnProfileReset", function(target, event, database, profileName)
+        target:RebuildEncounterIndex()
+        if addon.MainFrame and addon.MainFrame._RefreshSettings then
+            addon.MainFrame:_RefreshSettings()
+        end
+        if addon.AlertFrame and addon.AlertFrame.ApplyTheme then
+            addon.AlertFrame:ApplyTheme()
+        end
+        if addon.TimelineFrame and addon.TimelineFrame.ApplyTheme then
+            addon.TimelineFrame:ApplyTheme()
+        end
+    end)
 
     self:RebuildEncounterIndex()
 end
 
-function Storage:RebuildEncounterIndex()
-    local db = HealGuideCharDB
-    db.encounterIndex = {}
+-- ── 마이그레이션 ──────────────────────────────────────────────────────────────
 
-    for dungeonKey, dungeon in pairs(db.dungeons) do
+function Storage:_MigrateFromCharDB()
+    if db.profile._charDbMigrated then return end
+    if type(HealGuideCharDB) ~= "table" then
+        db.profile._charDbMigrated = true
+        return
+    end
+
+    local charDB = HealGuideCharDB
+
+    if type(charDB.settings) == "table" then
+        local settings = charDB.settings
+
+        -- 구버전 키 마이그레이션 (charDB 내에서 먼저 처리)
+        if settings.framePosition and not settings.alertFramePoint then
+            local old = settings.framePosition
+            settings.alertFramePoint = { point = "CENTER", relPoint = "CENTER", x = old.x or 0, y = old.y or 200 }
+            settings.framePosition   = nil
+        end
+        if settings.iconSize ~= nil then
+            local old = settings.iconSize
+            settings.iconBaseSize  = old
+            settings.iconPulseSize = math.floor(old * 1.5)
+            settings.iconSize      = nil
+        end
+        if settings.timerBarPoint and not settings.timelinePoint then
+            settings.timelinePoint       = settings.timerBarPoint
+            settings.timelineOrientation = "vertical"
+            settings.timerBarPoint       = nil
+        end
+
+        -- nil 키만 복사 (AceDB 기본값보다 구버전 값 우선)
+        for k, v in pairs(settings) do
+            if db.profile.settings[k] == nil then
+                db.profile.settings[k] = v
+            end
+        end
+    end
+
+    if type(charDB.dungeons) == "table" then
+        for k, v in pairs(charDB.dungeons) do
+            if not db.profile.dungeons[k] then
+                db.profile.dungeons[k] = v
+            end
+        end
+    end
+
+    db.profile._charDbMigrated = true
+end
+
+-- ── 프로파일 API ──────────────────────────────────────────────────────────────
+
+function Storage:GetCurrentProfile()
+    return db:GetCurrentProfile()
+end
+
+function Storage:GetProfiles()
+    return db:GetProfiles()
+end
+
+function Storage:SetProfile(name)
+    db:SetProfile(name)
+    -- RebuildEncounterIndex는 OnProfileChanged 콜백에서 처리
+end
+
+function Storage:CreateProfile(name)
+    db:SetProfile(name)  -- 존재하지 않으면 AceDB가 빈 프로파일로 생성
+end
+
+function Storage:CopyFromProfile(fromName)
+    db:CopyProfile(fromName)
+    self:RebuildEncounterIndex()
+end
+
+function Storage:DeleteProfile(name)
+    db:DeleteProfile(name)
+end
+
+function Storage:ResetProfile()
+    db:ResetProfile()
+    -- RebuildEncounterIndex는 OnProfileReset 콜백에서 처리
+end
+
+function Storage:RegisterProfileCallback(target, event, handler)
+    db.RegisterCallback(target, event, handler)
+end
+
+function Storage:GetDB()
+    return db
+end
+
+-- ── 던전 인덱스 ───────────────────────────────────────────────────────────────
+
+function Storage:RebuildEncounterIndex()
+    encounterIndex = {}
+    local dungeons = db.profile.dungeons
+    for dungeonKey, dungeon in pairs(dungeons) do
         if dungeon.enabled then
             for encounterID in pairs(dungeon.bosses) do
-                db.encounterIndex[encounterID] = {
+                encounterIndex[encounterID] = {
                     dungeonKey = dungeonKey,
                     enabled    = true,
                 }
@@ -98,10 +207,10 @@ function Storage:RebuildEncounterIndex()
     end
 end
 
-function Storage:AddDungeon(importData)
-    local db = HealGuideCharDB
-    local dungeonKey = importData.dungeonName .. "_" .. tostring(time())
+-- ── 던전 CRUD ────────────────────────────────────────────────────────────────
 
+function Storage:AddDungeon(importData)
+    local dungeonKey = importData.dungeonName .. "_" .. tostring(time())
     local entry = {
         displayName  = importData.dungeonName,
         originalName = importData.dungeonName,
@@ -110,7 +219,6 @@ function Storage:AddDungeon(importData)
         enabled      = true,
         bosses       = {},
     }
-
     for encounterID, bossData in pairs(importData.bosses) do
         entry.bosses[encounterID] = {
             name     = bossData.name,
@@ -124,17 +232,14 @@ function Storage:AddDungeon(importData)
             },
         }
     end
-
-    db.dungeons[dungeonKey] = entry
+    db.profile.dungeons[dungeonKey] = entry
     self:RebuildEncounterIndex()
     return dungeonKey
 end
 
 function Storage:UpdateDungeon(dungeonKey, importData)
-    local db = HealGuideCharDB
-    local dungeon = db.dungeons[dungeonKey]
+    local dungeon = db.profile.dungeons[dungeonKey]
     if not dungeon then return false end
-
     for encounterID, bossData in pairs(importData.bosses) do
         if not dungeon.bosses[encounterID] then
             dungeon.bosses[encounterID] = {
@@ -149,15 +254,13 @@ function Storage:UpdateDungeon(dungeonKey, importData)
             leadIns   = bossData.leadIns   or {},
         }
     end
-
     self:RebuildEncounterIndex()
     return true
 end
 
 function Storage:RemoveDungeon(dungeonKey)
-    local db = HealGuideCharDB
-    if db.dungeons[dungeonKey] then
-        db.dungeons[dungeonKey] = nil
+    if db.profile.dungeons[dungeonKey] then
+        db.profile.dungeons[dungeonKey] = nil
         self:RebuildEncounterIndex()
         return true
     end
@@ -165,9 +268,8 @@ function Storage:RemoveDungeon(dungeonKey)
 end
 
 function Storage:SetDungeonEnabled(dungeonKey, enabled)
-    local db = HealGuideCharDB
-    if db.dungeons[dungeonKey] then
-        db.dungeons[dungeonKey].enabled = enabled
+    if db.profile.dungeons[dungeonKey] then
+        db.profile.dungeons[dungeonKey].enabled = enabled
         self:RebuildEncounterIndex()
         return true
     end
@@ -175,37 +277,35 @@ function Storage:SetDungeonEnabled(dungeonKey, enabled)
 end
 
 function Storage:SetDungeonDisplayName(dungeonKey, name)
-    local db = HealGuideCharDB
-    if db.dungeons[dungeonKey] then
-        db.dungeons[dungeonKey].displayName = name
+    if db.profile.dungeons[dungeonKey] then
+        db.profile.dungeons[dungeonKey].displayName = name
         return true
     end
     return false
 end
 
 function Storage:GetDungeons()
-    return HealGuideCharDB.dungeons
+    return db.profile.dungeons
 end
 
 function Storage:GetDungeon(dungeonKey)
-    return HealGuideCharDB.dungeons[dungeonKey]
+    return db.profile.dungeons[dungeonKey]
 end
 
 function Storage:GetEncounterData(encounterID)
-    local db = HealGuideCharDB
-    local entry = db.encounterIndex[encounterID]
+    local entry = encounterIndex[encounterID]
     if not entry then return nil, nil end
-
-    local dungeon = db.dungeons[entry.dungeonKey]
+    local dungeon = db.profile.dungeons[entry.dungeonKey]
     if not dungeon or not dungeon.enabled then return nil, nil end
-
     return dungeon.bosses[encounterID], entry.dungeonKey
 end
 
+-- ── 설정 API (호출부 무수정 유지) ────────────────────────────────────────────
+
 function Storage:GetSetting(key)
-    return HealGuideCharDB.settings[key]
+    return db.profile.settings[key]
 end
 
 function Storage:SetSetting(key, value)
-    HealGuideCharDB.settings[key] = value
+    db.profile.settings[key] = value
 end

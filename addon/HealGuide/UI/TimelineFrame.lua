@@ -360,3 +360,17 @@ function TimelineFrame:_Update()
         end
     end
 end
+
+-- 테마(폰트) 설정 변경 시 풀 내 아이콘 fontstring에 즉시 반영
+function TimelineFrame:ApplyTheme()
+    local LSM      = LibStub and LibStub("LibSharedMedia-3.0", true)
+    local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
+    local fontSize = addon.Storage:GetSetting("alertFontSize") or 14
+    local fontPath = LSM and LSM:Fetch("font", fontName, true)
+    if not fontPath then return end
+    for _, ic in ipairs(pool) do
+        if ic.timeText then
+            ic.timeText:SetFont(fontPath, fontSize, "")
+        end
+    end
+end
