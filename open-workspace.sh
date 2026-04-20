@@ -25,33 +25,38 @@ on run argv
           set a5 to (split horizontally with default profile of a3)
           set a6 to (split horizontally with default profile of a4)
           set a7 to (split horizontally with default profile of a5)
+          set a8 to (split horizontally with default profile of a6)
           tell agentCol1
-          set name to "ux-designer"
-          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh ux-designer"
-          end tell
-          tell col2
           set name to "ios-engineer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh ios-engineer"
           end tell
-          tell a3
-          set name to "backend-engineer"
-          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh backend-engineer"
-          end tell
-          tell a4
-          set name to "qa-engineer"
-          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh qa-engineer"
-          end tell
-          tell a5
+          tell col2
           set name to "code-reviewer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh code-reviewer"
           end tell
-          tell a6
-          set name to "security-auditor"
-          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh security-auditor"
-          end tell
-          tell a7
+          tell a3
           set name to "wow-addon-engineer"
           write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh wow-addon-engineer"
+          end tell
+          tell a4
+          set name to "macos-engineer"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh macos-engineer"
+          end tell
+          tell a5
+          set name to "swift-package-architect"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh swift-package-architect"
+          end tell
+          tell a6
+          set name to "wow-ui-engineer"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh wow-ui-engineer"
+          end tell
+          tell a7
+          set name to "wow-combat-log-expert"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh wow-combat-log-expert"
+          end tell
+          tell a8
+          set name to "wow-raid-encounter-expert"
+          write text "export CLAUDE_PROJECT_DIR=" & (quoted form of projectDir) & " && ~/.claude/hooks/agent-interactive.sh wow-raid-encounter-expert"
           end tell
 
 

@@ -3,4 +3,8 @@
 - [Phase 4 착수 대기 (P1)](phase4_next_work.md) — 2026-04-15 다음 세션에서 AceDB 프로파일 + LibSharedMedia 테마/사운드 착수 예정. 실기 테스트 선행 필수
 - [2026-04-15 핸드오프](handoff_20260415.md) — Plan B + U1/U2/U3 완료. 잔여: 실기 검증 → U2.5 중복 방지 → 디버그 로그 정리. 다른 PC 에서 이어받기 가능
 - [2026-04-16 핸드오프](handoff_20260416.md) — BLK-1/U2.5/하이브리드 카탈로그 P1 커밋 완료, Phase A 설계 code-reviewer 검토 대기. 워크스페이스 재시작 이어받기용
+- [2026-04-17 핸드오프](handoff_20260417.md) — 타임라인 UI 통합 + Midnight M+ MVP 커밋 2건. 3회 리뷰 사이클 PASS. 실기 검증 + 데이터 수집이 다음
+- [2026-04-21 핸드오프](handoff_20260421.md) — Phase 5α 코드 커밋 5455d53 / 푸시 보류 / _name 매핑 버그 → 다음은 던전 보스 이름 API 조사부터
 - [WeakAuras 사용 불가](weakauras_deprecated.md) — Midnight(12.0)에서 위크오라 차단. 설계에서 언급 금지
+- [스킬 선택 기본값 전체 해제](feedback_spell_selection_default.md) — 로그 분석 탭 주문 선택 진입 시 빈 선택으로 시작. 과거 요청이 반영 안 돼 재요청됨
+- [dmg는 명시적 요청 시에만](feedback_dmg_on_request.md) — 코드 수정 후 dmg 자동 생성/재생성 제안 금지. 사용자가 "떨궈줘" 라 할 때만
