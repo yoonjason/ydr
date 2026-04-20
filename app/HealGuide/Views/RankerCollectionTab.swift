@@ -3,6 +3,9 @@ import SwiftUI
 struct RankerCollectionTab: View {
     @ObservedObject var viewModel: RankerCollectionViewModel
 
+    // 경로 미설정 시 자동 펼침. 사용자가 수동으로 접었다 펼 수도 있도록 @State 유지.
+    @State private var isWowPathExpanded: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -17,14 +20,17 @@ struct RankerCollectionTab: View {
             .padding()
         }
         .frame(minWidth: 560, minHeight: 600)
-        .onAppear { viewModel.onAppear() }
+        .onAppear {
+            viewModel.onAppear()
+            isWowPathExpanded = viewModel.wowAddonsPath.isEmpty
+        }
     }
 
     // MARK: - WoW AddOns 경로
 
     @ViewBuilder
     private var wowPathSection: some View {
-        DisclosureGroup("WoW AddOns 경로 (HGPT_RankerData.lua 저장)") {
+        DisclosureGroup(isExpanded: $isWowPathExpanded) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Lua 파일 저장을 위해 WoW Interface/AddOns 폴더 경로를 지정하세요. 리포트 탭과 공유됩니다.")
                     .font(.caption)
@@ -52,6 +58,19 @@ struct RankerCollectionTab: View {
                 }
             }
             .padding(.top, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Text("WoW AddOns 경로 (HGPT_RankerData.lua 저장)")
+                if viewModel.wowAddonsPath.isEmpty {
+                    Text("필수")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.25))
+                        .foregroundStyle(.orange)
+                        .cornerRadius(4)
+                }
+            }
         }
     }
 
