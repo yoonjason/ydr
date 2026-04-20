@@ -379,7 +379,7 @@
 - `/hg debug` 토글 + 링버퍼 + 설정 탭 신규 "디버그" 탭
 - 프레임 스케일/투명도/스트라타/앵커 확장
 
-**Phase 5 (장기) — i18n, Wago 연계, 자동 업데이트**
+**Phase 5 (장기) — 학습 기능 (아래 별도 장 참조), i18n, Wago 연계, 자동 업데이트**
 
 ---
 
@@ -397,6 +397,516 @@
 3. **이 문서를 집 맥미니에서 어떻게 쓸 것인가**
    - Phase 4a 부터 즉시 착수할지, 인게임 실기 테스트 먼저 완료하고 착수할지
    - **제 추천**: 실기 테스트 → 현재 구현의 실제 취약점 확인 → 그 결과를 반영해서 Phase 4 우선순위 조정. 이 문서는 참고용 로드맵으로 활용
+
+---
+
+---
+
+## Phase 5 — 학습 기능 설계
+
+작성일: 2026-04-20
+리서치 방식: WoW API 문서 직접 조사 + Details!/BigWigs GitHub 코드 분석 + 서브에이전트 domain-researcher 활용
+
+### 요약
+
+애드온 자체 학습 기능은 크게 5가지 후보로 나뉜다. 현재 `EncounterEngine.combatLog` 와 `CombatHistoryFrame` 으로 기초 인프라(전투 기록 + 이력 표시)가 이미 존재하므로, **신규 이벤트 구독 없이** 바로 확장 가능한 후보 B(가이드 이행률 추적)가 가장 낮은 공수로 즉각적인 가치를 제공한다. 그 다음 단계로 자기-로그 수집(A) → Delay 보정(C) 순으로 쌓는 것이 자연스러운 학습 파이프라인을 형성한다.
+
+후보 D(미등록 보스 자동 경보)와 E(파티 힐러 분담)는 독립적인 인프라가 필요하고 신뢰도 리스크가 크므로 별도 Phase로 분리하거나 충분한 실기 데이터가 쌓인 이후에 착수하는 것이 안전하다.
+
+---
+
+### 후보 A — 자기-로그 자동 생성
+
+> WarcraftLogs 없이 내 던전 플레이만으로 보스스킬→힐 패턴을 자동 축적한다.
+
+#### 기술 아키텍처
+
+**필요 이벤트:**
+현재 `Init.lua` 에서 이미 구독 중:
+- `COMBAT_LOG_EVENT_UNFILTERED` (clFrame) — 보스 `SPELL_CAST_START` 수신
+- `SPELL_CAST_SUCCESS` with `UnitGUID("player")` — 플레이어 힐 캐스트 수신
+
+추가 구독 없이 기존 `EncounterEngine.combatLog` 버퍼를 확장하면 된다.
+현재 combatLog 스키마:
+```lua
+{ type="alert"|"used", spellID=N, source="reactive"|..., timestamp=T }
+```
+
+자기-로그 확장 스키마 (메모리 버퍼):
+```lua
+EncounterEngine._bossEventBuffer = {}
+-- { bossSpellID=N, timestamp=T }   전투 중 임시 저장
+
+-- SPELL_CAST_SUCCESS (hostile sourceFlags) 감지 시 push:
+table.insert(EncounterEngine._bossEventBuffer,
+    { bossSpellID = spellID, timestamp = GetTime() - encounterStartTime })
+
+-- SPELL_CAST_SUCCESS (UnitGUID("player")) 감지 시:
+-- _bossEventBuffer 를 역순 탐색 → 30초 이내 가장 최근 bossSpellID 찾기 → delay 계산
+```
+
+**저장 구조 (SavedVariables):**
+```lua
+HealGuideCharDB.selfLog = {
+    -- [encounterID][bossSpellID][playerSpellID] = { count=N, mean=M, M2=V }
+    -- Welford 알고리즘으로 점진 갱신 (O(spellPair 수) 고정 크기)
+}
+```
+
+기존 `HGPT_Data` 와 병행 저장. 우선순위는 HGPT_Data 우선, selfLog 는 보완 데이터.
+
+**성능:**
+- 전투 중은 `_bossEventBuffer` 에 append만 (테이블 재할당 없음)
+- 전투 종료 (`ENCOUNTER_END`) 시 `_bossEventBuffer` → Welford 갱신 → wipe(buffer)
+- Welford 통계 업데이트: 곱셈/나눗셈 O(1), GC 없음
+
+**taint 리스크:** 없음. 보호된 프레임 접근 없이 전투 로그만 읽음.
+
+#### 패턴 감지 알고리즘
+
+```
+boss_cast_times = []  -- (bossSpellID, absTime) 전투 중 스택
+
+for each player_cast (spellID, absTime):
+    anchor = max { b ∈ boss_cast_times | b.absTime ≤ absTime }
+    if anchor.absTime is nil: skip
+    delay = absTime - anchor.absTime  (초)
+    if delay > 30: skip
+    updateWelford(selfLog[encID][anchor.bossSpellID][spellID], delay)
+```
+
+5회 이상 데이터가 쌓이면 통계적으로 신뢰할 수 있는 평균 delay 를 얻는다. Mac 앱 export 없이도 "내가 주로 X초에 Y를 쓴다"는 데이터 생성.
+
+#### UX 플로우
+
+- MainFrame **데이터 탭** 하단에 "자기-로그" 소섹션 추가
+- 표시: 인카운터별 수집된 페어 수, 평균 delay 상위 5쌍
+- "HGPT_Data 로 내보내기" 버튼: selfLog 집계값을 HGPT_Data 포맷으로 변환 → Mac 앱 없이 자체 가이드 생성 가능
+- Mac 앱과 공존 시 우선순위 규칙: `HGPT_Data` 먼저, selfLog 는 HGPT_Data 에 없는 (encounterID, bossSpellID) 쌍에만 fallback
+
+#### 리스크
+
+| 리스크 | 내용 | 완화 |
+|---|---|---|
+| 콜드 스타트 | 첫 5회 이하에서 신뢰도 낮음 | `count < 5` 이면 UI 에 "데이터 부족" 표시, 알림 적용 비활성화 |
+| 저품질 플레이 학습 | 느린 반응 → 큰 delay 가 평균을 끌어올림 | 표준편차 임계값 초과 시 "편차 큼" 경고 표시 |
+| 보스 스킬 중복 매핑 | 같은 보스가 같은 스킬 20회 시전 → 모두 누적 | Welford 로 자동 평균화 됨. 의도된 동작 |
+| SavedVariables 비대화 | (encounterID × bossSpellID × playerSpellID) 3중 키 | Welford 값만 저장 (3개 숫자/쌍), 100쌍 기준 ~3KB |
+
+**우선순위 평가:**
+- 구현 비용: 3/5 (bossEventBuffer 확장 + Welford 저장 + UI 소섹션)
+- 사용자 가치: 4/5 (WarcraftLogs 없는 유저에게 핵심 기능)
+- 제품 철학 적합도: 5/5 (자기 로그 자동화가 제품 핵심 가치와 직결)
+
+---
+
+### 후보 B — 가이드 이행률 추적
+
+> 알림 뒤 실제 캐스트 여부·반응 속도를 추적하고, 놓친 알림을 피드백한다.
+
+#### 기술 아키텍처
+
+**기존 인프라 활용:**
+`EncounterEngine.combatLog` 에 이미 `type="alert"` (알림 발화 시각)와 `type="used"` (플레이어 실제 캐스트 시각) 두 레코드가 쌓인다. `CombatHistoryFrame` 도 이미 `stats.fired` / `stats.used` 를 표시한다.
+
+**확장 — 반응 속도 측정:**
+```lua
+-- TriggerAlert 내부에서 alert 기록 시 spellID → alertTime 매핑 저장
+EncounterEngine._pendingAlerts = {}  -- [spellID] = alertTimestamp
+
+-- OnPlayerCast 내부에서 매칭
+local alertTime = EncounterEngine._pendingAlerts[spellID]
+if alertTime then
+    local reactionTime = GetTime() - alertTime  -- 알림→시전 소요 초
+    EncounterEngine._pendingAlerts[spellID] = nil
+    -- Welford 로 reactionTime 누적
+end
+```
+
+**저장 구조:**
+```lua
+HealGuideCharDB.adherenceStats = {
+    -- [encounterID][playerSpellID] = {
+    --   alertCount = N,        -- 알림 발화 횟수
+    --   usedCount  = N,        -- 실제 시전 횟수
+    --   missedCount = N,       -- 반응 없이 윈도우(5초) 초과
+    --   reactionTime = { count, mean, M2 },  -- 반응 속도 Welford
+    -- }
+}
+```
+
+**성능:** 전투 중 `_pendingAlerts` 는 해시 테이블 조회(O(1)). 전투 종료 후 만료된 pendingAlert 정리(5초 미응답 → missedCount 증가, C_Timer 이용).
+
+**taint 리스크:** 없음.
+
+#### 패턴 감지 알고리즘
+
+```
+window = 5초  -- 알림 후 이 시간 이내 캐스트 = "이행"
+              -- 초과하면 "놓침"
+
+C_Timer.NewTimer(window, function()
+    if _pendingAlerts[spellID] still exists:
+        adherenceStats.missedCount += 1
+        _pendingAlerts[spellID] = nil
+end)
+```
+
+이행률(%) = usedCount / alertCount × 100. 반응 시간 분포의 평균/표준편차로 "빠른 응답자"/"느린 응답자" 자가 진단 가능.
+
+#### UX 플로우
+
+- `CombatHistoryFrame` 을 확장: 기존 "알림 N 사용 N 적중 N%" 옆에 "반응 M.Ms" 컬럼 추가
+- MainFrame **설정 탭** 에 "이행률 통계" 버튼 → 스펙별/던전별 장기 이행률 차트(간단한 텍스트 막대)
+- 이행률 60% 미만 인카운터에 빨간 색상 강조
+- `/hg adherence` 슬래시 명령어: 최근 10회 전투 이행률 요약 채팅 출력
+
+#### 리스크
+
+| 리스크 | 내용 | 완화 |
+|---|---|---|
+| 쿨다운으로 인한 미이행 | 스킬이 쿨다운 중이라 못 썼는데 "놓침"으로 집계 | `GetSpellCooldown` 으로 쿨다운 중 알림은 카운트에서 제외 (이미 `cooldownSkipped` 로 스킵됨, 이중 카운트 방지 필요) |
+| 다른 힐로 대응 | 알림과 다른 힐을 써서 대처했는데 "놓침"으로 집계 | 5초 윈도우 내 **어떤** 힐 스킬이든 시전하면 "이행"으로 간주하는 넓은 모드 옵션 |
+| 판타지 vs 실제 | 알림 자체가 잘못된 경우 이행률이 낮게 나옴 | selfLog(A)와 비교해서 알림의 품질과 이행률을 함께 평가 가능 |
+
+**우선순위 평가:**
+- 구현 비용: 2/5 (기존 combatLog 확장, 신규 이벤트 없음)
+- 사용자 가치: 4/5 (자기 피드백 루프, 실력 향상 동기 부여)
+- 제품 철학 적합도: 5/5 (가이드 시스템의 "효과 측정" 자연스러운 확장)
+
+---
+
+### 후보 C — Delay 자동 보정
+
+> 같은 보스스킬에 대한 실제 내 반응 delay 분포를 학습해, 개인화된 리드타임을 자동 추천한다.
+
+#### 기술 아키텍처
+
+후보 A 의 `selfLog` 가 전제조건. `selfLog[encID][bossSpellID][playerSpellID].mean` 이 내 실제 평균 반응 delay. HGPT_Data 의 레퍼런스 delay 와 비교해 개인 오프셋(offset)을 계산한다.
+
+**저장 구조 (selfLog 확장):**
+```lua
+HealGuideCharDB.selfLog = {
+    [encounterID] = {
+        [bossSpellID] = {
+            [playerSpellID] = {
+                count = N,
+                mean  = M,   -- 내 평균 실제 반응 delay (초)
+                M2    = V,   -- 분산 계산용 (Welford)
+                refDelay = R -- import 시점의 HGPT_Data delay (스냅샷)
+            }
+        }
+    }
+}
+```
+
+**보정 계산:**
+```lua
+-- 권장 개인 오프셋 = 내 mean - refDelay
+-- 양수: 나는 레퍼런스보다 느리게 반응 → leadTime 을 더 키워야 함
+-- 음수: 나는 레퍼런스보다 빠르게 반응 → leadTime 을 줄여도 됨
+
+local function computePersonalOffset(encID, bossSpellID, playerSpellID)
+    local entry = HealGuideCharDB.selfLog[encID][bossSpellID][playerSpellID]
+    if not entry or entry.count < 5 then return nil end
+    return entry.mean - (entry.refDelay or 0)
+end
+```
+
+**적용:** 전체 leadTime 설정 대신 스킬별 `entry.delay` 에 개인 오프셋 반영. 또는 "권장 leadTime 조정" 토스트 메시지로 사용자 안내.
+
+**성능:** 계산은 `ENCOUNTER_END` 시 일괄 수행. 전투 중 추가 부하 없음.
+
+#### 패턴 감지 알고리즘
+
+5회 이상 데이터가 쌓인 (encounterID, bossSpellID, playerSpellID) 트리플에 대해:
+```
+personalOffset = mean(selfLog) - mean(HGPT_Data)
+confidence = 1 / (1 + stddev/mean)  -- 변동계수 역수, 0~1
+if confidence > 0.7 and |personalOffset| > 0.5초:
+    → 보정 추천 대상
+```
+
+#### UX 플로우
+
+- MainFrame **설정 탭** 에 "개인화" 섹션 추가
+- "자동 분석" 버튼: 충분한 데이터(≥5회)가 쌓인 스킬에 대해 권장 보정값 목록 표시
+  ```
+  [거미여왕 - 독 분사 → 야성의 성장] 현재 리드 0.5초 → 권장 1.2초 (오차 ±0.3초)
+  ```
+- "모두 적용" / "개별 선택" / "무시" 버튼
+- 적용 시 해당 entry 의 delay 값을 `HGPT_Data` 기준이 아닌 개인 보정값으로 저장
+
+Mac 앱 HGPT_Data 와 공존: 재import 시 refDelay 스냅샷을 업데이트 → 개인 오프셋 재계산.
+
+#### 리스크
+
+| 리스크 | 내용 | 완화 |
+|---|---|---|
+| 저품질 플레이 학습 | 느린 반응→큰 delay 가 "정상"으로 학습됨 | stddev > mean × 0.5 이면 "불안정한 패턴" 경고, 적용 비권장 |
+| 메타 패치 후 stale | 알림 타이밍이 바뀌었는데 개인 오프셋이 구버전 기준 | re-import 시 refDelay 스냅샷 갱신 + "개인 보정값 리셋" 버튼 |
+| 후보 A 없이는 동작 불가 | selfLog 데이터 없으면 계산 불가 | A 완료 후 착수. UI 에 "자기-로그 데이터 필요" 안내 |
+
+**우선순위 평가:**
+- 구현 비용: 2/5 (A 완료 후 계산 레이어만 추가)
+- 사용자 가치: 3/5 (파워 유저에게 매력적, 일반 유저는 관심 낮을 수 있음)
+- 제품 철학 적합도: 4/5 (개인화 학습이 장기 가치를 높임)
+
+---
+
+### 후보 D — 미등록 보스 자동 경보
+
+> 가이드 데이터가 없는 인카운터에서 보스의 상위 피해 스킬을 자동 감지해 임시 알림을 생성한다.
+
+#### 기술 아키텍처
+
+**필요 이벤트:**
+```lua
+-- ENCOUNTER_START 에서 encounterID 가 Storage 에 없는 경우 감지
+if not addon.Storage:GetEncounterData(encounterID) then
+    EncounterEngine:StartUnknownBossCapture(encounterID, encounterName)
+end
+
+-- COMBAT_LOG_EVENT_UNFILTERED 에서 SPELL_DAMAGE 추가 수신
+-- (현재는 SPELL_CAST_START/SUCCESS 만 수신)
+if subevent == "SPELL_DAMAGE"
+   and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) ~= 0
+   and bossGUIDs[sourceGUID] then
+    local spellID = select(12, CombatLogGetCurrentEventInfo())
+    local amount  = select(15, CombatLogGetCurrentEventInfo())
+    unknownBossLog[spellID] = (unknownBossLog[spellID] or 0) + amount
+end
+```
+
+**보스 GUID 추적:**
+```lua
+-- ENCOUNTER_START 직후 boss1~boss5 유닛 GUID 캐싱
+EncounterEngine.bossGUIDs = {}
+for i = 1, 5 do
+    local guid = UnitGUID("boss" .. i)
+    if guid then EncounterEngine.bossGUIDs[guid] = true end
+end
+```
+
+**저장 구조 (전투 중 임시, SavedVariables 미저장):**
+```lua
+EncounterEngine._unknownBossCapture = {
+    encounterID   = N,
+    encounterName = "...",
+    spellDamage   = {},  -- [bossSpellID] = totalDamage
+    spellCount    = {},  -- [bossSpellID] = castCount
+}
+```
+
+전투 종료 후 상위 5개 스킬 추출 → SavedVariables 에 "후보 목록"으로 저장 → UI 에서 사용자가 확인/등록 결정.
+
+**성능:**
+- `SPELL_DAMAGE` 는 CLEU 에서 가장 빈번한 이벤트. bossGUIDs 해시 조회 + 누적만 수행 → O(1).
+- 미등록 인카운터에서만 활성화 (`StartUnknownBossCapture` 플래그). 일반 전투에서 추가 부하 없음.
+
+**taint 리스크:** 없음.
+
+#### 패턴 감지 알고리즘
+
+```
+전투 종료 후:
+candidateSpells = sort(spellDamage, descending)[1..N]
+
+필터:
+  - 피해량 상위 N=5
+  - castCount >= 2 (1회 시전 스킬은 즉발 페이즈 기믹일 수 있음)
+  - 이미 HGPT_Data 에 등록된 spellID 는 제외
+
+→ unknownBossDB[encounterID] = candidateSpells 저장
+```
+
+#### UX 플로우
+
+1. 전투 종료 후 미등록 인카운터면 채팅에 토스트:
+   ```
+   [HG] 미등록 인카운터 "거미여왕" 감지. 상위 스킬 5개 수집됨. /hg unknown 으로 확인
+   ```
+2. `/hg unknown` 명령어 또는 MainFrame 탭 → 수집된 스킬 목록 표시:
+   - 스킬 아이콘 + 이름 + 피해량 + 시전 횟수
+   - "반응 스킬" 필드 입력(옵션) + "등록" 버튼 → 임시 HGPT_Data entry 생성
+3. 등록 시 반응 스킬 없이 "모니터 전용"으로도 등록 가능 (보스 스킬 시전 시 아이콘만 표시)
+
+Mac 앱 HGPT_Data 와 공존: 임시 entry 는 `source="selfCapture"` 플래그. 이후 Mac 앱 정식 import 시 덮어씀.
+
+#### 리스크
+
+| 리스크 | 내용 | 완화 |
+|---|---|---|
+| 오탐(false positive) | 풀몹 광역 피해가 "보스 스킬"로 잡힘 | `bossGUIDs` 로 정확한 보스 GUID 필터링. 풀몹은 boss1~boss5 GUID 에 없음 |
+| 기믹 스킬 노출 | 보스 즉발 페이즈 전환 스킬이 상위에 잡힘 | `castCount < 2` 필터로 1회성 제외 |
+| SPELL_DAMAGE 추가 부하 | 미등록 인카운터에서만 활성화이지만 다인 레이드에서 SPELL_DAMAGE 폭증 | 보스 GUID 필터가 첫 번째 체크, 전체 이벤트의 5~10%만 통과 예상 |
+
+**우선순위 평가:**
+- 구현 비용: 3/5 (SPELL_DAMAGE 감지 + 미등록 분기 + UI)
+- 사용자 가치: 3/5 (새 던전 패치 직후 대기 시간 단축에 유용)
+- 제품 철학 적합도: 3/5 (자동화 가치 있으나 오탐 리스크가 제품 신뢰도를 훼손할 수 있음)
+
+---
+
+### 후보 E — 파티 힐러 분담 감지
+
+> 같은 파티의 다른 힐러가 쿨다운을 방금 사용했으면, 중복 알림을 억제한다.
+
+#### 기술 아키텍처
+
+**필요 이벤트:**
+이미 `COMBAT_LOG_EVENT_UNFILTERED` 를 구독 중. `SPELL_CAST_SUCCESS` 에서 파티원 힐러의 쿨다운 시전을 추가 감지한다.
+
+```lua
+-- Init.lua onCombatLog 에 추가 분기:
+if subevent == "SPELL_CAST_SUCCESS"
+   and sourceGUID ~= UnitGUID("player")
+   and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) ~= 0
+   and bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_PLAYER) ~= 0 then
+    addon.EncounterEngine:OnPartyHealerCast(sourceGUID, spellID)
+end
+```
+
+**파티 힐러 역할 판별:**
+```lua
+-- UnitGroupRolesAssigned: 던전파인더 그룹에서 신뢰도 높음
+-- party1~party4 유닛 토큰 순회
+local function buildHealerGUIDSet()
+    local healerGUIDs = {}
+    for i = 1, GetNumGroupMembers() do
+        local unit = IsInRaid() and "raid"..i or "party"..i
+        if UnitGroupRolesAssigned(unit) == "HEALER" then
+            local guid = UnitGUID(unit)
+            if guid then healerGUIDs[guid] = true end
+        end
+    end
+    return healerGUIDs
+end
+```
+
+PLAYER_ROLES_ASSIGNED 이벤트로 역할 변경 시 healerGUIDSet 재빌드.
+
+**파티원 쿨다운 추적:**
+```lua
+EncounterEngine.partyHealerCooldowns = {}
+-- [spellID] = { guid = "...", usedAt = GetTime() }
+
+function EncounterEngine:OnPartyHealerCast(sourceGUID, spellID)
+    if not self.healerGUIDs or not self.healerGUIDs[sourceGUID] then return end
+    if not MAJOR_HEALER_COOLDOWNS[spellID] then return end  -- 화이트리스트
+    self.partyHealerCooldowns[spellID] = {
+        guid   = sourceGUID,
+        usedAt = GetTime(),
+    }
+    addon.dprint(string.format("[HG-Party] 힐러 %s 쿨다운 사용: %d", sourceGUID, spellID))
+end
+```
+
+**TriggerAlert 억제 통합:**
+```lua
+-- TriggerAlert 내부 (쿨다운 스킵 로직 뒤)에 추가:
+local partyCast = self.partyHealerCooldowns[spellID]
+if partyCast then
+    local cd = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+    local remaining = cd and (partyCast.usedAt + (cd.duration or 0) - GetTime()) or 0
+    if remaining > 0 then
+        self:_statInc("partySuppressionSkipped")
+        addon.dprint("파티 힐러 중복 억제:", spellID)
+        return
+    end
+end
+```
+
+**저장 구조:** partyHealerCooldowns 는 전투 중 메모리 테이블만. SavedVariables 저장 불필요.
+
+**성능:** healerGUIDs 해시 조회 + MAJOR_HEALER_COOLDOWNS 화이트리스트 조회 → O(1). 화이트리스트에 없는 스킬은 즉시 탈출.
+
+#### 패턴 감지 알고리즘
+
+```
+MAJOR_HEALER_COOLDOWNS = {
+    -- 스펙 공통 대형 쿨다운만 포함 (소형 힐은 억제 대상 아님)
+    [740]    = true,  -- Tranquility (Resto Druid)
+    [267835] = true,  -- Velens Future Sight (Holy Priest)
+    [62618]  = true,  -- Power Word: Barrier (Disc)
+    [271466] = true,  -- Luminous Barrier (Disc)
+    [208128] = true,  -- Apotheosis (Holy Paladin)
+    [207399] = true,  -- Ancestral Protection Totem (Resto Shaman)
+    [51052]  = true,  -- Anti-Magic Zone (DK)
+    -- 확장 가능: SpecSpellCatalog 완성 후 연동
+}
+
+억제 조건:
+  partyCast.usedAt + spellBaseCD > GetTime() + 3초 여유
+  → "파티원이 아직 쿨다운 돌리는 중 → 내 알림 억제"
+```
+
+#### UX 플로우
+
+- 설정 탭에 "파티 쿨 분담 억제" 체크박스 (기본 ON)
+- 전투 요약 출력에 `partySuppressionSkipped` 카운터 추가:
+  ```
+  [HG] 전투 요약: 알림 8 | 파티 중복 억제 2 | ...
+  ```
+- 억제된 알림의 경우 AlertFrame 대신 미니맵 버튼 플래시 등 약한 시각 신호로 대체 가능 (옵션)
+
+#### 리스크
+
+| 리스크 | 내용 | 완화 |
+|---|---|---|
+| Blizzard API 제한 | 파티원의 실제 쿨다운 잔여 시간 조회 불가 (내 스킬만 GetSpellCooldown 신뢰 가능) | 파티원 시전 시각 + baseCD 계산 (추정). 부정확하면 ±5초 여유 버퍼 |
+| 역할 미지정 그룹 | 수동 구성 파티에서 UnitGroupRolesAssigned == "NONE" | LibGroupInSpecT 편입 시 스펙 기반 힐러 판별 가능. 현재는 NONE 이면 추적 안 함 |
+| 기능적 동등 스킬 | Tranquility ≡ Divine Hymn 이지만 spellID 가 다름 | MAJOR_HEALER_COOLDOWNS 에 스펙별 주요 쿨다운 모두 등록. SpecSpellCatalog 와 연동 (Phase 5 후반) |
+| 5인 던전에서 힐러 1명 | 파티 힐러 추적 대상이 없음 → 이 기능 의미 없음 | 파티 힐러 2명 이상일 때만 활성화 |
+
+**우선순위 평가:**
+- 구현 비용: 3/5 (CLEU 파티 분기 + healerGUIDs 빌드 + 화이트리스트)
+- 사용자 가치: 3/5 (힐러 2명 이상 파티 한정, 일반 M+ 5인은 힐러 1명)
+- 제품 철학 적합도: 3/5 (레이드 환경에서 가치 높으나 주 대상인 M+ 에서는 적용 빈도 낮음)
+
+---
+
+### 우선순위 종합 매트릭스
+
+| 후보 | 구현 비용 | 사용자 가치 | 제품 적합도 | 합산 | 착수 조건 |
+|---|---|---|---|---|---|
+| **B. 이행률 추적** | 2 | 4 | 5 | **11** | 즉시 (기존 인프라 확장) |
+| **A. 자기-로그 생성** | 3 | 4 | 5 | **12** | 즉시 (신규 이벤트 불필요) |
+| **C. Delay 자동 보정** | 2 | 3 | 4 | **9** | A 완료 후 |
+| **D. 미등록 보스 경보** | 3 | 3 | 3 | **9** | 별도 (신뢰도 리스크 높음) |
+| **E. 파티 힐러 분담** | 3 | 3 | 3 | **9** | 레이드 확장 시 |
+
+*주의: 합산이 낮아도 A > B 를 권장하는 이유는 A 가 B 의 품질(알림 relevance)을 높이는 기반 데이터를 제공하기 때문.*
+
+---
+
+### 권장 Phase 5a 선정 + 구현 범위
+
+**Phase 5a — 자기-로그 + 이행률 추적 (3~4일 작업량)**
+
+A 와 B 를 동시 착수하는 이유:
+- 공통 인프라(`EncounterEngine.combatLog` 확장, Welford 유틸, `adherenceStats` 저장) 를 한 번에 설계
+- B(이행률)가 즉시 눈에 보이는 UX 가치를 제공하면서, A(자기-로그)가 장기 데이터를 쌓는 구조
+- `CombatHistoryFrame` 확장 한 곳에서 두 기능의 UI 를 모두 노출 가능
+
+**5a 범위:**
+1. `EncounterEngine._bossEventBuffer` 추가 + SPELL_CAST_START(hostile) 기록
+2. `OnPlayerCast` 에서 bossEventBuffer 매칭 → Welford 업데이트 → `selfLog` 저장
+3. `TriggerAlert` 에서 `_pendingAlerts[spellID] = GetTime()` 기록
+4. `OnPlayerCast` 에서 reactionTime 계산 + missedAlert C_Timer
+5. `HealGuideCharDB.selfLog` + `adherenceStats` 스키마 확정
+6. `CombatHistoryFrame` 에 반응 시간 컬럼 + 이행률 컬럼 추가
+7. `/hg selflog` 슬래시: encounterID 별 수집 현황 채팅 출력
+8. `/hg adherence` 슬래시: 최근 10회 이행률 요약 채팅 출력
+
+**Phase 5b — Delay 자동 보정 (1~2일)**
+5a 완료 + 5회 이상 데이터 축적 후 착수.
+
+**Phase 5c — 미등록 보스 감지 (2일, 별도)**
+패치 직후 실기 환경이 갖춰진 시점에 착수.
+
+**Phase 5d — 파티 힐러 분담 (1~2일)**
+레이드 테스트 환경이 마련됐을 때 착수. 5인 M+ 유저에게는 우선순위 낮음.
 
 ---
 
@@ -421,3 +931,12 @@
 - [EventTracker (Wago Addons)](https://addons.wago.io/addons/eventtracker)
 - [Unified Profile Manager (CurseForge)](https://www.curseforge.com/wow/addons/unified-profile-manager)
 - [DBM-Profiles (CurseForge)](https://www.curseforge.com/wow/addons/dbm-profiles)
+- [COMBAT_LOG_EVENT - Warcraft Wiki](https://warcraft.wiki.gg/wiki/COMBAT_LOG_EVENT)
+- [UnitFlag 비트마스크 - Warcraft Wiki](https://warcraft.wiki.gg/wiki/UnitFlag)
+- [API CombatLogGetCurrentEventInfo - Warcraft Wiki](https://warcraft.wiki.gg/wiki/API_CombatLogGetCurrentEventInfo)
+- [GUID 포맷 - Warcraft Wiki](https://warcraft.wiki.gg/wiki/GUID)
+- [API UnitGroupRolesAssigned - Warcraft Wiki](https://warcraft.wiki.gg/wiki/API_UnitGroupRolesAssigned)
+- [API GetInspectSpecialization - Warcraft Wiki](https://warcraft.wiki.gg/wiki/API_GetInspectSpecialization)
+- [Details! parser.lua - GitHub](https://github.com/Tercioo/Details-Damage-Meter/blob/master/core/parser.lua)
+- [BigWigsMods/BigWigs - GitHub](https://github.com/BigWigsMods/BigWigs)
+- [LibGroupInSpecT - CurseForge](https://www.curseforge.com/wow/addons/libgroupinspect)
