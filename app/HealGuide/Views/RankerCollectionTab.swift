@@ -239,11 +239,15 @@ struct RankerCollectionTab: View {
     @ViewBuilder
     private var actionSection: some View {
         HStack {
-            Button("지금 수집") {
-                Task { await viewModel.collect() }
+            Button("지금 수집") { viewModel.startCollect() }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy || viewModel.selectedDungeon == nil)
+
+            if isBusy {
+                Button("중지") { viewModel.cancelCollect() }
+                    .buttonStyle(.bordered)
+                    .foregroundStyle(.red)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy || viewModel.selectedDungeon == nil)
 
             if !isIdle {
                 Button("초기화") { viewModel.reset() }
@@ -274,7 +278,7 @@ struct RankerCollectionTab: View {
                 if message.contains("0건") || message.contains("부족") {
                     Button("필터 완화 (유사도 0.8 → 0.6)") {
                         viewModel.relaxFilter()
-                        Task { await viewModel.collect() }
+                        viewModel.startCollect()
                     }
                     .buttonStyle(.bordered)
                 }
@@ -392,7 +396,7 @@ struct RankerCollectionTab: View {
             if preview.parsesFiltered < max(1, preview.parsesCollected / 2) {
                 Button("필터 완화 (유사도 → 0.6) 후 재수집") {
                     viewModel.relaxFilter()
-                    Task { await viewModel.collect() }
+                    viewModel.startCollect()
                 }
                 .buttonStyle(.bordered)
                 .foregroundStyle(.orange)

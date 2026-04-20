@@ -55,6 +55,8 @@ final class RankerCollectionViewModel: ObservableObject {
     private var suppressPersist: Bool = false
     // 이름 해상 백그라운드 Task 참조 — 재수집 시 이전 Task 취소로 불필요한 API 호출 회피.
     private var enrichTask: Task<Void, Never>?
+    // 수집 전체 Task — 사용자가 '중지' 버튼을 누르면 취소
+    private var collectTask: Task<Void, Never>?
 
     init(
         apiClient:        any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
@@ -121,7 +123,25 @@ final class RankerCollectionViewModel: ObservableObject {
 
     // MARK: - 수집 실행
 
-    func collect() async {
+    // View 진입점. 이전 Task 취소 후 새 수집 시작.
+    func startCollect() {
+        collectTask?.cancel()
+        collectTask = Task { [weak self] in
+            await self?.collect()
+            self?.collectTask = nil
+        }
+    }
+
+    // 진행 중인 수집 취소. enrich 도 함께 취소. state → idle.
+    func cancelCollect() {
+        collectTask?.cancel()
+        collectTask = nil
+        enrichTask?.cancel()
+        enrichTask = nil
+        state = .idle
+    }
+
+    private func collect() async {
         guard let dungeon = selectedDungeon else { return }
         guard !clientID.isEmpty, !clientSecret.isEmpty else {
             state = .failure("WarcraftLogs Client ID / Secret 을 입력해주세요.")
@@ -139,9 +159,11 @@ final class RankerCollectionViewModel: ObservableObject {
         do {
             token = try await apiClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
         } catch {
+            if Task.isCancelled { state = .idle; return }
             state = .failure("액세스 토큰 발급 실패: \(errorMessage(error))")
             return
         }
+        if Task.isCancelled { state = .idle; return }
 
         // 2. characterRankings 조회
         updateProgress(total: topNCount.rawValue, completed: 0, name: "랭킹 조회 중...")
@@ -159,9 +181,11 @@ final class RankerCollectionViewModel: ObservableObject {
                 token:        token
             )
         } catch {
+            if Task.isCancelled { state = .idle; return }
             state = .failure("characterRankings 조회 실패: \(errorMessage(error))")
             return
         }
+        if Task.isCancelled { state = .idle; return }
 
         if rawParses.isEmpty {
             state = .failure("KR 서버에서 해당 조건의 랭킹 데이터가 없습니다. '전세계 확장' 옵션을 활성화해보세요.")
@@ -186,6 +210,7 @@ final class RankerCollectionViewModel: ObservableObject {
         var parseResults: [(parse: RankerParse, bossPairs: [BossHealPair])] = []
 
         for (index, parse) in filteredParses.enumerated() {
+            if Task.isCancelled { state = .idle; return }
             updateProgress(total: totalFiltered, completed: index, name: "\(parse.characterName) 처리 중...")
 
             do {
@@ -315,6 +340,8 @@ final class RankerCollectionViewModel: ObservableObject {
     // MARK: - 초기화
 
     func reset() {
+        collectTask?.cancel()
+        collectTask = nil
         enrichTask?.cancel()
         enrichTask = nil
         state           = .idle

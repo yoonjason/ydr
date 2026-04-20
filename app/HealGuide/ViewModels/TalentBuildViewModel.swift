@@ -35,6 +35,9 @@ final class TalentBuildViewModel: ObservableObject {
     private let keychain:       any KeychainStoring
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "TalentBuildVM")
 
+    // 수집 Task 참조. '중지' 버튼으로 취소.
+    private var collectTask: Task<Void, Never>?
+
     init(
         apiClient:      any WarcraftLogsAPIClient    = WarcraftLogsAPIClientImpl(),
         rankingService: any CharacterRankingsService = CharacterRankingsServiceImpl(),
@@ -59,13 +62,32 @@ final class TalentBuildViewModel: ObservableObject {
     }
 
     func reset() {
+        collectTask?.cancel()
+        collectTask = nil
         state = .idle
         lastCopyFeedback = nil
     }
 
     // MARK: - Collect
 
-    func collect() async {
+    // View 에서 호출하는 진입점. 이전 Task 취소 후 새로 시작.
+    func startCollect() {
+        collectTask?.cancel()
+        collectTask = Task { [weak self] in
+            await self?.collect()
+            self?.collectTask = nil
+        }
+    }
+
+    // 진행 중인 수집 취소. state 는 idle 로 복귀.
+    func cancelCollect() {
+        collectTask?.cancel()
+        collectTask = nil
+        state = .idle
+        lastCopyFeedback = nil
+    }
+
+    private func collect() async {
         guard let dungeon = selectedDungeon else { return }
         guard !clientID.isEmpty, !clientSecret.isEmpty else {
             state = .failure("WarcraftLogs Client ID / Secret 을 입력해주세요. (로그 분석 탭에서 설정한 값이 자동 로드됩니다)")
@@ -79,9 +101,11 @@ final class TalentBuildViewModel: ObservableObject {
         do {
             token = try await apiClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
         } catch {
+            if Task.isCancelled { state = .idle; return }
             state = .failure("액세스 토큰 발급 실패: \(error.localizedDescription)")
             return
         }
+        if Task.isCancelled { state = .idle; return }
 
         // 2. characterRankings
         state = .collecting(completed: 0, total: topNCount.rawValue, currentName: "랭킹 조회 중...")
@@ -97,9 +121,11 @@ final class TalentBuildViewModel: ObservableObject {
                 token:        token
             )
         } catch {
+            if Task.isCancelled { state = .idle; return }
             state = .failure("characterRankings 조회 실패: \(error.localizedDescription)")
             return
         }
+        if Task.isCancelled { state = .idle; return }
 
         if parses.isEmpty {
             state = .failure("KR 서버에서 해당 조건의 랭킹 데이터가 없습니다.")
@@ -109,6 +135,7 @@ final class TalentBuildViewModel: ObservableObject {
         // 3. 파스별 actor ID → talentImportCode 조회
         var samples: [TalentImportSample] = []
         for (index, parse) in parses.enumerated() {
+            if Task.isCancelled { state = .idle; return }
             state = .collecting(
                 completed:   index,
                 total:       parses.count,
@@ -149,22 +176,16 @@ final class TalentBuildViewModel: ObservableObject {
             return
         }
 
+        if Task.isCancelled { state = .idle; return }
+
         // 4. 완전 동일 importCode 그룹핑 → 빈도 내림차순
+        let totalSamples = samples.count
         let grouped = Dictionary(grouping: samples, by: \.importCode)
-        let groups = grouped.map { (code, samples) -> TalentBuildGroup in
+        let groups = grouped.map { (code, groupSamples) in
             TalentBuildGroup(
-                importCode:     code,
-                usageCount:     samples.count,
-                totalSamples:   samples.count,
-                characterNames: samples.map(\.characterName)
-            )
-        }
-        .map { group -> TalentBuildGroup in
-            TalentBuildGroup(
-                importCode:     group.importCode,
-                usageCount:     group.usageCount,
-                totalSamples:   samples.count,
-                characterNames: group.characterNames
+                importCode:   code,
+                samples:      groupSamples,
+                totalSamples: totalSamples
             )
         }
         .sorted { $0.usageCount > $1.usageCount }

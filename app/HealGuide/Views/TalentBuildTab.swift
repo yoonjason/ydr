@@ -102,11 +102,15 @@ struct TalentBuildTab: View {
     @ViewBuilder
     private var actionSection: some View {
         HStack {
-            Button("빌드 조회") {
-                Task { await viewModel.collect() }
+            Button("빌드 조회") { viewModel.startCollect() }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy || viewModel.selectedDungeon == nil)
+
+            if isBusy {
+                Button("중지") { viewModel.cancelCollect() }
+                    .buttonStyle(.bordered)
+                    .foregroundStyle(.red)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy || viewModel.selectedDungeon == nil)
 
             if case .success = viewModel.state {
                 Button("초기화") { viewModel.reset() }
@@ -197,9 +201,13 @@ struct TalentBuildTab: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                Text("사용 랭커: \(group.characterNames.prefix(5).joined(separator: ", "))\(group.characterNames.count > 5 ? " 외 \(group.characterNames.count - 5)명" : "")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                // 사용 랭커 목록 — 각 이름을 해당 WCL 리포트 링크로 렌더 (클릭 시 브라우저 열림)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("사용 랭커 (\(group.samples.count)명):")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    FlowText(samples: group.samples)
+                }
 
                 Text(group.importCode)
                     .font(.system(.caption2, design: .monospaced))
@@ -212,6 +220,38 @@ struct TalentBuildTab: View {
                     .truncationMode(.tail)
             }
             .padding(8)
+        }
+    }
+
+    // 랭커 이름을 WCL 리포트 링크로 나열. Wrap 처리를 위해 내부에 Text 연결.
+    private struct FlowText: View {
+        let samples: [TalentImportSample]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(samples) { sample in
+                    HStack(spacing: 4) {
+                        if let url = sample.warcraftLogsURL {
+                            Link(destination: url) {
+                                HStack(spacing: 3) {
+                                    Text(sample.characterName)
+                                        .font(.caption2)
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.caption2)
+                                }
+                                .foregroundStyle(.blue)
+                            }
+                            Text("(\(sample.reportCode)#fight=\(sample.fightID))")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(sample.characterName)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
     }
 
