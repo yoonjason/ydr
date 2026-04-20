@@ -86,7 +86,7 @@ final class RankerCollectionViewModel: ObservableObject {
     }
 
     private func persistWowAddonsPath() {
-        guard !suppressPersist else { return }
+        guard !suppressPersist, !wowAddonsPath.isEmpty else { return }
         UserDefaults.standard.set(wowAddonsPath, forKey: "wowAddonsPath")
     }
 
