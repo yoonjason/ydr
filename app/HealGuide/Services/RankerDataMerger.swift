@@ -8,6 +8,13 @@ protocol RankerDataMerger {
         parses: [(parse: RankerParse, bossPairs: [BossHealPair])],
         meta:   HGPTRankerDataMeta
     ) -> HGPTRankerData
+
+    /// 병합 결과에서 미리보기용 요약 생성
+    func buildPreview(
+        parsesCollected: Int,
+        parsesFiltered:  Int,
+        data:            HGPTRankerData
+    ) -> RankerPreviewResult
 }
 
 // MARK: - Implementation

@@ -39,10 +39,10 @@ final class RankerCollectionViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let apiClient:     any WarcraftLogsAPIClient
+    private let apiClient:      any WarcraftLogsAPIClient
     private let rankingService: any CharacterRankingsService
-    private let filterService:  TalentFilterServiceImpl
-    private let merger:         RankerDataMergerImpl
+    private let filterService:  any TalentFilterService
+    private let merger:         any RankerDataMerger
     private let serializer:     RankerLuaSerializer
     private let cacheService:   RankerCacheService
     private let keychain:       any KeychainStoring
@@ -51,15 +51,17 @@ final class RankerCollectionViewModel: ObservableObject {
     init(
         apiClient:      any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
         rankingService: any CharacterRankingsService   = CharacterRankingsServiceImpl(),
+        filterService:  any TalentFilterService        = TalentFilterServiceImpl(),
+        merger:         any RankerDataMerger           = RankerDataMergerImpl(),
         keychain:       any KeychainStoring            = FileCredentialStore(),
         cacheService:   RankerCacheService             = RankerCacheService()
     ) {
         self.apiClient      = apiClient
         self.rankingService = rankingService
+        self.filterService  = filterService
+        self.merger         = merger
         self.keychain       = keychain
         self.cacheService   = cacheService
-        self.filterService  = TalentFilterServiceImpl()
-        self.merger         = RankerDataMergerImpl()
         self.serializer     = RankerLuaSerializer()
     }
 
@@ -327,12 +329,14 @@ final class RankerCollectionViewModel: ObservableObject {
     ) -> [BossHealPair] {
         guard !bossCasts.isEmpty, !healerCasts.isEmpty else { return [] }
 
+        // API 응답 순서가 타임스탬프 오름차순을 보장하지 않으므로 1회 정렬 후 재사용
+        let sortedHealerCasts = healerCasts.sorted { $0.timestamp < $1.timestamp }
         var pairs: [BossHealPair] = []
 
         for bossCast in bossCasts {
             // 보스 스킬 시전 직후 30초 이내 힐러 스킬 중 가장 빠른 것
             let window = (bossCast.timestamp)...(bossCast.timestamp + 30_000)
-            for healCast in healerCasts where window.contains(healCast.timestamp) {
+            for healCast in sortedHealerCasts where window.contains(healCast.timestamp) {
                 let delaySeconds = Double(healCast.timestamp - bossCast.timestamp) / 1000.0
                 pairs.append(BossHealPair(
                     encounterID:   encounterID,
