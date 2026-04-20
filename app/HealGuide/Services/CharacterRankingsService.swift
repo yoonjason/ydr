@@ -85,20 +85,28 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
             }
             let scalar = decoded.data?.worldData?.encounter?.characterRankings
             let allRankings = scalar?.rankings ?? []
-            return Array(allRankings.prefix(limit)).map { ranking in
+            // WCL은 접근 제한/삭제된 리포트에서 fightID를 null로 내릴 수 있음 → 해당 엔트리 스킵
+            let parses: [RankerParse] = allRankings.compactMap { ranking in
+                guard let fightID = ranking.report.fightID else {
+                    logger.warning("characterRankings: fightID null 엔트리 스킵 (name: \(ranking.name))")
+                    return nil
+                }
                 let talentIDs = Set((ranking.talents ?? []).map(\.id))
                 return RankerParse(
-                    id: "\(ranking.report.code)-\(ranking.report.fightID)",
+                    id: "\(ranking.report.code)-\(fightID)",
                     reportCode: ranking.report.code,
-                    fightID: ranking.report.fightID,
+                    fightID: fightID,
                     talentNodeIDs: talentIDs,
                     characterName: ranking.name
                 )
             }
+            return Array(parses.prefix(limit))
         } catch let error as AppError {
             throw error
         } catch {
-            logger.error("characterRankings 디코딩 실패: \(error)")
+            let preview = String(data: data.prefix(1_500), encoding: .utf8) ?? "<non-utf8>"
+            logger.error("characterRankings 디코딩 실패: \(String(describing: error))")
+            logger.error("응답 본문(앞 1500자): \(preview, privacy: .public)")
             throw AppError.decodingFailed
         }
     }
@@ -204,12 +212,32 @@ private struct CharacterRankingsScalar: Decodable {
 
         struct ReportRef: Decodable {
             let code:    String
-            let fightID: Int
+            let fightID: Int?   // WCL이 접근 제한/삭제 리포트에서 null 반환 가능
         }
 
         struct TalentEntry: Decodable {
-            let id:   Int
-            let rank: Int?
+            let id: Int
+
+            private enum CodingKeys: String, CodingKey {
+                case id, guid
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                // WarcraftLogs characterRankings JSON scalar는 스펙/확장팩에 따라
+                // talents 원소 키를 id 또는 guid 로 내려줌. 양쪽 모두 수용.
+                if let value = try container.decodeIfPresent(Int.self, forKey: .id) {
+                    id = value
+                } else if let value = try container.decodeIfPresent(Int.self, forKey: .guid) {
+                    id = value
+                } else {
+                    throw DecodingError.keyNotFound(
+                        CodingKeys.id,
+                        .init(codingPath: decoder.codingPath,
+                              debugDescription: "Neither 'id' nor 'guid' found in talent entry")
+                    )
+                }
+            }
         }
     }
 }
