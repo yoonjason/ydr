@@ -187,6 +187,10 @@ struct RankerPreviewResult {
         let encounterID:  Int
         let bossSpellID:  Int
         let mappingCount: Int
+
+        // encounterID + bossSpellID 조합을 SwiftUI ForEach ID로 사용 (보스 스펠이
+        // 여러 encounter에 걸쳐 재사용될 수 있어 bossSpellID 단독은 충돌 가능).
+        var compositeID: String { "\(encounterID)-\(bossSpellID)" }
     }
     let bossEntries:           [BossEntry]
     let highVarianceWarnings:  [String]   // "encID-bossID: stddev N.N"

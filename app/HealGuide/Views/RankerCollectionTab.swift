@@ -284,25 +284,27 @@ struct RankerCollectionTab: View {
             // 보스 스킬 매핑 목록
             if !preview.bossEntries.isEmpty {
                 GroupBox(label: Text("보스별 매핑").font(.subheadline)) {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(preview.bossEntries, id: \.bossSpellID) { entry in
-                            HStack {
-                                Text("Enc \(entry.encounterID)")
-                                    .font(.caption)
-                                    .frame(width: 70, alignment: .leading)
-                                Text("Boss #\(entry.bossSpellID)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text("힐 스킬 \(entry.mappingCount)개")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(preview.bossEntries, id: \.compositeID) { entry in
+                                HStack {
+                                    Text("Enc \(entry.encounterID)")
+                                        .font(.caption)
+                                        .frame(width: 70, alignment: .leading)
+                                    Text("Boss #\(entry.bossSpellID)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("힐 스킬 \(entry.mappingCount)개")
+                                        .font(.caption)
+                                        .foregroundStyle(.green)
+                                }
                             }
                         }
+                        .padding(6)
                     }
-                    .padding(6)
+                    .frame(maxHeight: 200)
                 }
-                .frame(maxHeight: 200)
             }
 
             // 메타데이터 패널
