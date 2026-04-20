@@ -72,8 +72,8 @@ struct RankerDataMergerImpl: RankerDataMerger {
 
         // delay 오름차순 정렬
         for encID in encounterData.keys {
-            for bossID in encounterData[encID]!.keys {
-                encounterData[encID]![bossID]!.sort { $0.delay < $1.delay }
+            for bossID in (encounterData[encID] ?? [:]).keys {
+                encounterData[encID]?[bossID]?.sort { $0.delay < $1.delay }
             }
         }
 

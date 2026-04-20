@@ -321,7 +321,7 @@ final class RankerCollectionViewModel: ObservableObject {
         return allPairs
     }
 
-    private nonisolated static func buildPairs(
+    nonisolated static func buildPairs(
         encounterID:  Int,
         bossCasts:    [CastEvent],
         healerCasts:  [CastEvent],
@@ -335,8 +335,10 @@ final class RankerCollectionViewModel: ObservableObject {
 
         for bossCast in bossCasts {
             // 보스 스킬 시전 직후 30초 이내 힐러 스킬 중 가장 빠른 것
-            let window = (bossCast.timestamp)...(bossCast.timestamp + 30_000)
-            for healCast in sortedHealerCasts where window.contains(healCast.timestamp) {
+            let windowUpperBound = bossCast.timestamp + 30_000
+            for healCast in sortedHealerCasts {
+                if healCast.timestamp > windowUpperBound { break }
+                if healCast.timestamp < bossCast.timestamp { continue }
                 let delaySeconds = Double(healCast.timestamp - bossCast.timestamp) / 1000.0
                 pairs.append(BossHealPair(
                     encounterID:   encounterID,
@@ -344,7 +346,7 @@ final class RankerCollectionViewModel: ObservableObject {
                     healSpellID:   healCast.spellID,
                     delaySeconds:  delaySeconds
                 ))
-                break   // 첫 번째 반응만 채택
+                break
             }
         }
 
