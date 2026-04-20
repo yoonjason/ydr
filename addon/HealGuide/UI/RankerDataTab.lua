@@ -20,6 +20,12 @@ local function spellName(spellID)
     return "ID:" .. tostring(spellID)
 end
 
+-- Lua 에서 0 은 truthy 이므로 GetWidth() 반환값이 0 일 때 fallback 을 쓰도록 보호
+local function safeWidth(frame, fallback)
+    local w = frame and frame:GetWidth()
+    return (w and w > 0) and w or fallback
+end
+
 -- ── 상세 펼치기 프레임 생성 ────────────────────────────────────────────────────
 
 local function createDetailFrame(parent)
@@ -195,7 +201,7 @@ function MainFrame:_CreateRankerTab(panel)
     panel.rankerScrollFrame = scrollFrame
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(scrollFrame:GetWidth() or 490)
+    content:SetWidth(safeWidth(scrollFrame, 490))
     content:SetHeight(1)
     scrollFrame:SetScrollChild(content)
     panel.rankerContent  = content
@@ -231,7 +237,7 @@ function MainFrame:_RefreshRankerTab()
     -- 엔트리 목록 재구성
     local content    = panel.rankerContent
     local entryFrames = panel._rankerEntryFrames
-    local totalWidth = content:GetWidth() or 490
+    local totalWidth = safeWidth(content, 490)
 
     for _, ef in ipairs(entryFrames) do ef:Hide() end
 
