@@ -11,9 +11,18 @@ enum TacticalGuideCatalog {
     }
 
     /// WCL 영문 보스명 정규화 매칭. 정관사/대소문자/공백 차이 흡수.
+    /// 1차: 정확 일치 — 2차: substring 양방향 contains (수식어 생략 케이스 방어).
+    /// 예: WCL "Garfrost" ↔ catalog "Forgemaster Garfrost" — 후자가 전자를 contains.
     static func bossGuide(forDungeonID id: Int, englishBossName: String) -> BossTacticalGuide? {
         let target = normalize(englishBossName)
-        return guides[id]?.first { normalize($0.englishBossName) == target }
+        guard let list = guides[id], !list.isEmpty else { return nil }
+        if let exact = list.first(where: { normalize($0.englishBossName) == target }) {
+            return exact
+        }
+        return list.first { guide in
+            let cat = normalize(guide.englishBossName)
+            return cat.contains(target) || target.contains(cat)
+        }
     }
 
     /// 특정 bossSpellID 의 한국어 스킬명 과 매칭되는 전술 라인(들) 반환.

@@ -397,10 +397,23 @@ final class RankerCollectionViewModel: ObservableObject {
         if !englishEncounterNames.isEmpty {
             let dungeonID = enrichedData.meta.dungeonID
             var matched: [Int: [Int: [TacticalLine]]] = [:]
+            print("[HG-TG-DEBUG] tacticalLines 매칭 시작 — dungeonID=\(dungeonID), 영문 보스명: \(englishEncounterNames.values)")
             for (encID, bossMap) in enrichedData.encounterData {
-                guard let englishBossName = englishEncounterNames[encID] else { continue }
+                guard let englishBossName = englishEncounterNames[encID] else {
+                    print("[HG-TG-DEBUG]   encID=\(encID) englishBossName 없음 — 스킵")
+                    continue
+                }
+                let bossGuide = TacticalGuideCatalog.bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName)
+                if bossGuide == nil {
+                    print("[HG-TG-DEBUG]   '\(englishBossName)' catalog 매칭 실패")
+                    continue
+                }
+                print("[HG-TG-DEBUG]   '\(englishBossName)' → '\(bossGuide!.koreanBossName)' 매칭 성공, \(bossGuide!.lines.count) 라인")
                 for bossSpellID in bossMap.keys {
-                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else { continue }
+                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else {
+                        print("[HG-TG-DEBUG]     bossSpellID=\(bossSpellID) 스킬 한국어명 없음")
+                        continue
+                    }
                     let lines = TacticalGuideCatalog.matchingLines(
                         dungeonID: dungeonID,
                         englishBossName: englishBossName,
@@ -408,11 +421,13 @@ final class RankerCollectionViewModel: ObservableObject {
                     )
                     if !lines.isEmpty {
                         matched[encID, default: [:]][bossSpellID] = lines
+                        print("[HG-TG-DEBUG]     bossSpellID=\(bossSpellID) '\(spellKoreanName)' → \(lines.count) 라인 매칭")
                     }
                 }
             }
             enrichedData.tacticalLines = matched
-            logger.debug("tacticalLines 매칭: \(matched.count)개 encounter, 총 \(matched.values.reduce(0) { $0 + $1.count })개 스킬")
+            print("[HG-TG-DEBUG] tacticalLines 최종: \(matched.count)개 encounter")
+            logger.debug("tacticalLines 매칭: \(matched.count)개 encounter")
         }
         state = .preview(enrichedPreview, enrichedData)
     }
