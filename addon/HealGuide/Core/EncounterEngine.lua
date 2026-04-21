@@ -316,6 +316,32 @@ function EncounterEngine:OnCombatLog(
     -- 순위 후보가 포함돼 있어 각각 별도 알림으로 들어감).
     local useBetaCD = addon.Storage:GetSetting("useBetaCooldownFallback")
 
+    -- 전술 가이드 1줄 선택: matched._tactics 중 우선순위 최상 (critical > important > note).
+    -- 같은 bossSpellID 의 모든 힐 알림에 동일한 전술 텍스트 표시.
+    local pickedTacticAction, pickedTacticPriority
+    if type(matched._tactics) == "table" then
+        local priorityRank = { critical = 3, important = 2, note = 1 }
+        local bestRank = 0
+        for _, t in ipairs(matched._tactics) do
+            if type(t) == "table" and type(t.action) == "string" and t.action ~= "" then
+                local rank = priorityRank[t.priority] or 0
+                if rank > bestRank then
+                    bestRank = rank
+                    pickedTacticAction = t.action
+                    pickedTacticPriority = t.priority
+                end
+            end
+        end
+        if pickedTacticAction and pickedTacticPriority then
+            -- marker (★/☆) 를 action 앞에 붙여 한 줄에 압축
+            local marker = ""
+            if pickedTacticPriority == "critical" then marker = "★ "
+            elseif pickedTacticPriority == "important" then marker = "☆ "
+            end
+            pickedTacticAction = marker .. pickedTacticAction
+        end
+    end
+
     for _, entry in ipairs(matched) do
         -- §5D: M+ 활성일 때만 minKeystone 필터 적용
         if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
@@ -350,10 +376,13 @@ function EncounterEngine:OnCombatLog(
 
             local entryCondition = entry.condition
             if not betaSkip then
+            -- 전술 액션/우선순위를 클로저에 캡처해 예약 시점이 아닌 실제 발사 시점에 전달
+            local capturedTacticAction   = pickedTacticAction
+            local capturedTacticPriority = pickedTacticPriority
             self:_scheduleAlert(playerSpellID, delay, "reactive", nil, function()
                 if self.paused then return end
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
-                    self:TriggerAlert(playerSpellID, "reactive")
+                    self:TriggerAlert(playerSpellID, "reactive", capturedTacticAction, capturedTacticPriority)
                 else
                     self:_statInc("conditionSkipped")
                 end
@@ -364,7 +393,9 @@ function EncounterEngine:OnCombatLog(
     end
 end
 
-function EncounterEngine:TriggerAlert(spellID, source)
+-- TriggerAlert(spellID, source [, tacticAction, tacticPriority])
+--   tacticAction / tacticPriority: 해당 힐 스킬을 유발한 보스 스킬의 전술 가이드 1줄 (옵션)
+function EncounterEngine:TriggerAlert(spellID, source, tacticAction, tacticPriority)
     -- §5B 전역 게이트: M+ 활성 중 keystoneMinLevel 미달이면 스킵
     if self.keystoneLevel > 0 then
         local minLvl = addon.Storage:GetSetting("keystoneMinLevel") or 2
@@ -400,7 +431,7 @@ function EncounterEngine:TriggerAlert(spellID, source)
 
     self:_statInc("fired")
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
-    addon.AlertFrame:ShowAlert(spellID)
+    addon.AlertFrame:ShowAlert(spellID, tacticAction, tacticPriority)
 
     table.insert(self.combatLog, {
         type = "alert",

@@ -120,6 +120,21 @@ function AlertFrame:_CreateSlot(index)
     local textColor = addon.Storage:GetSetting("alertTextColor") or { r = 1, g = 1, b = 1, a = 1 }
     nameText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
 
+    -- 전술 가이드 1줄 (보스 스킬 시전 시 힐러 대응 방법). 색상은 priority 에 따라
+    -- ShowAlert 에서 동적 설정.
+    local tacticText = frame:CreateFontString(nil, "OVERLAY")
+    if fontPath then
+        tacticText:SetFont(fontPath, math.max(10, fontSize - 4), "")
+    else
+        tacticText:SetFontObject("GameFontNormalSmall")
+    end
+    tacticText:SetPoint("TOPLEFT",  nameText, "BOTTOMLEFT", 0, -2)
+    tacticText:SetPoint("TOPRIGHT", nameText, "BOTTOMRIGHT", 0, -2)
+    tacticText:SetJustifyH("LEFT")
+    tacticText:SetWordWrap(false)
+    tacticText:Hide()
+    frame.tacticText = tacticText
+
     local countdownText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     countdownText:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
     countdownText:SetJustifyH("RIGHT")
@@ -183,7 +198,10 @@ function AlertFrame:_FindAvailableSlot()
     return slots[maxSlots]
 end
 
-function AlertFrame:ShowAlert(spellID)
+-- ShowAlert(spellID, tacticText?, tacticPriority?)
+--   tacticText:     '떨어지는 구슬 받아주기' 같은 전술 대응 1줄 (옵션)
+--   tacticPriority: "critical" / "important" / "note" — 색상 결정
+function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority)
     if not anchor then return end
 
     local spellInfo = C_Spell.GetSpellInfo(spellID)
@@ -211,6 +229,24 @@ function AlertFrame:ShowAlert(spellID)
         slot.nameText:Show()
     else
         slot.nameText:Hide()
+    end
+
+    -- 전술 라인 표시 (있으면). priority 로 색상 구분:
+    --   critical=빨강, important=주황, note=흰색
+    if slot.tacticText then
+        if type(tacticText) == "string" and tacticText ~= "" then
+            local r, g, b = 1, 1, 1
+            if tacticPriority == "critical" then
+                r, g, b = 1, 0.33, 0.33
+            elseif tacticPriority == "important" then
+                r, g, b = 1, 0.67, 0.27
+            end
+            slot.tacticText:SetText(tacticText)
+            slot.tacticText:SetTextColor(r, g, b, 1)
+            slot.tacticText:Show()
+        else
+            slot.tacticText:Hide()
+        end
     end
 
     slot.icon:SetTexture(texture)
