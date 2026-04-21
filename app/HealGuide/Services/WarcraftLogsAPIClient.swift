@@ -6,7 +6,7 @@ enum HostilityType: String {
     case hostile = "Enemies"
 }
 
-protocol WarcraftLogsAPIClient {
+protocol WarcraftLogsAPIClient: Sendable {
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String
     func fetchEncounters(reportCode: String, fightID: Int, token: String) async throws -> (dungeonName: String, windows: [BossWindow])
     func fetchPlayerDetails(reportCode: String, fightID: Int, token: String) async throws -> [HealerCandidate]

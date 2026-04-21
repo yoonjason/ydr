@@ -1,4 +1,7 @@
-final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient {
+// 테스트 주입용 stub. 변이 가능한 Result 필드를 보유하므로 컴파일러가 합성하는
+// Sendable 을 못 받음. @unchecked Sendable 로 수동 선언 — 테스트 환경에서만
+// 사용되고 프로덕션 actor 경계를 넘지 않는 전제.
+final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient, @unchecked Sendable {
     var tokenResult: Result<String, AppError> = .success("mock-token")
     var encountersResult: Result<(String, [BossWindow]), AppError> = .success((
         "Mock Dungeon",

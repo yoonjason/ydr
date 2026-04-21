@@ -128,7 +128,10 @@ actor RankerNameResolverImpl: RankerNameResolver {
             for id in ids {
                 group.addTask { [wclClient] in
                     do {
-                        if let name = try await wclClient.fetchEncounterName(encounterID: id, token: token) {
+                        // WCL 이 알 수 없는 ID 에 대해 "" 를 반환할 수 있어 명시적 비어있음 가드.
+                        // 빈 문자열을 캐시에 넣으면 UI 에서 공란으로 표시되어 오해 유발.
+                        if let name = try await wclClient.fetchEncounterName(encounterID: id, token: token),
+                           !name.isEmpty {
                             return (id, name)
                         }
                         return nil

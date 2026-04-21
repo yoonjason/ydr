@@ -2,8 +2,10 @@ import SwiftUI
 import os
 
 // encounterID/dungeonID 매핑 조사용 디버그 탭.
-// 현재 RankerNameResolver 가 WCL encID 를 Blizzard journal-encounter 에 그대로 넘겨
-// 잘못된 레이드 보스 이름을 반환하는 버그가 있음. 올바른 엔드포인트를 찾기 위한 실험실.
+// 2026-04-21: _name 필드 오염 버그 (WCL encID ↔ Blizzard journal-encounter ID
+// 공간 불일치) 근본 원인을 여기서 실기 검증해 WCL worldData.encounter(id:).name
+// 경로로 전환했음. 커밋 ee400a3 에서 수정 완료. 이 탭은 추후 유사 매핑 문제
+// (신규 시즌/레이드 ID 체계 변경 등) 재발 시 진단 도구로 활용.
 struct IDMappingDebugTab: View {
     @StateObject private var viewModel = IDMappingDebugViewModel()
 
@@ -94,7 +96,8 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryWCLEncounterName() }
                 }
                 .buttonStyle(.borderedProminent)
-                Text("옵션 C — WCL 자체 name (가장 안전할 것으로 예상)")
+                .disabled(viewModel.isBusy)
+                Text("옵션 C — WCL 자체 name (가장 안전)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
 
@@ -103,7 +106,8 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryBlizzardJournalEncounter() }
                 }
                 .buttonStyle(.bordered)
-                Text("현재 버그 방식 (비교 기준)")
+                .disabled(viewModel.isBusy)
+                Text("구 버그 방식 (비교 기준)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
 
@@ -112,6 +116,7 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryBlizzardJournalEncounterForJournalID() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(viewModel.isBusy)
                 Text("journalEncounterID 로 조회 — 레이드 보스 확인용")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -121,6 +126,7 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryBlizzardJournalInstance() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(viewModel.isBusy)
                 Text("인스턴스 단위 — encounters[] 배열로 보스 리스트")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -130,6 +136,7 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryBlizzardMPlusIndex() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(viewModel.isBusy)
                 Text("M+ 전용 — 전체 던전 목록 (dungeonID=CM mapID)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -139,6 +146,7 @@ struct IDMappingDebugTab: View {
                     Task { await viewModel.queryBlizzardMPlusDungeon() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(viewModel.isBusy)
                 Text("M+ 던전 상세 — encounters 필드 존재 여부 확인")
                     .font(.caption2).foregroundStyle(.secondary)
             }
