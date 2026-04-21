@@ -3,10 +3,14 @@ import Foundation
 // MARK: - Protocol
 
 protocol RankerDataMerger {
-    /// 수집된 파스들의 보스→힐 쌍을 Welford 통계 + 다수결 필터로 병합
+    /// 수집된 파스들의 보스→힐 쌍을 Welford 통계 + 다수결 필터로 병합.
+    /// encounterNames: 수집 시점에 WCL dungeonPulls.name 에서 모은 [encID: 한국어 이름].
+    /// per-pull encID 는 worldData.encounter(id:).name 네임스페이스에 없어 런타임 Blizzard/WCL
+    /// 조회 실패 → 이 시점에 미리 캡처해둔 이름만 신뢰 가능.
     func merge(
-        parses: [(parse: RankerParse, bossPairs: [BossHealPair])],
-        meta:   HGPTRankerDataMeta
+        parses:         [(parse: RankerParse, bossPairs: [BossHealPair])],
+        meta:           HGPTRankerDataMeta,
+        encounterNames: [Int: String]
     ) -> HGPTRankerData
 
     /// 병합 결과에서 미리보기용 요약 생성
@@ -25,11 +29,12 @@ struct RankerDataMergerImpl: RankerDataMerger {
     static let highStddevThreshold: Double = 2.0
 
     func merge(
-        parses: [(parse: RankerParse, bossPairs: [BossHealPair])],
-        meta:   HGPTRankerDataMeta
+        parses:         [(parse: RankerParse, bossPairs: [BossHealPair])],
+        meta:           HGPTRankerDataMeta,
+        encounterNames: [Int: String] = [:]
     ) -> HGPTRankerData {
         guard !parses.isEmpty else {
-            return HGPTRankerData(meta: meta, encounterData: [:], encounterNames: [:])
+            return HGPTRankerData(meta: meta, encounterData: [:], encounterNames: encounterNames)
         }
 
         let totalParses = parses.count
@@ -77,7 +82,7 @@ struct RankerDataMergerImpl: RankerDataMerger {
             }
         }
 
-        return HGPTRankerData(meta: meta, encounterData: encounterData, encounterNames: [:])
+        return HGPTRankerData(meta: meta, encounterData: encounterData, encounterNames: encounterNames)
     }
 
     // MARK: - 미리보기 결과 생성
@@ -91,11 +96,14 @@ struct RankerDataMergerImpl: RankerDataMerger {
         var warnings: [String] = []
 
         for (encID, bossMap) in data.encounterData.sorted(by: { $0.key < $1.key }) {
+            let encName = data.encounterNames[encID]
             for (bossID, entries) in bossMap.sorted(by: { $0.key < $1.key }) {
                 bossEntries.append(.init(
-                    encounterID:  encID,
-                    bossSpellID:  bossID,
-                    mappingCount: entries.count
+                    encounterID:   encID,
+                    bossSpellID:   bossID,
+                    mappingCount:  entries.count,
+                    encounterName: encName,
+                    bossSpellName: nil
                 ))
                 for entry in entries where entry.stddev >= Self.highStddevThreshold {
                     warnings.append("Enc\(encID)-Boss\(bossID)-Spell\(entry.spellID): stddev \(String(format: "%.1f", entry.stddev))s")

@@ -218,19 +218,24 @@ final class RankerCollectionViewModel: ObservableObject {
             return
         }
 
-        // 4. 각 파스의 보스→힐 쌍 수집
+        // 4. 각 파스의 보스→힐 쌍 수집 + dungeonPulls.name 누적
+        // per-pull encounterID 는 worldData.encounter(id:).name 에서 조회 불가 (nil 반환).
+        // 대신 이 단계에서 fetchEncounters 응답의 BossWindow.name 을 직접 수집.
         let totalFiltered = filteredParses.count
         var parseResults: [(parse: RankerParse, bossPairs: [BossHealPair])] = []
+        var collectedEncounterNames: [Int: String] = [:]
 
         for (index, parse) in filteredParses.enumerated() {
             if Task.isCancelled { state = .idle; return }
             updateProgress(total: totalFiltered, completed: index, name: "\(parse.characterName) 처리 중...")
 
             do {
-                let pairs = try await fetchBossPairs(
+                let result = try await fetchBossPairs(
                     parse: parse, spec: selectedSpec, token: token
                 )
-                parseResults.append((parse: parse, bossPairs: pairs))
+                parseResults.append((parse: parse, bossPairs: result.pairs))
+                // 같은 encID 에 대해 후속 파스가 더 최신 이름을 주면 덮어씀
+                collectedEncounterNames.merge(result.encounterNames) { _, new in new }
             } catch {
                 logger.warning("파스 \(parse.reportCode)/\(parse.fightID) 스킵: \(error)")
                 // 개별 파스 실패는 스킵 (전체 중단하지 않음)
@@ -261,7 +266,7 @@ final class RankerCollectionViewModel: ObservableObject {
             talentFilterSimilarity: isAdvancedMode ? jaccardThreshold : 0.0
         )
 
-        let merged  = merger.merge(parses: parseResults, meta: meta)
+        let merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)
         let preview = merger.buildPreview(
             parsesCollected: rawParses.count,
             parsesFiltered:  parseResults.count,
@@ -308,10 +313,17 @@ final class RankerCollectionViewModel: ObservableObject {
             return
         }
 
+        // 수집 단계에서 이미 채워진 encounterName 은 보존. resolver 는 WCL dungeon-level
+        // encID 정도에만 name 을 줄 수 있고 per-pull 에는 nil 반환이므로 무조건 덮어쓰면
+        // collect() 가 확보한 per-pull 이름이 날아감.
         let enrichedEntries = current.bossEntries.map { entry -> RankerPreviewResult.BossEntry in
             var copy = entry
-            copy.encounterName = resolved.encounterNames[entry.encounterID]
-            copy.bossSpellName = resolved.spellNames[entry.bossSpellID]
+            if let resolvedName = resolved.encounterNames[entry.encounterID], !resolvedName.isEmpty {
+                copy.encounterName = resolvedName
+            }
+            if let resolvedSpell = resolved.spellNames[entry.bossSpellID], !resolvedSpell.isEmpty {
+                copy.bossSpellName = resolvedSpell
+            }
             return copy
         }
 
@@ -321,8 +333,11 @@ final class RankerCollectionViewModel: ObservableObject {
             bossEntries:           enrichedEntries,
             highVarianceWarnings:  current.highVarianceWarnings
         )
+        // enrichedData.encounterNames 에도 수집 단계 값 보존: resolver 결과로 덮어쓰지 않고 merge
         var enrichedData = data
-        enrichedData.encounterNames = resolved.encounterNames
+        for (id, name) in resolved.encounterNames where !name.isEmpty {
+            enrichedData.encounterNames[id] = name
+        }
         state = .preview(enrichedPreview, enrichedData)
     }
 
@@ -393,7 +408,7 @@ final class RankerCollectionViewModel: ObservableObject {
         parse: RankerParse,
         spec: HealerSpec,
         token: String
-    ) async throws -> [BossHealPair] {
+    ) async throws -> (pairs: [BossHealPair], encounterNames: [Int: String]) {
         // 보스 윈도우 + 힐러 sourceID 병렬 조회
         async let encounterFetch = apiClient.fetchEncounters(
             reportCode: parse.reportCode, fightID: parse.fightID, token: token
@@ -403,13 +418,23 @@ final class RankerCollectionViewModel: ObservableObject {
         )
         let (encounter, players) = try await (encounterFetch, playerFetch)
 
+        // 보스 윈도우에서 per-pull 이름 수집 (worldData.encounter API 에서 조회 불가한 ID 들).
+        var encounterNames: [Int: String] = [:]
+        for window in encounter.windows {
+            if !window.name.isEmpty {
+                encounterNames[window.encounterID] = window.name
+            }
+        }
+
         // 대상 힐러 sourceID 탐색 (스펙 매칭)
         let matchingHealer = players.first { candidate in
             candidate.className  == spec.warcraftLogsClassName &&
             candidate.specName   == spec.warcraftLogsSpecName
         } ?? players.first { $0.healerSpec != nil }
 
-        guard let healerCandidate = matchingHealer else { return [] }
+        guard let healerCandidate = matchingHealer else {
+            return (pairs: [], encounterNames: encounterNames)
+        }
 
         // 각 보스 윈도우에서 쌍 추출
         var allPairs: [BossHealPair] = []
@@ -449,7 +474,7 @@ final class RankerCollectionViewModel: ObservableObject {
             }
         }
 
-        return allPairs
+        return (pairs: allPairs, encounterNames: encounterNames)
     }
 
     nonisolated static func buildPairs(

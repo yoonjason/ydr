@@ -29,8 +29,9 @@ private final class MockRankerDataMerger: RankerDataMerger {
     }
 
     func merge(
-        parses: [(parse: RankerParse, bossPairs: [BossHealPair])],
-        meta: HGPTRankerDataMeta
+        parses:         [(parse: RankerParse, bossPairs: [BossHealPair])],
+        meta:           HGPTRankerDataMeta,
+        encounterNames: [Int: String]
     ) -> HGPTRankerData {
         return mergeResult
     }
