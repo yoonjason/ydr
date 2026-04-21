@@ -203,9 +203,10 @@ actor RankerNameResolverImpl: RankerNameResolver {
         print("[HG-NR-DEBUG] '\(dungeonKoreanName)' 매칭 후보 \(candidateIDs.count)개: \(candidateIDs)")
 
         // 2. 후보별로 EN→KR 맵 페치 후, WCL 영문명과 최대 겹침 instance 선택.
-        let requestedEnglishSet = Set(englishNames.values)
+        // 매칭은 정규화 이름 (정관사 제거 + 소문자 + 공백 trim) 기준.
+        let requestedEnglishSet = Set(englishNames.values.map(Self.normalizeEnglishName))
         var bestInstanceID: Int?
-        var bestEnToKr: [String: String] = [:]
+        var bestEnToKr: [String: String] = [:]   // normalized EN → KR
         var bestOverlap = 0
 
         for candidateID in candidateIDs {
@@ -216,9 +217,9 @@ actor RankerNameResolverImpl: RankerNameResolver {
                 enToKr = await fetchEnToKrMap(instanceID: candidateID, token: token)
                 instanceEnToKrCache[candidateID] = enToKr
             }
-            let blizzardEnglishSet = Set(enToKr.keys)
-            let overlap = requestedEnglishSet.intersection(blizzardEnglishSet).count
-            print("[HG-NR-DEBUG]   후보 \(candidateID): EN→KR \(enToKr.count)개, 영문명 \(blizzardEnglishSet) → overlap=\(overlap)")
+            let normalizedBlizzardSet = Set(enToKr.keys.map(Self.normalizeEnglishName))
+            let overlap = requestedEnglishSet.intersection(normalizedBlizzardSet).count
+            print("[HG-NR-DEBUG]   후보 \(candidateID): EN→KR \(enToKr.count)개, 영문명 \(Array(enToKr.keys)) → overlap=\(overlap)")
             if overlap > bestOverlap {
                 bestOverlap = overlap
                 bestInstanceID = candidateID
@@ -234,11 +235,16 @@ actor RankerNameResolverImpl: RankerNameResolver {
         print("[HG-NR-DEBUG] ✅ 최적 후보: instanceID=\(chosen), overlap=\(bestOverlap)")
         dungeonInstanceIDCache[dungeonKoreanName] = chosen
 
-        // 3. WCL encID → 한국어 이름 매핑 (영문명 매칭)
+        // 3. WCL encID → 한국어 이름 매핑. 정규화 이름 기준 비교.
+        // bestEnToKr 에서 키를 정규화한 딕셔너리 재구성.
+        let normalizedEnToKr: [String: String] = Dictionary(
+            uniqueKeysWithValues: bestEnToKr.map { (Self.normalizeEnglishName($0.key), $0.value) }
+        )
         var result: [Int: String] = [:]
         var unmatched: [String] = []
         for (wclEncID, englishName) in englishNames {
-            if let korean = bestEnToKr[englishName], !korean.isEmpty {
+            let key = Self.normalizeEnglishName(englishName)
+            if let korean = normalizedEnToKr[key], !korean.isEmpty {
                 result[wclEncID] = korean
             } else {
                 unmatched.append(englishName)
@@ -249,6 +255,23 @@ actor RankerNameResolverImpl: RankerNameResolver {
             print("[HG-NR-DEBUG]   매칭 실패 영문명: \(unmatched)")
         }
         return result
+    }
+
+    // 영문 보스명 정규화 — WCL 과 Blizzard 가 정관사 / 대소문자 / 여분 공백에 차이가 있을 수 있음.
+    // 예: 'Restless Heart' vs 'The Restless Heart' → 둘 다 'restless heart'
+    private static func normalizeEnglishName(_ raw: String) -> String {
+        let lowered = raw.lowercased()
+        let articlesStripped: String
+        if lowered.hasPrefix("the ") {
+            articlesStripped = String(lowered.dropFirst(4))
+        } else if lowered.hasPrefix("an ") {
+            articlesStripped = String(lowered.dropFirst(3))
+        } else if lowered.hasPrefix("a ") {
+            articlesStripped = String(lowered.dropFirst(2))
+        } else {
+            articlesStripped = lowered
+        }
+        return articlesStripped.trimmingCharacters(in: .whitespaces)
     }
 
     // 던전 한국어명에 매칭되는 모든 instanceID 반환 (정확 일치 우선).
