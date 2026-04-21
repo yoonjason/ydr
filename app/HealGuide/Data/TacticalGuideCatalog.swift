@@ -5,9 +5,18 @@ import Foundation
 // 값: 보스 배열 (WCL 영문명 기준 매칭)
 enum TacticalGuideCatalog {
 
-    /// 던전 ID 로 보스 가이드 목록 조회. 없으면 빈 배열.
+    /// 런타임 병합 결과 캐시. 초기화 시 하드코딩 default + 사용자 custom override 병합.
+    /// 사용자 편집 파일 변경 시 reloadCustom() 호출로 갱신.
+    private static var effectiveGuides: [Int: [BossTacticalGuide]] = mergeCustom(into: guides)
+
+    /// 사용자 편집 파일을 재로드해 병합 결과 갱신. 편집 UI 저장 후 호출.
+    static func reloadCustom() {
+        effectiveGuides = mergeCustom(into: guides)
+    }
+
+    /// 던전 ID 로 보스 가이드 목록 조회 (default + 사용자 override). 없으면 빈 배열.
     static func bossGuides(forDungeonID id: Int) -> [BossTacticalGuide] {
-        guides[id] ?? []
+        effectiveGuides[id] ?? []
     }
 
     /// WCL 영문 보스명 정규화 매칭. 정관사/대소문자/공백 차이 흡수.
@@ -15,7 +24,7 @@ enum TacticalGuideCatalog {
     /// 예: WCL "Garfrost" ↔ catalog "Forgemaster Garfrost" — 후자가 전자를 contains.
     static func bossGuide(forDungeonID id: Int, englishBossName: String) -> BossTacticalGuide? {
         let target = normalize(englishBossName)
-        guard let list = guides[id], !list.isEmpty else { return nil }
+        guard let list = effectiveGuides[id], !list.isEmpty else { return nil }
         if let exact = list.first(where: { normalize($0.englishBossName) == target }) {
             return exact
         }
@@ -23,6 +32,34 @@ enum TacticalGuideCatalog {
             let cat = normalize(guide.englishBossName)
             return cat.contains(target) || target.contains(cat)
         }
+    }
+
+    /// default 위에 custom 을 덮어쓴 병합 결과 반환.
+    /// 병합 규칙: 동일 (dungeonID, normalized englishBossName) 키는 custom 으로 완전 교체.
+    /// Custom 에만 있는 보스는 추가. default 에만 있는 보스는 유지.
+    private static func mergeCustom(into defaults: [Int: [BossTacticalGuide]]) -> [Int: [BossTacticalGuide]] {
+        guard let file = TacticalGuidePersistence.shared.load() else {
+            return defaults
+        }
+        var result = defaults
+        for dungeon in file.customizations {
+            var bossList = result[dungeon.dungeonID] ?? []
+            for bossCustom in dungeon.bosses {
+                let override = BossTacticalGuide(
+                    englishBossName: bossCustom.englishBossName,
+                    koreanBossName:  bossCustom.koreanBossName,
+                    lines:           bossCustom.lines
+                )
+                let targetNormalized = normalize(override.englishBossName)
+                if let idx = bossList.firstIndex(where: { normalize($0.englishBossName) == targetNormalized }) {
+                    bossList[idx] = override
+                } else {
+                    bossList.append(override)
+                }
+            }
+            result[dungeon.dungeonID] = bossList
+        }
+        return result
     }
 
     /// 특정 bossSpellID 의 한국어 스킬명 과 매칭되는 전술 라인(들) 반환.

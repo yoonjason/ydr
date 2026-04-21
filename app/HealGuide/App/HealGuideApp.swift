@@ -38,6 +38,9 @@ struct HealGuideApp: App {
 
                 CooldownSimulationTab()
                     .tabItem { Label("베타 시뮬", systemImage: "flask") }
+
+                TacticalGuideEditorTab()
+                    .tabItem { Label("전술 편집", systemImage: "pencil.and.scribble") }
             }
         }
     }
