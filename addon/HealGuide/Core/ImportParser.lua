@@ -10,7 +10,7 @@ local DANGEROUS_PATTERNS = {
     "dofile%s*%(", "debug%s*%.", "load%s*%(", "loadstring%s*%(",
     "setfenv%s*%(", "getfenv%s*%(", "rawset%s*%(", "rawget%s*%(",
     "coroutine%s*%.", "function%s+%w", "function%s*%(",
-    "while%s+", "repeat%s+", "goto%s+", "for%s+",
+    "while%s+", "repeat%s+", "goto%s+", "%f[%a]for%f[%A]",
 }
 
 local VALID_SPECS = {
@@ -131,6 +131,27 @@ function ImportParser:Parse(input)
                     end
                     if type(entry.offset) ~= "number" then
                         return nil, string.format("leadIns[%d].offset 이 숫자가 아닙니다", i)
+                    end
+                end
+            end
+        end
+        if boss.tactics ~= nil then
+            if type(boss.tactics) ~= "table" then
+                return nil, "tactics가 테이블이 아닙니다: " .. tostring(encID)
+            end
+            for key, entries in pairs(boss.tactics) do
+                if type(key) ~= "string" and type(key) ~= "number" then
+                    return nil, "tactics 키가 문자열 또는 숫자가 아닙니다: " .. tostring(key)
+                end
+                if type(entries) ~= "table" then
+                    return nil, "tactics 항목이 테이블이 아닙니다: " .. tostring(key)
+                end
+                for i, tEntry in ipairs(entries) do
+                    if type(tEntry) ~= "table" then
+                        return nil, string.format("tactics[%s][%d] 가 테이블이 아닙니다", tostring(key), i)
+                    end
+                    if type(tEntry.action) ~= "string" then
+                        return nil, string.format("tactics[%s][%d].action 이 문자열이 아닙니다", tostring(key), i)
                     end
                 end
             end

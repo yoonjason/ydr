@@ -111,6 +111,7 @@ eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
 clFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 clFrame:SetScript("OnEvent", function() onCombatLog() end)
 
@@ -200,6 +201,9 @@ local eventHandlers = {
         addon.EncounterEngine:OnUnitSpellcastStop(unit, spellID)
     end,
     UNIT_SPELLCAST_INTERRUPTED = function(unit, _, spellID)
+        addon.EncounterEngine:OnUnitSpellcastStop(unit, spellID)
+    end,
+    UNIT_SPELLCAST_FAILED = function(unit, _, spellID)
         addon.EncounterEngine:OnUnitSpellcastStop(unit, spellID)
     end,
 }

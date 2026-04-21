@@ -488,6 +488,11 @@ final class ReportViewModel: ObservableObject {
             encounterIDs: bossWindows.map(\.encounterID)
         )
 
+        let tacticsByEncounter = buildTacticsMap(
+            blocks: blocks,
+            bossSpellNames: encounterData.bossSpellNames,
+            dungeonName: dungeonName
+        )
         let luaText = luaGenerator.generate(
             blocks: blocks,
             metadata: ExportMetadata(
@@ -495,7 +500,8 @@ final class ReportViewModel: ObservableObject {
                 dungeonName: dungeonName,
                 sourceURL: reportURLText,
                 generatedAt: Date(),
-                bossSpellNames: encounterData.bossSpellNames
+                bossSpellNames: encounterData.bossSpellNames,
+                tacticsByEncounter: tacticsByEncounter
             )
         )
 
@@ -507,6 +513,67 @@ final class ReportViewModel: ObservableObject {
         if !unknownIDs.isEmpty {
             await resolveUnknownSpells(unknownIDs, reportCode: reportURL.code, token: token)
         }
+    }
+
+    // MARK: - 전술 가이드 매핑
+
+    /// WCL 보스명(block.name) + bossSpellNames 기반으로 TacticalGuideCatalog 조회.
+    /// dungeonName 으로 DungeonInfo(dungeonID) 를 역방향 매칭 — 괄호 안 영문명 비교.
+    private func buildTacticsMap(
+        blocks: [EncounterBlock],
+        bossSpellNames: [Int: String],
+        dungeonName: String
+    ) -> [Int: EncounterTacticsSummary] {
+        let normalizedTarget = dungeonName.lowercased()
+        guard let dungeonInfo = DungeonInfo.currentSeason.first(where: {
+            let english: String
+            if let open = $0.name.firstIndex(of: "("),
+               let close = $0.name.firstIndex(of: ")") {
+                english = String($0.name[open...close].dropFirst().dropLast())
+                    .trimmingCharacters(in: .whitespaces)
+            } else {
+                english = $0.name
+            }
+            return english.lowercased() == normalizedTarget
+        }) else {
+            return [:]
+        }
+
+        var result: [Int: EncounterTacticsSummary] = [:]
+        for block in blocks {
+            let englishBossName = block.name
+            guard TacticalGuideCatalog.bossGuide(
+                forDungeonID: dungeonInfo.id, englishBossName: englishBossName
+            ) != nil else { continue }
+
+            let sharedLines = TacticalGuideCatalog.generalLines(
+                dungeonID: dungeonInfo.id, englishBossName: englishBossName
+            )
+
+            // reactions 의 bossAbilityID 집합 — bossSpellNames 와 교차해 스킬별 매칭.
+            let bossAbilityIDs = Set(block.reactions.map(\.bossAbilityID))
+                .union(Set(block.leadIns.map(\.bossAbilityID)))
+            var perAbility: [Int: [TacticalLine]] = [:]
+            for abilityID in bossAbilityIDs {
+                guard let koreanName = bossSpellNames[abilityID], !koreanName.isEmpty else { continue }
+                let matched = TacticalGuideCatalog.matchingLines(
+                    dungeonID: dungeonInfo.id,
+                    englishBossName: englishBossName,
+                    spellKoreanName: koreanName
+                )
+                if !matched.isEmpty {
+                    perAbility[abilityID] = matched
+                }
+            }
+
+            if !sharedLines.isEmpty || !perAbility.isEmpty {
+                result[block.encounterID] = EncounterTacticsSummary(
+                    shared: sharedLines,
+                    perAbility: perAbility
+                )
+            }
+        }
+        return result
     }
 
     // MARK: - 보스/인카운터 이름 해상

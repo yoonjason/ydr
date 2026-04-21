@@ -7,6 +7,19 @@ local SLOT_GAP  = 4
 local slots     = {}
 local anchor    = nil
 
+-- TacticPanel 상태: 보스 시전 중 전술 텍스트 별도 채널
+local tacticPanel       = nil
+local tacticLineFonts   = {}
+local activeTactics     = {}  -- [bossSpellID] = { {priority, action}, ... }
+local sharedTacticLines = nil -- tactics["_shared"] 줄 배열 (보스 전체 주의사항)
+local TACTIC_MAX_LINES  = 4
+local TACTIC_COLOR  = {
+    critical  = { 1, 0.33, 0.33 },
+    important = { 1, 0.67, 0.27 },
+    note      = { 0.7,  0.7, 0.7 },
+}
+local TACTIC_MARKER = { critical = "[!] ", important = "[~] ", note = "" }
+
 local function getLSM()
     return LibStub and LibStub("LibSharedMedia-3.0", true)
 end
@@ -58,6 +71,8 @@ function AlertFrame:Init()
     for i = 1, DEFAULT_MAX_SLOTS do
         slots[i] = self:_CreateSlot(i)
     end
+
+    self:InitTacticPanel()
 end
 
 function AlertFrame:_CreateSlot(index)
@@ -95,10 +110,21 @@ function AlertFrame:_CreateSlot(index)
     bg:SetColorTexture(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
     frame.bg = bg
 
+    -- 3단 fallback 시 주황 테두리: BORDER 레이어(ARTWORK 뒤)에 아이콘보다 3px 크게 배치
+    local fallbackBorder = frame:CreateTexture(nil, "BORDER")
+    fallbackBorder:SetPoint("TOPLEFT",     nil)  -- SetPoint 는 아래서 icon 기준으로 재설정
+    fallbackBorder:SetColorTexture(1, 0.5, 0, 1)
+    fallbackBorder:Hide()
+    frame.fallbackBorder = fallbackBorder
+
     local icon = frame:CreateTexture(nil, "ARTWORK")
     icon:SetSize(baseSize, baseSize)
     icon:SetPoint("LEFT", frame, "LEFT", 6, 0)
     frame.icon = icon
+
+    -- fallbackBorder 앵커를 icon 기준으로 설정 (icon 생성 이후)
+    fallbackBorder:SetPoint("TOPLEFT",     icon, "TOPLEFT",     -3,  3)
+    fallbackBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT",  3, -3)
 
     local LSM      = getLSM()
     local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
@@ -202,10 +228,11 @@ function AlertFrame:_FindAvailableSlot()
     return slots[maxSlots]
 end
 
--- ShowAlert(spellID, tacticText?, tacticPriority?)
+-- ShowAlert(spellID, tacticText?, tacticPriority?, category?)
 --   tacticText:     '떨어지는 구슬 받아주기' 같은 전술 대응 1줄 (옵션)
 --   tacticPriority: "critical" / "important" / "note" — 색상 결정
-function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority)
+--   category:       "fallback" 이면 아이콘에 주황 테두리 표시 (3단 fallback 시각 구분)
+function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority, category)
     if not anchor then return end
 
     local spellInfo = C_Spell.GetSpellInfo(spellID)
@@ -257,6 +284,15 @@ function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority)
         end
     end
 
+    -- fallback 카테고리: 주황 테두리 표시 / 해제
+    if slot.fallbackBorder then
+        if category == "fallback" then
+            slot.fallbackBorder:Show()
+        else
+            slot.fallbackBorder:Hide()
+        end
+    end
+
     slot.icon:SetTexture(texture)
     slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -283,6 +319,133 @@ function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority)
 end
 
 AlertFrame.ShowReminder = AlertFrame.ShowAlert
+
+-- ── TacticPanel ───────────────────────────────────────────────────────────────
+
+function AlertFrame:InitTacticPanel()
+    local LSM      = getLSM()
+    local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
+    local fontSize = math.max(10, (addon.Storage:GetSetting("alertFontSize") or 14) - 2)
+    local fontPath = LSM and LSM:Fetch("font", fontName, true)
+    local lineH    = fontSize + 4
+
+    tacticPanel = CreateFrame("Frame", "HealGuideTacticPanel", UIParent)
+    tacticPanel:SetFrameStrata("HIGH")
+    tacticPanel:SetFrameLevel(99)
+    tacticPanel:SetClampedToScreen(true)
+
+    local pos = addon.Storage:GetSetting("tacticPanelPoint")
+        or { point = "CENTER", relPoint = "CENTER", x = 0, y = 100 }
+    tacticPanel:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+    tacticPanel:SetSize(320, TACTIC_MAX_LINES * lineH + 10)
+
+    local bgColor = addon.Storage:GetSetting("alertBgColor") or { r = 0, g = 0, b = 0, a = 0.75 }
+    local bg = tacticPanel:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+    tacticPanel.bg = bg
+
+    tacticPanel:EnableMouse(true)
+    tacticPanel:SetMovable(true)
+    tacticPanel:RegisterForDrag("LeftButton")
+    tacticPanel:SetScript("OnDragStart", function(self)
+        if addon.Storage:GetSetting("locked") then return end
+        self:StartMoving()
+    end)
+    tacticPanel:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relPoint, x, y = self:GetPoint()
+        addon.Storage:SetSetting("tacticPanelPoint", {
+            point = point, relPoint = relPoint, x = x, y = y,
+        })
+    end)
+
+    for i = 1, TACTIC_MAX_LINES do
+        local fs = tacticPanel:CreateFontString(nil, "OVERLAY")
+        if fontPath then
+            fs:SetFont(fontPath, fontSize, "")
+        else
+            fs:SetFontObject("GameFontNormalSmall")
+        end
+        fs:SetHeight(lineH)
+        fs:SetPoint("TOPLEFT",  tacticPanel, "TOPLEFT",   5, -(4 + (i - 1) * lineH))
+        fs:SetPoint("TOPRIGHT", tacticPanel, "TOPRIGHT", -5, -(4 + (i - 1) * lineH))
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+        fs:Hide()
+        tacticLineFonts[i] = fs
+    end
+
+    tacticPanel:Hide()
+end
+
+-- SetSharedTactics: 보스 전체 주의사항 (_shared 줄 배열). 인카운터 시작 시 설정,
+-- 종료 시 HideAllTactics 로 nil 처리.
+function AlertFrame:SetSharedTactics(lines)
+    sharedTacticLines = (type(lines) == "table" and #lines > 0) and lines or nil
+end
+
+-- ShowTactics: 특정 보스 스킬 시전 시작 — 스킬별 전술 줄 표시
+function AlertFrame:ShowTactics(spellID, lines)
+    if type(lines) ~= "table" or #lines == 0 then return end
+    activeTactics[spellID] = lines
+    self:_RenderTactics()
+end
+
+-- HideTactics: 특정 보스 스킬 시전 종료 — 해당 스킬 전술 줄만 제거
+function AlertFrame:HideTactics(spellID)
+    activeTactics[spellID] = nil
+    self:_RenderTactics()
+end
+
+-- HideAllTactics: 인카운터 종료 / Cancel 시 전체 초기화
+function AlertFrame:HideAllTactics()
+    activeTactics     = {}
+    sharedTacticLines = nil
+    self:_RenderTactics()
+end
+
+function AlertFrame:_RenderTactics()
+    if not tacticPanel then return end
+
+    if next(activeTactics) == nil and (not sharedTacticLines or #sharedTacticLines == 0) then
+        tacticPanel:Hide()
+        for i = 1, TACTIC_MAX_LINES do tacticLineFonts[i]:Hide() end
+        return
+    end
+
+    -- _shared 줄 먼저 수집, 그 다음 스킬별 줄 (4줄 제한)
+    local combined = {}
+    if type(sharedTacticLines) == "table" then
+        for _, t in ipairs(sharedTacticLines) do
+            combined[#combined + 1] = t
+        end
+    end
+    for _, lines in pairs(activeTactics) do
+        for _, t in ipairs(lines) do
+            combined[#combined + 1] = t
+        end
+    end
+
+    local shown = 0
+    for i = 1, TACTIC_MAX_LINES do
+        local t  = combined[i]
+        local fs = tacticLineFonts[i]
+        if t and type(t.action) == "string" and t.action ~= "" then
+            local col    = TACTIC_COLOR[t.priority] or TACTIC_COLOR.note
+            local marker = TACTIC_MARKER[t.priority] or ""
+            fs:SetTextColor(col[1], col[2], col[3], 1)
+            fs:SetText(marker .. t.action)
+            fs:Show()
+            shown = shown + 1
+        else
+            fs:SetText("")
+            fs:Hide()
+        end
+    end
+
+    if shown > 0 then tacticPanel:Show() else tacticPanel:Hide() end
+end
 
 function AlertFrame:EnterEditMode()
     if not anchor then return end
@@ -387,6 +550,21 @@ function AlertFrame:ApplyTheme()
                 slot.tacticText:SetFont(fontPath, math.max(10, fontSize - 4), "")
             else
                 slot.tacticText:SetFontObject("GameFontNormalSmall")
+            end
+        end
+    end
+
+    -- TacticPanel 테마 반영
+    if tacticPanel then
+        if tacticPanel.bg then
+            tacticPanel.bg:SetColorTexture(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+        end
+        local tacticFontSize = math.max(10, fontSize - 2)
+        for _, fs in ipairs(tacticLineFonts) do
+            if fontPath then
+                fs:SetFont(fontPath, tacticFontSize, "")
+            else
+                fs:SetFontObject("GameFontNormalSmall")
             end
         end
     end

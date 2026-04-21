@@ -38,6 +38,7 @@ local DEFAULTS = {
             timelineShowTicks    = true,
             timelineLocked       = false,
             timelinePoint        = { point = "CENTER", relPoint = "CENTER", x = 0, y = -200 },
+            tacticPanelPoint     = { point = "CENTER", relPoint = "CENTER", x = 0, y = -180 },
             -- Phase 4a: 테마
             alertBgColor   = { r = 0,   g = 0,   b = 0,   a = 0.75 },
             alertTextColor = { r = 1,   g = 1,   b = 1,   a = 1.0  },
@@ -102,8 +103,9 @@ function Storage:Init()
         if addon.EncounterEngine and addon.EncounterEngine.OnEncounterEnd then
             addon.EncounterEngine:OnEncounterEnd()
         end
-        if addon.MainFrame and addon.MainFrame._RefreshSettings then
-            addon.MainFrame:_RefreshSettings()
+        if addon.MainFrame then
+            if addon.MainFrame._RefreshSettings then addon.MainFrame:_RefreshSettings() end
+            if addon.MainFrame._RefreshDataTab  then addon.MainFrame:_RefreshDataTab()  end
         end
         if addon.AlertFrame and addon.AlertFrame.ApplyTheme then
             addon.AlertFrame:ApplyTheme()
@@ -251,6 +253,7 @@ function Storage:AddDungeon(importData)
         entry.bosses[encounterID] = {
             name     = bossData.name,
             duration = bossData.duration,
+            tactics  = type(bossData.tactics) == "table" and bossData.tactics or nil,
             specs    = {
                 [importData.spec] = {
                     timeline  = bossData.timeline  or {},
@@ -273,8 +276,12 @@ function Storage:UpdateDungeon(dungeonKey, importData)
             dungeon.bosses[encounterID] = {
                 name     = bossData.name,
                 duration = bossData.duration,
+                tactics  = type(bossData.tactics) == "table" and bossData.tactics or nil,
                 specs    = {},
             }
+        end
+        if type(bossData.tactics) == "table" then
+            dungeon.bosses[encounterID].tactics = bossData.tactics
         end
         dungeon.bosses[encounterID].specs[importData.spec] = {
             timeline  = bossData.timeline  or {},

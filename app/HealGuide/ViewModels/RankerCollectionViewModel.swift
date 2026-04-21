@@ -59,6 +59,8 @@ final class RankerCollectionViewModel: ObservableObject {
     private var enrichTask: Task<Void, Never>?
     // 수집 전체 Task — 사용자가 '중지' 버튼을 누르면 취소
     private var collectTask: Task<Void, Never>?
+    // 수집 세션 식별자 — enrichTask 연타 경합 방지 (collectedAt 1초 동시 경합 대응)
+    private var collectSessionID: UUID = UUID()
 
     init(
         apiClient:        any WarcraftLogsAPIClient      = WarcraftLogsAPIClientImpl(),
@@ -130,6 +132,7 @@ final class RankerCollectionViewModel: ObservableObject {
         collectTask?.cancel()
         lastSaveResult = nil
         isSaved = false
+        collectSessionID = UUID()
         // Task tail 에서 collectTask = nil 을 쓰지 않는 이유:
         // cancel() + startCollect 연타 시 이전 Task 의 tail 이 뒤늦게 실행되면
         // 새로 생성된 collectTask 참조를 덮어써 '중지' 버튼이 무력화되는 버그 방지.
@@ -181,6 +184,22 @@ final class RankerCollectionViewModel: ObservableObject {
         // 2. characterRankings 조회
         updateProgress(total: topNCount.rawValue, completed: 0, name: "랭킹 조회 중...")
 
+        // M+ 는 partition 없이 조회하면 전 시즌(옛날 확장팩) 로그가 혼입될 수 있음.
+        // encounterId 의 zone 에서 isCurrentPartition == true 인 파티션 ID 를 먼저 조회.
+        // 조회 실패 시 nil 로 폴백 (경고 로그만 남기고 수집은 계속).
+        var partition: Int? = nil
+        if selectedDifficulty == .mythicPlus {
+            if let fetched = try? await apiClient.fetchCurrentMythicPlusPartition(
+                encounterID: dungeon.id, token: token
+            ) {
+                partition = fetched
+                logger.info("M+ 현재 파티션: \(fetched)")
+            } else {
+                logger.warning("파티션 조회 실패 — 최신 시즌이 아닌 데이터가 수집될 수 있음")
+            }
+        }
+        if Task.isCancelled { state = .idle; return }
+
         let region = useGlobalFallback ? "" : "KR"
         let rawParses: [RankerParse]
         do {
@@ -189,6 +208,7 @@ final class RankerCollectionViewModel: ObservableObject {
                 className:    selectedSpec.warcraftLogsClassName,
                 specName:     selectedSpec.warcraftLogsSpecName,
                 difficulty:   selectedDifficulty.warcraftLogsID,
+                partition:    partition,
                 serverRegion: region,
                 limit:        topNCount.rawValue,
                 token:        token
@@ -262,7 +282,7 @@ final class RankerCollectionViewModel: ObservableObject {
             rankersRequested:     topNCount.rawValue,
             rankersUsed:          parseResults.count,
             talentFilterPreset:   selectedPreset?.name ?? "",
-            talentFilterString:   isAdvancedMode && !talentString.isEmpty,
+            talentFilterString:   isAdvancedMode && !talentString.isEmpty ? talentString : nil,
             talentFilterSimilarity: isAdvancedMode ? jaccardThreshold : 0.0
         )
 
@@ -310,11 +330,13 @@ final class RankerCollectionViewModel: ObservableObject {
 
         // 이름 해상 — 백그라운드로 preview 업데이트. 자격증명 없거나 실패 시 숫자 유지.
         // originalEnglishNames 는 tactical 가이드 매칭 (WCL 영문 보스명 ↔ 가이드 엔트리) 에 필요.
+        let sessionID = collectSessionID
         enrichTask = Task { [weak self] in
             await self?.enrichPreviewNames(
                 currentPreview: preview,
                 mergedData: merged,
-                englishEncounterNames: originalEnglishNames
+                englishEncounterNames: originalEnglishNames,
+                sessionID: sessionID
             )
         }
     }
@@ -324,7 +346,8 @@ final class RankerCollectionViewModel: ObservableObject {
     private func enrichPreviewNames(
         currentPreview: RankerPreviewResult,
         mergedData: HGPTRankerData,
-        englishEncounterNames: [Int: String] = [:]
+        englishEncounterNames: [Int: String] = [:],
+        sessionID: UUID
     ) async {
         // encounter 이름은 WCL (자격증명 필수), spell 이름은 Blizzard (선택).
         // 한쪽만 있어도 부분 결과 반환.
@@ -358,8 +381,8 @@ final class RankerCollectionViewModel: ObservableObject {
             blizzardClientSecret: blizzardSecret
         )
 
-        // enrich 도중 사용자가 다른 상태로 전환했으면 덮어쓰지 않음
-        guard case .preview(let current, let data) = state, data.meta.collectedAt == mergedData.meta.collectedAt else {
+        // enrich 도중 새 수집이 시작됐으면 덮어쓰지 않음 (UUID 세션 비교로 1초 내 연타 경합 방지)
+        guard case .preview(let current, let data) = state, collectSessionID == sessionID else {
             return
         }
 
@@ -392,6 +415,17 @@ final class RankerCollectionViewModel: ObservableObject {
         for (id, name) in resolved.spellNames where !name.isEmpty {
             enrichedData.spellNames[id] = name
         }
+        // Phase 4: bossSpellNames 구성 — 애드온 이름 기반 2단 fallback 매칭 지원.
+        // encounterData 를 순회해 bossSpellID 에 대응하는 이름을 spellNames 맵에서 추출.
+        var bossSpellNamesMap: [Int: [Int: String]] = [:]
+        for (encID, bossMap) in enrichedData.encounterData {
+            for bossSpellID in bossMap.keys {
+                if let name = enrichedData.spellNames[bossSpellID], !name.isEmpty {
+                    bossSpellNamesMap[encID, default: [:]][bossSpellID] = name
+                }
+            }
+        }
+        enrichedData.bossSpellNames = bossSpellNamesMap
         // Phase 3b: 사용자 큐레이션 전술 가이드 매칭.
         // 매 (wclEncID, bossSpellID) 쌍에 대해, WCL 영문 보스명 + 한국어 스킬명 기준 lookup.
         // SUGGESTION-4: generalLines (abilityName 빈 '보스 전체 주의사항') 는 각 보스의
@@ -399,6 +433,7 @@ final class RankerCollectionViewModel: ObservableObject {
         if !englishEncounterNames.isEmpty {
             let dungeonID = enrichedData.meta.dungeonID
             var matched: [Int: [Int: [TacticalLine]]] = [:]
+            var shared: [Int: [TacticalLine]] = [:]
             for (encID, bossMap) in enrichedData.encounterData {
                 guard let englishBossName = englishEncounterNames[encID] else { continue }
                 guard TacticalGuideCatalog.bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName) != nil else {
@@ -428,17 +463,17 @@ final class RankerCollectionViewModel: ObservableObject {
                         }
                     }
                 }
-                // 보스 전체 주의사항 (abilityName 빈 라인) 을 최소 bossSpellID 의 라인 맨 앞에 prepend.
+                // 보스 전체 주의사항 (abilityName 빈 라인) — 별도 sharedTacticalLines 에 저장.
                 let generals = TacticalGuideCatalog.generalLines(
                     dungeonID: dungeonID, englishBossName: englishBossName
                 )
-                if !generals.isEmpty, let firstBossSpellID = bossMap.keys.min() {
-                    let existing = matched[encID]?[firstBossSpellID] ?? []
-                    matched[encID, default: [:]][firstBossSpellID] = generals + existing
+                if !generals.isEmpty {
+                    shared[encID] = generals
                 }
             }
             enrichedData.tacticalLines = matched
-            logger.debug("tacticalLines 매칭: \(matched.count)개 encounter")
+            enrichedData.sharedTacticalLines = shared
+            logger.debug("tacticalLines 매칭: \(matched.count)개 encounter, shared: \(shared.count)개")
         }
         state = .preview(enrichedPreview, enrichedData)
     }
@@ -469,24 +504,32 @@ final class RankerCollectionViewModel: ObservableObject {
             return
         }
 
-        let entries   = cacheService.merge(data)
-        let filePath  = serializer.filePath(wowAddonsPath: wowAddonsPath)
-        let directory = (filePath as NSString).deletingLastPathComponent
-        let content   = serializer.serialize(entries)
+        let entries    = cacheService.merge(data)
+        let filePath   = serializer.filePath(wowAddonsPath: wowAddonsPath)
+        let content    = serializer.serialize(entries)
+        let directory  = (filePath as NSString).deletingLastPathComponent
+        let entryCount = entries.count
+        let logger     = self.logger
 
-        do {
-            try FileManager.default.createDirectory(
-                atPath: directory,
-                withIntermediateDirectories: true
-            )
-            try content.write(toFile: filePath, atomically: true, encoding: .utf8)
-            lastSaveResult = "저장 완료 (\(entries.count)개 항목): \(filePath)"
-            isSaved = true
-            logger.info("HGPT_RankerData.lua 저장: \(filePath) (\(entries.count) entries)")
-        } catch {
-            lastSaveResult = "저장 실패: \(error.localizedDescription)"
-            isSaved = false
-            logger.error("HGPT_RankerData.lua 저장 실패: \(error)")
+        Task.detached {
+            do {
+                try FileManager.default.createDirectory(
+                    atPath: directory, withIntermediateDirectories: true
+                )
+                try content.write(toFile: filePath, atomically: true, encoding: .utf8)
+                logger.info("HGPT_RankerData.lua 저장: \(filePath) (\(entryCount) entries)")
+                await MainActor.run { [weak self] in
+                    self?.lastSaveResult = "저장 완료 (\(entryCount)개 항목): \(filePath)"
+                    self?.isSaved = true
+                }
+            } catch {
+                let desc = error.localizedDescription
+                logger.error("HGPT_RankerData.lua 저장 실패: \(desc)")
+                await MainActor.run { [weak self] in
+                    self?.lastSaveResult = "저장 실패: \(desc)"
+                    self?.isSaved = false
+                }
+            }
         }
     }
 

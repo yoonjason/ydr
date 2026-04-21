@@ -107,7 +107,7 @@ struct RankerResponseEntry: Codable {
 
 // MARK: - HGPT_RankerData (Lua 스키마 대응)
 
-struct HGPTRankerDataMeta: Codable {
+struct HGPTRankerDataMeta {
     let version:             Int
     let collectedAt:         String   // ISO8601 KST
     let region:              String
@@ -118,8 +118,52 @@ struct HGPTRankerDataMeta: Codable {
     let rankersRequested:    Int
     let rankersUsed:         Int
     let talentFilterPreset:  String
-    let talentFilterString:  Bool
+    let talentFilterString:  String?  // nil = 미사용, 비어있지 않은 문자열 = 사용된 탤런트 스트링
     let talentFilterSimilarity: Double
+}
+
+extension HGPTRankerDataMeta: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case version, collectedAt, region, dungeonID, dungeonName, difficulty, spec,
+             rankersRequested, rankersUsed, talentFilterPreset, talentFilterString, talentFilterSimilarity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version                = try c.decode(Int.self,    forKey: .version)
+        collectedAt            = try c.decode(String.self, forKey: .collectedAt)
+        region                 = try c.decode(String.self, forKey: .region)
+        dungeonID              = try c.decode(Int.self,    forKey: .dungeonID)
+        dungeonName            = try c.decode(String.self, forKey: .dungeonName)
+        difficulty             = try c.decode(String.self, forKey: .difficulty)
+        spec                   = try c.decode(String.self, forKey: .spec)
+        rankersRequested       = try c.decode(Int.self,    forKey: .rankersRequested)
+        rankersUsed            = try c.decode(Int.self,    forKey: .rankersUsed)
+        talentFilterPreset     = try c.decode(String.self, forKey: .talentFilterPreset)
+        talentFilterSimilarity = try c.decode(Double.self, forKey: .talentFilterSimilarity)
+        // 역호환: 구 포맷은 Bool(true/false)로 저장 — 스트링 값 복원 불가이므로 nil로 폴백
+        if let str = try? c.decode(String.self, forKey: .talentFilterString), !str.isEmpty {
+            talentFilterString = str
+        } else {
+            talentFilterString = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version,               forKey: .version)
+        try c.encode(collectedAt,           forKey: .collectedAt)
+        try c.encode(region,                forKey: .region)
+        try c.encode(dungeonID,             forKey: .dungeonID)
+        try c.encode(dungeonName,           forKey: .dungeonName)
+        try c.encode(difficulty,            forKey: .difficulty)
+        try c.encode(spec,                  forKey: .spec)
+        try c.encode(rankersRequested,      forKey: .rankersRequested)
+        try c.encode(rankersUsed,           forKey: .rankersUsed)
+        try c.encode(talentFilterPreset,    forKey: .talentFilterPreset)
+        try c.encodeIfPresent(talentFilterString, forKey: .talentFilterString)
+        try c.encode(talentFilterSimilarity, forKey: .talentFilterSimilarity)
+    }
 }
 
 struct HGPTRankerData {
@@ -134,11 +178,15 @@ struct HGPTRankerData {
     var abilityDescriptions: [Int: [Int: String]] = [:]
     // Phase 3b: [encounterID: [bossSpellID: [전술 라인]]] — 사용자 큐레이션 가이드 매칭 결과.
     var tacticalLines: [Int: [Int: [TacticalLine]]] = [:]
+    // Phase 3b: [encounterID: [보스 전체 주의사항]] — abilityName 빈 라인 (shared tactics).
+    var sharedTacticalLines: [Int: [TacticalLine]] = [:]
+    // Phase 4: [encounterID: [bossSpellID: 한국어 스킬명]] — 애드온 이름 매칭 fallback 용.
+    var bossSpellNames: [Int: [Int: String]] = [:]
 }
 
 extension HGPTRankerData: Codable {
     enum CodingKeys: String, CodingKey {
-        case meta, encounterData, encounterNames, spellNames, abilityDescriptions, tacticalLines
+        case meta, encounterData, encounterNames, spellNames, abilityDescriptions, tacticalLines, sharedTacticalLines, bossSpellNames
     }
 
     init(from decoder: Decoder) throws {
@@ -198,6 +246,25 @@ extension HGPTRankerData: Codable {
             tactics[encID] = inner
         }
         tacticalLines = tactics
+
+        // Phase 3b 역호환: sharedTacticalLines 없으면 빈 맵
+        let rawShared = (try? container.decode([String: [TacticalLine]].self, forKey: .sharedTacticalLines)) ?? [:]
+        sharedTacticalLines = rawShared.reduce(into: [:]) { acc, pair in
+            if let id = Int(pair.key) { acc[id] = pair.value }
+        }
+
+        // Phase 4 역호환: bossSpellNames 없으면 빈 맵
+        let rawBossSpellNames = (try? container.decode([String: [String: String]].self, forKey: .bossSpellNames)) ?? [:]
+        var bossNames: [Int: [Int: String]] = [:]
+        for (encStr, bossMap) in rawBossSpellNames {
+            guard let encID = Int(encStr) else { continue }
+            var inner: [Int: String] = [:]
+            for (bossStr, name) in bossMap {
+                if let bossID = Int(bossStr) { inner[bossID] = name }
+            }
+            bossNames[encID] = inner
+        }
+        bossSpellNames = bossNames
     }
 
     func encode(to encoder: Encoder) throws {
@@ -244,6 +311,23 @@ extension HGPTRankerData: Codable {
                 stringTactics[String(encID)] = inner
             }
             try container.encode(stringTactics, forKey: .tacticalLines)
+        }
+        if !sharedTacticalLines.isEmpty {
+            let stringShared = sharedTacticalLines.reduce(into: [String: [TacticalLine]]()) {
+                $0[String($1.key)] = $1.value
+            }
+            try container.encode(stringShared, forKey: .sharedTacticalLines)
+        }
+        if !bossSpellNames.isEmpty {
+            var stringBossSpellNames: [String: [String: String]] = [:]
+            for (encID, bossMap) in bossSpellNames {
+                var inner: [String: String] = [:]
+                for (bossID, name) in bossMap {
+                    inner[String(bossID)] = name
+                }
+                stringBossSpellNames[String(encID)] = inner
+            }
+            try container.encode(stringBossSpellNames, forKey: .bossSpellNames)
         }
     }
 }

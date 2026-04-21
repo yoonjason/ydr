@@ -119,6 +119,7 @@ final class TalentBuildViewModel: ObservableObject {
                 className:    selectedSpec.warcraftLogsClassName,
                 specName:     selectedSpec.warcraftLogsSpecName,
                 difficulty:   selectedDifficulty.warcraftLogsID,
+                partition:    nil,
                 serverRegion: "KR",
                 limit:        topNCount.rawValue,
                 token:        token

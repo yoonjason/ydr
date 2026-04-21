@@ -78,6 +78,28 @@ struct LuaGenerator: LuaGenerating {
                 lines.append("        },")
             }
             lines.append("      },")
+            // 전술 가이드 — shared (보스 전체) + perAbility (스킬별).
+            if let summary = metadata.tacticsByEncounter[block.encounterID],
+               (!summary.shared.isEmpty || !summary.perAbility.isEmpty) {
+                lines.append("      tactics = {")
+                if !summary.shared.isEmpty {
+                    lines.append("        _shared = {")
+                    for t in summary.shared {
+                        lines.append("          { priority = \"\(t.priority.rawValue)\", action = \"\(escapeLuaString(t.action))\" },")
+                    }
+                    lines.append("        },")
+                }
+                for bossID in summary.perAbility.keys.sorted() {
+                    let perLines = summary.perAbility[bossID, default: []]
+                    guard !perLines.isEmpty else { continue }
+                    lines.append("        [\(bossID)] = {")
+                    for t in perLines {
+                        lines.append("          { priority = \"\(t.priority.rawValue)\", action = \"\(escapeLuaString(t.action))\" },")
+                    }
+                    lines.append("        },")
+                }
+                lines.append("      },")
+            }
             lines.append("    },")
         }
 
@@ -111,5 +133,8 @@ struct LuaGenerator: LuaGenerating {
     private func escapeLuaString(_ str: String) -> String {
         str.replacingOccurrences(of: "\\", with: "\\\\")
            .replacingOccurrences(of: "\"", with: "\\\"")
+           .replacingOccurrences(of: "\n", with: "\\n")
+           .replacingOccurrences(of: "\r", with: "\\r")
+           .replacingOccurrences(of: "\t", with: "\\t")
     }
 }

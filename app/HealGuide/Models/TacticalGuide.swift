@@ -36,3 +36,11 @@ struct BossTacticalGuide: Equatable {
     let koreanBossName: String   // 사용자 표기 (참고용)
     let lines: [TacticalLine]
 }
+
+// Lua 출력용 인카운터 전술 요약. LuaGenerator 에 전달해 tactics 블록 생성.
+struct EncounterTacticsSummary: Equatable {
+    // abilityName 이 빈 라인 — 보스 전체 주의사항.
+    let shared: [TacticalLine]
+    // 보스 어빌리티 spellID → 해당 스킬 전술 라인.
+    let perAbility: [Int: [TacticalLine]]
+}

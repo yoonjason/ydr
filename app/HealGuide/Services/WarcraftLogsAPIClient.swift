@@ -26,6 +26,9 @@ protocol WarcraftLogsAPIClient: Sendable {
     // worldData.encounter(id:).name — WCL 자체 encID 공간 기준 보스/인카운터 이름.
     // M+ 던전의 경우 ID 가 WCL 자체 스킴이라 Blizzard journal-encounter 와 다름.
     func fetchEncounterName(encounterID: Int, token: String) async throws -> String?
+    // worldData.encounter(id:).zone.partitions — encounterId 가 속한 존의 파티션 목록에서
+    // isCurrentPartition == true 인 파티션 ID 반환. 없으면 nil.
+    func fetchCurrentMythicPlusPartition(encounterID: Int, token: String) async throws -> Int?
 }
 
 final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
@@ -389,6 +392,42 @@ final class WarcraftLogsAPIClientImpl: WarcraftLogsAPIClient {
         }
     }
 
+    func fetchCurrentMythicPlusPartition(encounterID: Int, token: String) async throws -> Int? {
+        let url = try graphQLURL()
+        let query = """
+        query($id: Int!) {
+          worldData {
+            encounter(id: $id) {
+              zone {
+                partitions {
+                  id
+                  isCurrentPartition
+                }
+              }
+            }
+          }
+        }
+        """
+        let body = GraphQLRequest(query: query, variables: ["id": .int(encounterID)])
+        let request = try buildRequest(url: url, body: body, token: token)
+        let (data, response) = try await perform(request)
+        try validate(response: response)
+
+        do {
+            let decoded = try JSONDecoder().decode(GraphQLResponse<ZonePartitionsQueryData>.self, from: data)
+            if let errors = decoded.errors, !errors.isEmpty {
+                throw AppError.networkError(errors[0].message)
+            }
+            let partitions = decoded.data?.worldData?.encounter?.zone?.partitions ?? []
+            return partitions.first(where: { $0.isCurrentPartition })?.id
+        } catch let appError as AppError {
+            throw appError
+        } catch {
+            logger.error("ZonePartitions decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
+    }
+
     func fetchTalentImportCode(reportCode: String, fightID: Int, actorID: Int, token: String) async throws -> String? {
         let url = try graphQLURL()
 
@@ -633,6 +672,25 @@ private struct TalentImportReport: Decodable {
 
 private struct TalentImportFight: Decodable {
     let talentImportCode: String?
+}
+
+// MARK: - zonePartitions
+
+private struct ZonePartitionsQueryData: Decodable {
+    let worldData: WorldDataZone?
+    struct WorldDataZone: Decodable {
+        let encounter: EncounterWithZone?
+        struct EncounterWithZone: Decodable {
+            let zone: ZonePayload?
+            struct ZonePayload: Decodable {
+                let partitions: [PartitionPayload]?
+                struct PartitionPayload: Decodable {
+                    let id: Int
+                    let isCurrentPartition: Bool
+                }
+            }
+        }
+    }
 }
 
 // MARK: - playerDetails

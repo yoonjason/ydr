@@ -10,6 +10,7 @@ protocol CharacterRankingsService {
         className:    String,
         specName:     String,
         difficulty:   Int?,
+        partition:    Int?,
         serverRegion: String,
         limit:        Int,
         token:        String
@@ -38,6 +39,7 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
         className:    String,
         specName:     String,
         difficulty:   Int?,
+        partition:    Int?,
         serverRegion: String,
         limit:        Int,
         token:        String
@@ -48,7 +50,7 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
         let query = """
         query(
           $encounterId: Int!, $className: String!, $specName: String!,
-          $serverRegion: String, $difficulty: Int
+          $serverRegion: String, $difficulty: Int, $partition: Int
         ) {
           worldData {
             encounter(id: $encounterId) {
@@ -57,6 +59,7 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
                 specName: $specName
                 serverRegion: $serverRegion
                 difficulty: $difficulty
+                partition: $partition
               )
             }
           }
@@ -71,6 +74,9 @@ final class CharacterRankingsServiceImpl: CharacterRankingsService {
         ]
         if let difficulty {
             variables["difficulty"] = .int(difficulty)
+        }
+        if let partition {
+            variables["partition"] = .int(partition)
         }
 
         let body = CRGraphQLRequest(query: query, variables: variables)
@@ -246,16 +252,19 @@ private struct CharacterRankingsScalar: Decodable {
 
 final class MockCharacterRankingsService: CharacterRankingsService {
     var result: Result<[RankerParse], AppError> = .success([])
+    private(set) var capturedPartition: Int?
 
     func fetchCharacterRankings(
         encounterId:  Int,
         className:    String,
         specName:     String,
         difficulty:   Int?,
+        partition:    Int?,
         serverRegion: String,
         limit:        Int,
         token:        String
     ) async throws -> [RankerParse] {
-        try result.get()
+        capturedPartition = partition
+        return try result.get()
     }
 }

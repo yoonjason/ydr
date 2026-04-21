@@ -6,6 +6,8 @@ struct ExportMetadata: Equatable {
     let sourceURL: String
     let generatedAt: Date
     var bossSpellNames: [Int: String] = [:]
+    // encounterID → 전술 요약. LuaGenerator 가 tactics 블록 생성에 사용.
+    var tacticsByEncounter: [Int: EncounterTacticsSummary] = [:]
 }
 
 struct LuaOutput: Equatable {

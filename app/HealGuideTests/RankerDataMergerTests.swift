@@ -145,7 +145,7 @@ final class RankerDataMergerTests: XCTestCase {
             rankersRequested:     10,
             rankersUsed:          10,
             talentFilterPreset:   "",
-            talentFilterString:   false,
+            talentFilterString:   nil,
             talentFilterSimilarity: 0.0
         )
     }

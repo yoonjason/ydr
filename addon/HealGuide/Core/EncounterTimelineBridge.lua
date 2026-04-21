@@ -26,12 +26,10 @@ function Bridge:Init()
 
     frame = CreateFrame("Frame")
     frame:RegisterEvent("ENCOUNTER_TIMELINE_EVENT_ADDED")
-    frame:RegisterEvent("ENCOUNTER_TIMELINE_EVENT_STATE_CHANGED")
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ENCOUNTER_TIMELINE_EVENT_ADDED" then
             Bridge:OnEventAdded(...)
         end
-        -- STATE_CHANGED 는 현재는 참고만 — 취소 로직은 pendingTimers 에서 별도 처리 필요
     end)
 
     print("|cff88ff88[HG]|r 네이티브 타임라인 활성")
@@ -68,19 +66,60 @@ function Bridge:OnEventAdded(eventInfo)
         reactions = addon._safeIndex(engine.activeSpecData.reactions or {}, bossSpellID)
     end
 
+    -- 2단 fallback: eventInfo.spellName 으로 _bossNames 역조회
+    if not reactions and policy ~= "off" and addon.RankerDataLoader and activeSpec then
+        local spellName = eventInfo.spellName
+        if type(spellName) == "string" and spellName ~= "" then
+            reactions = addon.RankerDataLoader:LookupByBossSpellName(activeSpec, engine.activeEncounterID, spellName)
+            if reactions then
+                addon.dprint(string.format("[HG-NT] 2단 이름매칭: spellID=%d name=%s", bossSpellID, spellName))
+            end
+        end
+    end
+
     -- leadIns 는 랭커 데이터 포맷에 없으므로 항상 로컬 activeSpecData 에서만 조회
     local leadInEntries = addon._safeIndex(engine.activeSpecData.leadIns or {}, bossSpellID)
 
+    -- 3단 fallback: reactions 도 leadIns 도 없으면 인카운터 빈도 기반 즉시 추천
     if not reactions and not leadInEntries then
+        if policy ~= "off" and addon.RankerDataLoader and activeSpec then
+            local candidates = addon.RankerDataLoader:LookupEncounterFallbackReaction(activeSpec, engine.activeEncounterID)
+            if candidates then
+                local now = GetTime()
+                for _, candidate in ipairs(candidates) do
+                    local sid = candidate.spellID
+                    local onCD = false
+                    local cdStart, cdDur = GetSpellCooldown(sid)
+                    if cdStart and cdDur and cdStart > 0 and cdDur > 1.5 and (cdStart + cdDur - now) > 0 then
+                        onCD = true
+                    end
+                    if not onCD then
+                        engine.recentFallbackAlerts = engine.recentFallbackAlerts or {}
+                        if not engine.recentFallbackAlerts[sid] or (now - engine.recentFallbackAlerts[sid]) >= 10 then
+                            engine.recentFallbackAlerts[sid] = now
+                            local leadTime = addon.Storage:GetSetting("leadTime") or 0
+                            local schedule = math.max(0, duration - leadTime)
+                            addon.dprint(string.format("[HG-NT] 3단 fallback: spellID=%d score=%.1f delay=%.1f", bossSpellID, candidate.score, schedule))
+                            engine:_scheduleAlert(sid, schedule, "fallback", nil, function()
+                                if engine.paused then return end
+                                engine:TriggerAlert(sid, "fallback")
+                            end)
+                            self.scheduledBossSpells[bossSpellID] = GetTime()
+                        end
+                        break
+                    end
+                end
+            end
+        end
         addon.dprint(string.format("[HG-NT] native event spellID=%d duration=%.1f (매핑 없음)",
             bossSpellID, duration))
         return
     end
 
-    -- 중복 방지: 같은 bossSpellID 는 최근 1초 내 재스케줄 금지
+    -- 중복 방지: 같은 bossSpellID 는 최근 0.2초 내 재스케줄 금지
     local now = GetTime()
     local lastSchedule = self.scheduledBossSpells[bossSpellID]
-    if lastSchedule and (now - lastSchedule) < 1.0 then return end
+    if lastSchedule and (now - lastSchedule) < 0.2 then return end
     self.scheduledBossSpells[bossSpellID] = now
 
     local leadTime = addon.Storage:GetSetting("leadTime") or 0

@@ -14,6 +14,7 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient, @unchecked Sendabl
     var masterDataResult: Result<[MasterDataAbility], AppError> = .success([])
     var talentImportCodeResult: Result<String?, AppError> = .success(nil)
     var encounterNameResult: Result<String?, AppError> = .success(nil)
+    var currentPartitionResult: Result<Int?, AppError> = .success(nil)
 
     func fetchAccessToken(clientID: String, clientSecret: String) async throws -> String {
         try tokenResult.get()
@@ -50,5 +51,9 @@ final class MockWarcraftLogsAPIClient: WarcraftLogsAPIClient, @unchecked Sendabl
 
     func fetchEncounterName(encounterID: Int, token: String) async throws -> String? {
         try encounterNameResult.get()
+    }
+
+    func fetchCurrentMythicPlusPartition(encounterID: Int, token: String) async throws -> Int? {
+        try currentPartitionResult.get()
     }
 }

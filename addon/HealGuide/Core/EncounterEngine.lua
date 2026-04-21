@@ -21,6 +21,7 @@ EncounterEngine.recentAlerts       = {}    -- hybrid 디듀프: spellID → time
 EncounterEngine.playerCooldowns    = {}    -- 쿨다운 추적: spellID → GetTime()
 EncounterEngine.stats              = statsNew()
 EncounterEngine.recentTrashAlerts  = {}    -- 트래시 디듀프: spellID → timestamp
+EncounterEngine.recentFallbackAlerts = {}  -- 3단 fallback 디듀프: spellID → timestamp (10s 재발동 금지)
 EncounterEngine.combatLog          = {}    -- 전투 기록: { type, spellID, timestamp }
 EncounterEngine.scheduledAlerts    = {}    -- TimelineFrame 표시 + 취소(캐스트 stop) 용: { spellID, fireTime, source, [castKey], [timer] }
 EncounterEngine.paused             = false
@@ -67,7 +68,7 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
     self:Cancel()
 
     if not addon.SpecMatcher:IsHealer() then
-        print("|cffff8888[HG]|r 힐러 스펙 아님, 인카운터 무시: " .. tostring(encounterID))
+        addon.dprint("|cffff8888[HG]|r 힐러 스펙 아님, 인카운터 무시: " .. tostring(encounterID))
         return
     end
 
@@ -131,6 +132,13 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
 
     if self.cachedAlertMode == "absolute" or self.cachedAlertMode == "hybrid" then
         self:ScheduleTimeline(specData.timeline)
+    end
+
+    -- 보스 전체 주의사항 (_shared 전술) 로드
+    if addon.AlertFrame and addon.AlertFrame.SetSharedTactics then
+        local tactics = bossData.tactics
+        local shared  = type(tactics) == "table" and tactics["_shared"]
+        addon.AlertFrame:SetSharedTactics(type(shared) == "table" and shared or nil)
     end
 end
 
@@ -211,8 +219,9 @@ function EncounterEngine:Cancel()
     end
     self.pendingTimers      = {}
     self.recentAlerts       = {}
-    self.recentTrashAlerts  = {}
-    self.playerCooldowns    = {}
+    self.recentTrashAlerts    = {}
+    self.recentFallbackAlerts = {}
+    self.playerCooldowns      = {}
     self.combatLog          = {}
     self.scheduledAlerts    = {}
     self.paused             = false
@@ -225,6 +234,9 @@ function EncounterEngine:Cancel()
     self.currentPhase       = 1
     if addon.EncounterTimelineBridge then
         addon.EncounterTimelineBridge:Reset()
+    end
+    if addon.AlertFrame and addon.AlertFrame.HideAllTactics then
+        addon.AlertFrame:HideAllTactics()
     end
 end
 
@@ -289,6 +301,53 @@ function EncounterEngine:OnCombatLog(
             matched = safeIndex(self.activeSpecData.reactions, bossSpellID)
         end
     end
+
+    -- 2단 fallback: bossSpellName 으로 _bossNames 맵 역조회
+    if not matched and policy ~= "off" and addon.RankerDataLoader and activeSpec then
+        if C_Spell and C_Spell.GetSpellInfo then
+            local ok, spellInfo = pcall(C_Spell.GetSpellInfo, bossSpellID)
+            local bossSpellName = ok and spellInfo and spellInfo.name
+            if bossSpellName and bossSpellName ~= "" then
+                matched = addon.RankerDataLoader:LookupByBossSpellName(activeSpec, self.activeEncounterID, bossSpellName)
+                if matched then
+                    addon.dprint(string.format("[HG-CL] 2단 이름매칭: bossSpellID=%s name=%s", tostring(bossSpellID), bossSpellName))
+                end
+            end
+        end
+    end
+
+    -- 3단 fallback: 인카운터 전체 reactions 중 빈도 상위 힐 스킬 즉시 추천
+    if not matched and policy ~= "off" and addon.RankerDataLoader and activeSpec then
+        local candidates = addon.RankerDataLoader:LookupEncounterFallbackReaction(activeSpec, self.activeEncounterID)
+        if candidates then
+            local now = GetTime()
+            for _, candidate in ipairs(candidates) do
+                local sid = candidate.spellID
+                local onCD = false
+                local cdStart, cdDur = GetSpellCooldown(sid)
+                if cdStart and cdDur and cdStart > 0 and cdDur > 1.5 and (cdStart + cdDur - now) > 0 then
+                    onCD = true
+                end
+                if not onCD then
+                    if not self.recentFallbackAlerts[sid] or (now - self.recentFallbackAlerts[sid]) >= 10 then
+                        self.recentFallbackAlerts[sid] = now
+                        addon.dprint(string.format("[HG-CL] 3단 fallback: spellID=%s score=%.1f", tostring(sid), candidate.score))
+                        self:_scheduleAlert(sid, 0, "fallback", nil, function()
+                            if self.paused then return end
+                            self:TriggerAlert(sid, "fallback")
+                        end)
+                        local bridge = addon.EncounterTimelineBridge
+                        if bridge and bridge.scheduledBossSpells then
+                            bridge.scheduledBossSpells[bossSpellID] = GetTime()
+                        end
+                    end
+                    break
+                end
+            end
+        end
+        return
+    end
+
     if not matched then return end
 
     -- U2.5: 네이티브 타임라인이 이미 이 bossSpellID 를 예약했다면 COMBAT_LOG 경로 스킵.
@@ -431,7 +490,8 @@ function EncounterEngine:TriggerAlert(spellID, source, tacticAction, tacticPrior
 
     self:_statInc("fired")
     addon.dprint("알림 표시:", spellID, "(" .. source .. ")")
-    addon.AlertFrame:ShowAlert(spellID, tacticAction, tacticPriority)
+    local category = (source == "fallback") and "fallback" or nil
+    addon.AlertFrame:ShowAlert(spellID, tacticAction, tacticPriority, category)
 
     table.insert(self.combatLog, {
         type = "alert",
@@ -547,6 +607,16 @@ end
 
 function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
     if not addon.SpecMatcher:IsHealer() then return end
+
+    -- boss1~5: 보스 전술 텍스트 별도 채널 (인스턴스 타입 무관)
+    if unit == "boss1" or unit == "boss2" or unit == "boss3"
+    or unit == "boss4" or unit == "boss5" then
+        if event == "UNIT_SPELLCAST_START" and type(spellID) == "number" then
+            self:_ShowBossTactics(spellID)
+        end
+        return
+    end
+
     -- 트래시 알림은 5인 던전 전용 (일반/영웅/M+). 레이드/야외 제외.
     local _, instanceType = GetInstanceInfo()
     if instanceType ~= "party" then return end
@@ -593,6 +663,15 @@ function EncounterEngine:OnUnitSpellcast(unit, spellID, event)
 end
 
 function EncounterEngine:OnUnitSpellcastStop(unit, spellID)
+    -- boss1~5: 해당 스킬 전술 라인 제거
+    if unit == "boss1" or unit == "boss2" or unit == "boss3"
+    or unit == "boss4" or unit == "boss5" then
+        if type(spellID) == "number" and addon.AlertFrame and addon.AlertFrame.HideTactics then
+            addon.AlertFrame:HideTactics(spellID)
+        end
+        return
+    end
+
     local ok, castKey = pcall(function() return unit .. ":" .. spellID end)
     if not ok then return end
     for i = #self.scheduledAlerts, 1, -1 do
@@ -608,6 +687,26 @@ function EncounterEngine:OnUnitSpellcastStop(unit, spellID)
             table.remove(self.scheduledAlerts, i)
             addon.dprint("[HG-Trash-Cast] interrupted:", castKey)
         end
+    end
+end
+
+-- 보스 스킬 시전 시작 시 해당 spellID 의 전술 라인을 TacticPanel 에 표시
+function EncounterEngine:_ShowBossTactics(bossSpellID)
+    if not self.activeBossData then return end
+    local tactics = self.activeBossData.tactics
+    if type(tactics) ~= "table" then return end
+
+    local spellLines = safeIndex(tactics, bossSpellID)
+    if type(spellLines) ~= "table" or #spellLines == 0 then return end
+
+    local lines = {}
+    for _, t in ipairs(spellLines) do
+        if type(t) == "table" and type(t.action) == "string" and t.action ~= "" then
+            lines[#lines + 1] = t
+        end
+    end
+    if #lines > 0 and addon.AlertFrame and addon.AlertFrame.ShowTactics then
+        addon.AlertFrame:ShowTactics(bossSpellID, lines)
     end
 end
 
@@ -658,13 +757,15 @@ function EncounterEngine:TestEncounter(encounterID)
                     local encData = entry.data and entry.data[encounterID]
                     if encData then
                         for bossSpellID, _ in pairs(encData) do
-                            print(string.format("|cff00ff00HealGuide|r 랭커 시뮬: bossSpellID=%d 시전", bossSpellID))
-                            self:OnCombatLog(
-                                GetTime(), "SPELL_CAST_SUCCESS", false,
-                                "Creature-Test", "TEST_BOSS", HOSTILE_FLAG, 0,
-                                "", "", 0, 0,
-                                bossSpellID, "TEST", 0)
-                            break
+                            if type(bossSpellID) == "number" then
+                                print(string.format("|cff00ff00HealGuide|r 랭커 시뮬: bossSpellID=%d 시전", bossSpellID))
+                                self:OnCombatLog(
+                                    GetTime(), "SPELL_CAST_SUCCESS", false,
+                                    "Creature-Test", "TEST_BOSS", HOSTILE_FLAG, 0,
+                                    "", "", 0, 0,
+                                    bossSpellID, "TEST", 0)
+                                break
+                            end
                         end
                         break
                     end

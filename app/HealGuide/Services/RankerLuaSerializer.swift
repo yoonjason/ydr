@@ -43,7 +43,11 @@ struct RankerLuaSerializer {
         lines.append("                rankersUsed      = \(m.rankersUsed),")
         lines.append("                talentFilter     = {")
         lines.append("                    preset     = \"\(escapeLua(m.talentFilterPreset))\",")
-        lines.append("                    stringMode = \(m.talentFilterString ? "true" : "false"),")
+        if let str = m.talentFilterString, !str.isEmpty {
+            lines.append("                    stringMode = \"\(escapeLua(str))\",")
+        } else {
+            lines.append("                    stringMode = false,")
+        }
         lines.append("                    similarity = \(String(format: "%.2f", m.talentFilterSimilarity)),")
         lines.append("                },")
         lines.append("            },")
@@ -54,6 +58,27 @@ struct RankerLuaSerializer {
             lines.append("                [\(encID)] = {")
             if let name = entry.encounterNames[encID] {
                 lines.append("                    _name = \"\(escapeLua(name))\",")
+            }
+            if let bossNamesForEnc = entry.bossSpellNames[encID], !bossNamesForEnc.isEmpty {
+                lines.append("                    _bossNames = {")
+                for bossID in bossNamesForEnc.keys.sorted() {
+                    if let name = bossNamesForEnc[bossID] {
+                        lines.append("                        [\(bossID)] = \"\(escapeLua(name))\",")
+                    }
+                }
+                lines.append("                    },")
+            }
+            // 보스 전체 주의사항 (abilityName 빈 라인) — encounter 레벨 _sharedTactics 블록.
+            if let sharedLines = entry.sharedTacticalLines[encID], !sharedLines.isEmpty {
+                lines.append("                    _sharedTactics = {")
+                for t in sharedLines {
+                    lines.append("                        {")
+                    lines.append("                            priority = \"\(t.priority.rawValue)\",")
+                    lines.append("                            marker   = \"\(t.priorityMarker)\",")
+                    lines.append("                            action   = \"\(escapeLua(t.action))\",")
+                    lines.append("                        },")
+                }
+                lines.append("                    },")
             }
             let encAbilities = entry.abilityDescriptions[encID] ?? [:]
             for bossID in bossMap.keys.sorted() {
@@ -109,5 +134,8 @@ struct RankerLuaSerializer {
     private func escapeLua(_ str: String) -> String {
         str.replacingOccurrences(of: "\\", with: "\\\\")
            .replacingOccurrences(of: "\"", with: "\\\"")
+           .replacingOccurrences(of: "\n", with: "\\n")
+           .replacingOccurrences(of: "\r", with: "\\r")
+           .replacingOccurrences(of: "\t", with: "\\t")
     }
 }

@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import HealGuide
 
 // MARK: - Mock TalentFilterService
@@ -50,6 +51,14 @@ private final class MockRankerDataMerger: RankerDataMerger {
 
 @MainActor
 final class RankerCollectionViewModelTests: XCTestCase {
+
+    private var cancellables = Set<AnyCancellable>()
+
+    override func tearDown() {
+        cancellables.removeAll()
+        super.tearDown()
+    }
+
 
     // MARK: - B-2: Mock filterService 주입 동작 검증
 
@@ -317,6 +326,74 @@ final class RankerCollectionViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.selectedDungeon, "nil 선택은 변경 없음")
     }
 
+    // MARK: - 파티션 전달 검증
+
+    func test_collect_mythicPlus_passesPartitionToRankingService() async {
+        let mockAPIClient = MockWarcraftLogsAPIClient()
+        mockAPIClient.currentPartitionResult = .success(42)
+
+        let mockRankingService = MockCharacterRankingsService()
+        mockRankingService.result = .success([])  // 빈 결과 → .failure 상태 진입
+
+        let viewModel = RankerCollectionViewModel(
+            apiClient:      mockAPIClient,
+            rankingService: mockRankingService,
+            filterService:  MockTalentFilterService(filterResult: [], parseTalentStringResult: nil),
+            merger:         MockRankerDataMerger(mergeResult: dummyData(), buildPreviewResult: dummyPreview()),
+            keychain:       MockKeychain()
+        )
+        viewModel.clientID     = "test-id"
+        viewModel.clientSecret = "test-secret"
+        viewModel.selectedDifficulty = .mythicPlus
+
+        let exp = expectation(description: "수집 종료 대기")
+        viewModel.$state
+            .dropFirst()
+            .sink { state in
+                if case .failure = state { exp.fulfill() }
+            }
+            .store(in: &cancellables)
+
+        viewModel.startCollect()
+        await fulfillment(of: [exp], timeout: 5.0)
+
+        XCTAssertEqual(mockRankingService.capturedPartition, 42,
+                       "M+ 수집 시 fetchCurrentMythicPlusPartition 결과가 rankingService 에 전달돼야 함")
+    }
+
+    func test_collect_nonMythicPlus_doesNotPassPartition() async {
+        let mockAPIClient = MockWarcraftLogsAPIClient()
+        mockAPIClient.currentPartitionResult = .success(42)
+
+        let mockRankingService = MockCharacterRankingsService()
+        mockRankingService.result = .success([])
+
+        let viewModel = RankerCollectionViewModel(
+            apiClient:      mockAPIClient,
+            rankingService: mockRankingService,
+            filterService:  MockTalentFilterService(filterResult: [], parseTalentStringResult: nil),
+            merger:         MockRankerDataMerger(mergeResult: dummyData(), buildPreviewResult: dummyPreview()),
+            keychain:       MockKeychain()
+        )
+        viewModel.clientID     = "test-id"
+        viewModel.clientSecret = "test-secret"
+        viewModel.selectedDifficulty = .heroic
+
+        let exp = expectation(description: "수집 종료 대기")
+        viewModel.$state
+            .dropFirst()
+            .sink { state in
+                if case .failure = state { exp.fulfill() }
+            }
+            .store(in: &cancellables)
+
+        viewModel.startCollect()
+        await fulfillment(of: [exp], timeout: 5.0)
+
+        XCTAssertNil(mockRankingService.capturedPartition,
+                     "Heroic/Normal 수집 시 partition 은 nil 이어야 함")
+    }
+
     // MARK: - Helpers
 
     private func makeViewModel(
@@ -378,7 +455,7 @@ final class RankerCollectionViewModelTests: XCTestCase {
                 rankersRequested: 10,
                 rankersUsed: 5,
                 talentFilterPreset: "",
-                talentFilterString: false,
+                talentFilterString: nil,
                 talentFilterSimilarity: 0.0
             ),
             encounterData: [:],
