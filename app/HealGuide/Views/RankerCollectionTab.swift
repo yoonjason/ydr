@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RankerCollectionTab: View {
     @ObservedObject var viewModel: RankerCollectionViewModel
+    @StateObject private var scheduler = AutoCollectScheduler()
 
     // 경로 미설정 시 자동 펼침. 사용자가 수동으로 접었다 펼 수도 있도록 @State 유지.
     @State private var isWowPathExpanded: Bool = false
@@ -15,6 +16,7 @@ struct RankerCollectionTab: View {
                 inputSection
                 Divider()
                 actionSection
+                autoCollectSection
                 stateSection
             }
             .padding()
@@ -23,6 +25,10 @@ struct RankerCollectionTab: View {
         .onAppear {
             viewModel.onAppear()
             isWowPathExpanded = viewModel.wowAddonsPath.isEmpty
+            // 스케줄러 발사 시 자동으로 수집 시작
+            scheduler.onFire = { [weak viewModel] in
+                viewModel?.startCollect()
+            }
         }
     }
 
@@ -252,6 +258,81 @@ struct RankerCollectionTab: View {
             if !isIdle {
                 Button("초기화") { viewModel.reset() }
                     .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    // MARK: - 자동 수집 (베타)
+
+    @ViewBuilder
+    private var autoCollectSection: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("앱 실행 중에만 동작합니다. 지정 시간에 알림 + 마지막 선택한 던전/스펙으로 자동 수집.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("빈도").frame(width: 60, alignment: .leading)
+                    Picker("", selection: $scheduler.frequency) {
+                        ForEach(AutoCollectScheduler.Frequency.allCases) { f in
+                            Text(f.displayName).tag(f)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
+                }
+                if scheduler.frequency != .off {
+                    HStack {
+                        Text("시간").frame(width: 60, alignment: .leading)
+                        Picker("", selection: $scheduler.hourOfDay) {
+                            ForEach(0..<24, id: \.self) { h in
+                                Text("\(String(format: "%02d", h))시").tag(h)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 100)
+                    }
+                    if scheduler.frequency == .weekly {
+                        HStack {
+                            Text("요일").frame(width: 60, alignment: .leading)
+                            Picker("", selection: $scheduler.weekday) {
+                                Text("일").tag(0)
+                                Text("월").tag(1)
+                                Text("화").tag(2)
+                                Text("수").tag(3)
+                                Text("목").tag(4)
+                                Text("금").tag(5)
+                                Text("토").tag(6)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(maxWidth: 240)
+                        }
+                    }
+                    if let next = scheduler.nextFireDate {
+                        Text("다음 예정: \(next.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                    Button("지금 바로 발사 (테스트)") { scheduler.fireNow() }
+                        .buttonStyle(.bordered)
+                        .font(.caption2)
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Text("자동 수집 (베타)")
+                if scheduler.frequency != .off {
+                    Text(scheduler.frequency.displayName)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.25))
+                        .foregroundStyle(.green)
+                        .cornerRadius(4)
+                }
             }
         }
     }
