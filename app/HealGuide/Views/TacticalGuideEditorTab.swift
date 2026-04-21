@@ -77,7 +77,16 @@ struct TacticalGuideEditorTab: View {
     @ViewBuilder
     private var bossSection: some View {
         GroupBox(label: Text("보스 선택").font(.subheadline)) {
-            Picker("", selection: $viewModel.selectedBossIndex) {
+            // 인덱스 범위 자동 clamp 바인딩 — bossList 크기 변경 시 stale index 로 인한 out-of-range 방어.
+            let safeBinding = Binding<Int>(
+                get: {
+                    let i = viewModel.selectedBossIndex
+                    if viewModel.bossList.isEmpty { return 0 }
+                    return min(max(i, 0), viewModel.bossList.count - 1)
+                },
+                set: { viewModel.selectedBossIndex = $0 }
+            )
+            Picker("", selection: safeBinding) {
                 ForEach(Array(viewModel.bossList.enumerated()), id: \.offset) { idx, boss in
                     Text("\(boss.koreanBossName) (\(boss.englishBossName))").tag(idx)
                 }
@@ -98,8 +107,9 @@ struct TacticalGuideEditorTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach($viewModel.editableLines) { $line in
-                        lineRow($line: $line)
+                    // id 기반 ForEach (UUID) — 삭제/이동 시 바인딩 안정성 확보.
+                    ForEach(viewModel.editableLines) { line in
+                        lineRow(for: line.id)
                     }
                 }
                 Button("라인 추가") { viewModel.addLine() }
@@ -110,42 +120,53 @@ struct TacticalGuideEditorTab: View {
         }
     }
 
+    // 라인 id 로 찾아 값·콜백 분리 전달. 배열 인덱스 의존 없음 → 이동·삭제 race 방어.
     @ViewBuilder
-    private func lineRow(@Binding line: EditableLine) -> some View {
-        let l = line
-        HStack(spacing: 6) {
-            Picker("", selection: $line.priority) {
-                Text("★ 필수").tag(TacticalPriority.critical)
-                Text("☆ 권장").tag(TacticalPriority.important)
-                Text("ℹ 노트").tag(TacticalPriority.note)
-            }
-            .labelsHidden()
-            .frame(width: 100)
+    private func lineRow(for id: UUID) -> some View {
+        if let line = viewModel.editableLines.first(where: { $0.id == id }) {
+            HStack(spacing: 6) {
+                Picker("", selection: Binding(
+                    get: { line.priority },
+                    set: { viewModel.updateLine(id: id, priority: $0) }
+                )) {
+                    Text("필수").tag(TacticalPriority.critical)
+                    Text("권장").tag(TacticalPriority.important)
+                    Text("노트").tag(TacticalPriority.note)
+                }
+                .labelsHidden()
+                .frame(width: 90)
 
-            TextField("스킬명 (비우면 보스 전체 주의사항)", text: $line.abilityName)
+                TextField("스킬명 (비우면 보스 전체 주의사항)", text: Binding(
+                    get: { line.abilityName },
+                    set: { viewModel.updateLine(id: id, abilityName: $0) }
+                ))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 180)
 
-            TextField("행동", text: $line.action)
+                TextField("행동", text: Binding(
+                    get: { line.action },
+                    set: { viewModel.updateLine(id: id, action: $0) }
+                ))
                 .textFieldStyle(.roundedBorder)
 
-            Button { viewModel.moveLineUp(id: l.id) } label: {
-                Image(systemName: "arrow.up")
-            }
-            .buttonStyle(.borderless)
+                Button { viewModel.moveLineUp(id: id) } label: {
+                    Image(systemName: "arrow.up")
+                }
+                .buttonStyle(.borderless)
 
-            Button { viewModel.moveLineDown(id: l.id) } label: {
-                Image(systemName: "arrow.down")
-            }
-            .buttonStyle(.borderless)
+                Button { viewModel.moveLineDown(id: id) } label: {
+                    Image(systemName: "arrow.down")
+                }
+                .buttonStyle(.borderless)
 
-            Button(role: .destructive) {
-                viewModel.deleteLine(id: l.id)
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.red)
+                Button(role: .destructive) {
+                    viewModel.deleteLine(id: id)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
         }
     }
 

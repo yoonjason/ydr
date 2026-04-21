@@ -9,7 +9,13 @@ final class TacticalGuideEditorViewModel: ObservableObject {
     // MARK: - Input / State
 
     @Published var selectedDungeon: DungeonInfo? = DungeonInfo.currentSeason.first {
-        didSet { rebuildBossList(); selectedBossIndex = 0 }
+        didSet {
+            rebuildBossList()
+            // bossList 사이즈 변경 이후 인덱스를 안전 범위로 clamp. rebuildEditableLines 는
+            // selectedBossIndex didSet 에서 호출됨.
+            selectedBossIndex = bossList.isEmpty ? 0 : min(selectedBossIndex, bossList.count - 1)
+            rebuildEditableLines()  // 명시적 1회 호출 (값 변경 없을 수도 있으므로 didSet 누락 방어)
+        }
     }
     @Published private(set) var bossList: [BossTacticalGuide] = []
     @Published var selectedBossIndex: Int = 0 {
@@ -44,12 +50,28 @@ final class TacticalGuideEditorViewModel: ObservableObject {
 
     private func rebuildEditableLines() {
         guard !bossList.isEmpty,
+              selectedBossIndex >= 0,
               selectedBossIndex < bossList.count else {
             editableLines = []
             return
         }
         let boss = bossList[selectedBossIndex]
         editableLines = boss.lines.map { EditableLine(line: $0) }
+    }
+
+    // 현재 선택된 보스 안전 접근 (nil 허용). View 바인딩 버그 방어.
+    var selectedBoss: BossTacticalGuide? {
+        guard selectedBossIndex >= 0, selectedBossIndex < bossList.count else { return nil }
+        return bossList[selectedBossIndex]
+    }
+
+    // MARK: - Line update (ID 기반, 인덱스 경쟁 안전)
+
+    func updateLine(id: UUID, priority: TacticalPriority? = nil, abilityName: String? = nil, action: String? = nil) {
+        guard let idx = editableLines.firstIndex(where: { $0.id == id }) else { return }
+        if let p = priority   { editableLines[idx].priority   = p }
+        if let a = abilityName { editableLines[idx].abilityName = a }
+        if let act = action    { editableLines[idx].action      = act }
     }
 
     // MARK: - Edit actions
