@@ -35,6 +35,9 @@ struct HealGuideApp: App {
 
                 IDMappingDebugTab()
                     .tabItem { Label("ID 매핑 디버그", systemImage: "ladybug") }
+
+                CooldownSimulationTab()
+                    .tabItem { Label("베타 시뮬", systemImage: "flask") }
             }
         }
     }

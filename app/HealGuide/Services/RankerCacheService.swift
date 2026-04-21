@@ -11,6 +11,11 @@ final class RankerCacheService {
         self.cacheURL = cacheURL ?? RankerCacheService.defaultCacheURL
     }
 
+    /// 캐시에 저장된 모든 entries 반환. 시뮬레이션 탭 등에서 기존 데이터 조회용.
+    func loadAll() -> [HGPTRankerData] {
+        load()
+    }
+
     /// 새 entry 를 캐시에 병합하고 전체 entries 를 반환.
     func merge(_ newEntry: HGPTRankerData) -> [HGPTRankerData] {
         var entries = load()
