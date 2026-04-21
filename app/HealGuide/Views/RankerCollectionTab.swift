@@ -511,7 +511,7 @@ private struct BossMappingRow: View {
 
     @ViewBuilder
     private var expandedDetail: some View {
-        // 1. 기믹 설명 (있으면)
+        // 1. 기믹 설명 (Blizzard API)
         if let desc = data.abilityDescriptions[entry.encounterID]?[entry.bossSpellID], !desc.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Label("기믹 설명", systemImage: "book")
@@ -521,6 +521,19 @@ private struct BossMappingRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // 1b. 범용 힐러 가이드 (키워드 파싱)
+                let hints = HealerHintGenerator.generate(from: desc)
+                if !hints.isEmpty {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(hints, id: \.self) { hint in
+                            Text(hint)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
             }
             .padding(.bottom, 4)
         }

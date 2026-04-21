@@ -59,9 +59,17 @@ struct RankerLuaSerializer {
             for bossID in bossMap.keys.sorted() {
                 guard let responses = bossMap[bossID], !responses.isEmpty else { continue }
                 lines.append("                    [\(bossID)] = {")
-                // Phase 3: Blizzard 기믹 설명 (있으면)
+                // Phase 3: Blizzard 기믹 설명 + 키워드 기반 범용 힐러 가이드
                 if let desc = encAbilities[bossID], !desc.isEmpty {
                     lines.append("                        _description = \"\(escapeLua(desc))\",")
+                    let hints = HealerHintGenerator.generate(from: desc)
+                    if !hints.isEmpty {
+                        lines.append("                        _hints = {")
+                        for hint in hints {
+                            lines.append("                            \"\(escapeLua(hint))\",")
+                        }
+                        lines.append("                        },")
+                    }
                 }
                 for response in responses {
                     lines.append("                        {")

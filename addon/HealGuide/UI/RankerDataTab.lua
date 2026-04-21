@@ -144,6 +144,41 @@ local function populateDetailFrame(detail, entry)
                 local mappings = encData[bssID]
                 if type(mappings) == "table" then
                     local bossLabel = spellName(bssID)
+
+                    -- Phase 3: Blizzard 기믹 설명 (맥앱 수집 시 저장)
+                    if type(mappings._description) == "string" and mappings._description ~= "" then
+                        rowIndex = rowIndex + 1
+                        local descRow = getOrCreateDetailRow(detail, rowIndex)
+                        descRow:SetHeight(DETAIL_ROW_H)
+                        descRow:ClearAllPoints()
+                        descRow:SetPoint("TOPLEFT",  detail, "TOPLEFT",  0, detailY)
+                        descRow:SetPoint("TOPRIGHT", detail, "TOPRIGHT", 0, detailY)
+                        descRow.text:SetText(string.format(
+                            "|cff88ccff📖 %s:|r %s",
+                            bossLabel:sub(1, 20),
+                            mappings._description:sub(1, 80)
+                        ))
+                        descRow:Show()
+                        detailY = detailY - DETAIL_ROW_H
+                    end
+
+                    -- Phase A: 키워드 기반 범용 힐러 가이드
+                    if type(mappings._hints) == "table" then
+                        for _, hint in ipairs(mappings._hints) do
+                            if type(hint) == "string" and hint ~= "" then
+                                rowIndex = rowIndex + 1
+                                local hintRow = getOrCreateDetailRow(detail, rowIndex)
+                                hintRow:SetHeight(DETAIL_ROW_H)
+                                hintRow:ClearAllPoints()
+                                hintRow:SetPoint("TOPLEFT",  detail, "TOPLEFT",  10, detailY)
+                                hintRow:SetPoint("TOPRIGHT", detail, "TOPRIGHT", 0, detailY)
+                                hintRow.text:SetText("|cffffaa44" .. hint .. "|r")
+                                hintRow:Show()
+                                detailY = detailY - DETAIL_ROW_H
+                            end
+                        end
+                    end
+
                     local firstRow  = true
                     for _, m in ipairs(mappings) do
                         rowIndex = rowIndex + 1
