@@ -333,10 +333,10 @@ function EncounterEngine:OnCombatLog(
             end
         end
         if pickedTacticAction and pickedTacticPriority then
-            -- marker (★/☆) 를 action 앞에 붙여 한 줄에 압축
+            -- ASCII 마커만 사용 — WoW 클라이언트 기본 폰트 글리프 호환 (★/☆ 는 tofu 위험)
             local marker = ""
-            if pickedTacticPriority == "critical" then marker = "★ "
-            elseif pickedTacticPriority == "important" then marker = "☆ "
+            if pickedTacticPriority == "critical" then marker = "[!] "
+            elseif pickedTacticPriority == "important" then marker = "[~] "
             end
             pickedTacticAction = marker .. pickedTacticAction
         end

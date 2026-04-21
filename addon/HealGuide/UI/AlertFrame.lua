@@ -122,16 +122,20 @@ function AlertFrame:_CreateSlot(index)
 
     -- 전술 가이드 1줄 (보스 스킬 시전 시 힐러 대응 방법). 색상은 priority 에 따라
     -- ShowAlert 에서 동적 설정.
+    -- 앵커: icon 기준 (nameText Hide 여부 무관하게 고정 위치). nameText 하단과 비슷한
+    -- 높이에 배치되도록 y 오프셋 = -(fontSize + 2).
     local tacticText = frame:CreateFontString(nil, "OVERLAY")
     if fontPath then
         tacticText:SetFont(fontPath, math.max(10, fontSize - 4), "")
     else
         tacticText:SetFontObject("GameFontNormalSmall")
     end
-    tacticText:SetPoint("TOPLEFT",  nameText, "BOTTOMLEFT", 0, -2)
-    tacticText:SetPoint("TOPRIGHT", nameText, "BOTTOMRIGHT", 0, -2)
+    tacticText:SetPoint("TOPLEFT",  icon,  "RIGHT",  8, -(fontSize + 2))
+    tacticText:SetPoint("TOPRIGHT", frame, "RIGHT", -40, -(fontSize + 2))
     tacticText:SetJustifyH("LEFT")
-    tacticText:SetWordWrap(false)
+    -- 긴 전술은 줄바꿈 허용 (2줄까지). 초과분은 자연 truncate.
+    tacticText:SetWordWrap(true)
+    tacticText:SetMaxLines(2)
     tacticText:Hide()
     frame.tacticText = tacticText
 
@@ -232,17 +236,21 @@ function AlertFrame:ShowAlert(spellID, tacticText, tacticPriority)
     end
 
     -- 전술 라인 표시 (있으면). priority 로 색상 구분:
-    --   critical=빨강, important=주황, note=흰색
+    --   critical=빨강, important=주황, note=사용자 테마색
     if slot.tacticText then
         if type(tacticText) == "string" and tacticText ~= "" then
-            local r, g, b = 1, 1, 1
+            local r, g, b, a = 1, 1, 1, 1
             if tacticPriority == "critical" then
                 r, g, b = 1, 0.33, 0.33
             elseif tacticPriority == "important" then
                 r, g, b = 1, 0.67, 0.27
+            else
+                -- note / 기타 — 사용자 테마 색상 따름 (nameText 와 일관)
+                local themeColor = addon.Storage:GetSetting("alertTextColor") or { r = 1, g = 1, b = 1, a = 1 }
+                r, g, b, a = themeColor.r, themeColor.g, themeColor.b, themeColor.a
             end
             slot.tacticText:SetText(tacticText)
-            slot.tacticText:SetTextColor(r, g, b, 1)
+            slot.tacticText:SetTextColor(r, g, b, a)
             slot.tacticText:Show()
         else
             slot.tacticText:Hide()
@@ -372,6 +380,14 @@ function AlertFrame:ApplyTheme()
                 slot.nameText:SetFontObject("GameFontNormalLarge")
             end
             slot.nameText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
+        end
+        -- tacticText 폰트도 테마 반영 (색상은 priority 별로 ShowAlert 에서 재지정).
+        if slot.tacticText then
+            if fontPath then
+                slot.tacticText:SetFont(fontPath, math.max(10, fontSize - 4), "")
+            else
+                slot.tacticText:SetFontObject("GameFontNormalSmall")
+            end
         end
     end
 end

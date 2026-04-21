@@ -18,10 +18,12 @@ struct TacticalLine: Codable, Equatable {
     let abilityName: String
     let action: String
 
+    // ASCII 마커 — WoW 클라이언트 기본 폰트가 ★/☆ (U+2605/2606) 글리프 미포함일 수 있어
+    // tofu 렌더 위험. 색상 구분은 별도로 적용되므로 마커는 간결한 문자로 유지.
     var priorityMarker: String {
         switch priority {
-        case .critical:  return "★"
-        case .important: return "☆"
+        case .critical:  return "[!]"
+        case .important: return "[~]"
         case .note:      return ""
         }
     }
