@@ -174,42 +174,67 @@ actor RankerNameResolverImpl: RankerNameResolver {
         blizzardClientID:     String,
         blizzardClientSecret: String
     ) async -> [Int: String] {
+        print("[HG-NR-DEBUG] translateEncountersToKorean 진입")
+        print("[HG-NR-DEBUG]   dungeonKoreanName = '\(dungeonKoreanName)'")
+        print("[HG-NR-DEBUG]   englishNames 수 = \(englishNames.count)")
+        print("[HG-NR-DEBUG]   englishNames 내용 = \(englishNames)")
+        print("[HG-NR-DEBUG]   blizzardClientID 비어있음 = \(blizzardClientID.isEmpty)")
+        print("[HG-NR-DEBUG]   blizzardClientSecret 비어있음 = \(blizzardClientSecret.isEmpty)")
+
         guard !englishNames.isEmpty,
               !blizzardClientID.isEmpty, !blizzardClientSecret.isEmpty else {
+            print("[HG-NR-DEBUG] ❌ guard 실패 — 번역 스킵")
             return [:]
         }
         guard let token = await ensureBlizzardToken(
             clientID: blizzardClientID, clientSecret: blizzardClientSecret
-        ) else { return [:] }
+        ) else {
+            print("[HG-NR-DEBUG] ❌ Blizzard 토큰 발급 실패")
+            return [:]
+        }
+        print("[HG-NR-DEBUG] ✅ Blizzard 토큰 발급 성공 (첫 20자: \(String(token.prefix(20)))...)")
 
         // 1. 던전 한국어명 → Blizzard instanceID (세션 캐시)
         let instanceID: Int
         if let cached = dungeonInstanceIDCache[dungeonKoreanName] {
             instanceID = cached
+            print("[HG-NR-DEBUG] instanceID 캐시 히트: \(instanceID)")
         } else {
             guard let resolved = await findInstanceID(dungeonKoreanName: dungeonKoreanName, token: token) else {
+                print("[HG-NR-DEBUG] ❌ journal-instance/index 에서 '\(dungeonKoreanName)' 미발견")
                 logger.warning("journal-instance/index 에서 '\(dungeonKoreanName)' 미발견 — 영문 유지")
                 return [:]
             }
             dungeonInstanceIDCache[dungeonKoreanName] = resolved
             instanceID = resolved
+            print("[HG-NR-DEBUG] ✅ instanceID 발견: \(instanceID)")
         }
 
         // 2. 영문→한국어 보스명 맵 (세션 캐시)
         let enToKr: [String: String]
         if let cached = instanceEnToKrCache[instanceID] {
             enToKr = cached
+            print("[HG-NR-DEBUG] EN→KR 맵 캐시 히트: \(enToKr.count)개")
         } else {
             enToKr = await fetchEnToKrMap(instanceID: instanceID, token: token)
             instanceEnToKrCache[instanceID] = enToKr
+            print("[HG-NR-DEBUG] EN→KR 맵 신규 페치: \(enToKr.count)개")
+            print("[HG-NR-DEBUG]   맵 내용: \(enToKr)")
         }
 
         // 3. WCL encID → 한국어 이름 매핑 (영문명 매칭)
         var result: [Int: String] = [:]
+        var unmatched: [String] = []
         for (wclEncID, englishName) in englishNames {
             if let korean = enToKr[englishName], !korean.isEmpty {
                 result[wclEncID] = korean
+            } else {
+                unmatched.append(englishName)
             }
+        }
+        print("[HG-NR-DEBUG] 최종 번역 결과: \(result.count)개 성공 / \(unmatched.count)개 실패")
+        if !unmatched.isEmpty {
+            print("[HG-NR-DEBUG]   매칭 실패 영문명: \(unmatched)")
         }
         return result
     }

@@ -271,6 +271,10 @@ final class RankerCollectionViewModel: ObservableObject {
         if Task.isCancelled { state = .idle; return }
         let blizzardID     = loadBlizzardClientID()
         let blizzardSecret = loadBlizzardClientSecret()
+        print("[HG-VM-DEBUG] 번역 단계 진입 — blizzardID 비어있음=\(blizzardID.isEmpty), secret 비어있음=\(blizzardSecret.isEmpty), encounterNames 수=\(collectedEncounterNames.count)")
+        print("[HG-VM-DEBUG]   dungeon.name = '\(dungeon.name)'")
+        print("[HG-VM-DEBUG]   extractKoreanName = '\(extractKoreanName(dungeon.name))'")
+        print("[HG-VM-DEBUG]   collectedEncounterNames = \(collectedEncounterNames)")
         if !blizzardID.isEmpty && !blizzardSecret.isEmpty && !collectedEncounterNames.isEmpty {
             let translated = await nameResolver.translateEncountersToKorean(
                 dungeonKoreanName:    extractKoreanName(dungeon.name),
@@ -278,10 +282,14 @@ final class RankerCollectionViewModel: ObservableObject {
                 blizzardClientID:     blizzardID,
                 blizzardClientSecret: blizzardSecret
             )
+            print("[HG-VM-DEBUG] 번역 복귀 — \(translated.count)개 번역됨")
             // 번역 성공한 것만 덮어씀, 실패는 영문 유지
             for (id, kr) in translated {
                 collectedEncounterNames[id] = kr
             }
+            print("[HG-VM-DEBUG] 최종 collectedEncounterNames = \(collectedEncounterNames)")
+        } else {
+            print("[HG-VM-DEBUG] ❌ 번역 스킵 — Blizzard creds 없거나 encounterNames 비어있음")
         }
 
         let merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)
