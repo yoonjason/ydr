@@ -276,7 +276,6 @@ final class RankerCollectionViewModel: ObservableObject {
         let originalEnglishNames = collectedEncounterNames
         var abilityDescriptions: [Int: [Int: String]] = [:]
 
-        print("[HG-VM-DEBUG] 번역 단계 진입 — blizzardID 비어있음=\(blizzardID.isEmpty), secret 비어있음=\(blizzardSecret.isEmpty), encounterNames 수=\(collectedEncounterNames.count)")
         if !blizzardID.isEmpty && !blizzardSecret.isEmpty && !collectedEncounterNames.isEmpty {
             let translated = await nameResolver.translateEncountersToKorean(
                 dungeonKoreanName:    dungeonKoreanName,
@@ -284,7 +283,6 @@ final class RankerCollectionViewModel: ObservableObject {
                 blizzardClientID:     blizzardID,
                 blizzardClientSecret: blizzardSecret
             )
-            print("[HG-VM-DEBUG] 번역 복귀 — \(translated.count)개 번역됨")
             for (id, kr) in translated {
                 collectedEncounterNames[id] = kr
             }
@@ -297,9 +295,7 @@ final class RankerCollectionViewModel: ObservableObject {
                 blizzardClientID:      blizzardID,
                 blizzardClientSecret:  blizzardSecret
             )
-            print("[HG-VM-DEBUG] abilityDescriptions \(abilityDescriptions.count)개 encounter 커버")
-        } else {
-            print("[HG-VM-DEBUG] ❌ 번역/설명 스킵 — Blizzard creds 없음")
+            logger.debug("collect(): translated=\(translated.count), abilityDescriptions=\(abilityDescriptions.count)")
         }
 
         var merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)

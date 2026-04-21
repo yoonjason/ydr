@@ -199,21 +199,26 @@ extension HGPTRankerData: Codable {
         }
         try container.encode(stringKeyed, forKey: .encounterData)
 
-        let stringNames = encounterNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
-        try container.encode(stringNames, forKey: .encounterNames)
-
-        let stringSpellNames = spellNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
-        try container.encode(stringSpellNames, forKey: .spellNames)
-
-        var stringAbilities: [String: [String: String]] = [:]
-        for (encID, bossMap) in abilityDescriptions {
-            var inner: [String: String] = [:]
-            for (bossID, desc) in bossMap {
-                inner[String(bossID)] = desc
-            }
-            stringAbilities[String(encID)] = inner
+        // NIT-2: 빈 맵은 직렬화 스킵. decode 측 try? + 빈 맵 폴백이 동일하게 동작하므로 역호환 유지.
+        if !encounterNames.isEmpty {
+            let stringNames = encounterNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
+            try container.encode(stringNames, forKey: .encounterNames)
         }
-        try container.encode(stringAbilities, forKey: .abilityDescriptions)
+        if !spellNames.isEmpty {
+            let stringSpellNames = spellNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
+            try container.encode(stringSpellNames, forKey: .spellNames)
+        }
+        if !abilityDescriptions.isEmpty {
+            var stringAbilities: [String: [String: String]] = [:]
+            for (encID, bossMap) in abilityDescriptions {
+                var inner: [String: String] = [:]
+                for (bossID, desc) in bossMap {
+                    inner[String(bossID)] = desc
+                }
+                stringAbilities[String(encID)] = inner
+            }
+            try container.encode(stringAbilities, forKey: .abilityDescriptions)
+        }
     }
 }
 

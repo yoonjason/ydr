@@ -184,8 +184,9 @@ actor RankerNameResolverImpl: RankerNameResolver {
     // abilities: bossSpellID → 한국어 설명
     // 구조를 편평하게 두어 인스턴스 내부 인카운터별 lazy fetch 가능.
     private var journalEncounterAbilityCache: [Int: [Int: String]] = [:]  // journalEncounterID → abilities
-    // wclEncID → journalEncounterID 매핑 (번역 단계에서 찾은 bestInstance + 영문명 매칭 기반)
-    private var wclToJournalEncounterID: [Int: Int] = [:]
+    // SUG-3: (instanceID, locale) → encounters 캐시. translateEncountersToKorean 과
+    // fetchBossAbilityDescriptions 간 동일 locale 조회 중복 제거.
+    private var instanceEncountersCache: [String: [JournalEncounterSummary]] = [:]
 
     func fetchBossAbilityDescriptions(
         dungeonKoreanName: String,
@@ -204,7 +205,7 @@ actor RankerNameResolverImpl: RankerNameResolver {
         // 1. translateEncountersToKorean 이 남긴 instanceID 캐시 활용.
         // 이게 없으면 번역이 아직 안 됐거나 실패한 케이스 → 빈 결과.
         guard let instanceID = dungeonInstanceIDCache[dungeonKoreanName] else {
-            print("[HG-NR-DEBUG] fetchBossAbilityDescriptions: instanceID 캐시 없음 — 번역 먼저 수행 필요")
+            logger.debug("fetchBossAbilityDescriptions: instanceID 캐시 없음 — 번역 선행 필요")
             return [:]
         }
 
@@ -224,10 +225,8 @@ actor RankerNameResolverImpl: RankerNameResolver {
         for (wclEncID, englishName) in englishEncounterNames {
             let normalized = Self.normalizeEnglishName(englishName)
             guard let journalEncID = blizzardEnToID[normalized] else {
-                print("[HG-NR-DEBUG]   wclEncID \(wclEncID) '\(englishName)': journalEncounterID 미발견")
                 continue
             }
-            wclToJournalEncounterID[wclEncID] = journalEncID
 
             let abilities: [Int: String]
             if let cached = journalEncounterAbilityCache[journalEncID] {
@@ -235,13 +234,12 @@ actor RankerNameResolverImpl: RankerNameResolver {
             } else {
                 abilities = await fetchEncounterAbilities(encounterID: journalEncID, token: token)
                 journalEncounterAbilityCache[journalEncID] = abilities
-                print("[HG-NR-DEBUG]   wclEncID \(wclEncID) → journalEncID \(journalEncID): abilities \(abilities.count)개 페치")
             }
             if !abilities.isEmpty {
                 result[wclEncID] = abilities
             }
         }
-        print("[HG-NR-DEBUG] abilityDescriptions 결과: \(result.count)개 encounter")
+        logger.debug("abilityDescriptions: \(result.count)개 encounter 커버")
         return result
     }
 
@@ -274,33 +272,23 @@ actor RankerNameResolverImpl: RankerNameResolver {
         blizzardClientID:     String,
         blizzardClientSecret: String
     ) async -> [Int: String] {
-        print("[HG-NR-DEBUG] translateEncountersToKorean 진입")
-        print("[HG-NR-DEBUG]   dungeonKoreanName = '\(dungeonKoreanName)'")
-        print("[HG-NR-DEBUG]   englishNames 수 = \(englishNames.count)")
-        print("[HG-NR-DEBUG]   englishNames 내용 = \(englishNames)")
-
         guard !englishNames.isEmpty,
               !blizzardClientID.isEmpty, !blizzardClientSecret.isEmpty else {
-            print("[HG-NR-DEBUG] ❌ guard 실패 — 번역 스킵")
             return [:]
         }
         guard let token = await ensureBlizzardToken(
             clientID: blizzardClientID, clientSecret: blizzardClientSecret
         ) else {
-            print("[HG-NR-DEBUG] ❌ Blizzard 토큰 발급 실패")
             return [:]
         }
-        print("[HG-NR-DEBUG] ✅ Blizzard 토큰 발급 성공")
 
         // 1. 던전 이름 매칭되는 모든 instance 후보 수집.
         // Blizzard 가 같은 한국어 이름으로 여러 instance 를 보유할 수 있음 (예: BC 리메이크 이슈).
         let candidateIDs = await findInstanceIDs(dungeonKoreanName: dungeonKoreanName, token: token)
         guard !candidateIDs.isEmpty else {
-            print("[HG-NR-DEBUG] ❌ journal-instance/index 에서 '\(dungeonKoreanName)' 미발견")
-            logger.warning("journal-instance/index 에서 '\(dungeonKoreanName)' 미발견 — 영문 유지")
+            logger.warning("journal-instance/index 에서 '\(dungeonKoreanName, privacy: .public)' 미발견 — 영문 유지")
             return [:]
         }
-        print("[HG-NR-DEBUG] '\(dungeonKoreanName)' 매칭 후보 \(candidateIDs.count)개: \(candidateIDs)")
 
         // 2. 후보별로 EN→KR 맵 페치 후, WCL 영문명과 최대 겹침 instance 선택.
         // 매칭은 정규화 이름 (정관사 제거 + 소문자 + 공백 trim) 기준.
@@ -319,7 +307,7 @@ actor RankerNameResolverImpl: RankerNameResolver {
             }
             let normalizedBlizzardSet = Set(enToKr.keys.map(Self.normalizeEnglishName))
             let overlap = requestedEnglishSet.intersection(normalizedBlizzardSet).count
-            print("[HG-NR-DEBUG]   후보 \(candidateID): EN→KR \(enToKr.count)개, 영문명 \(Array(enToKr.keys)) → overlap=\(overlap)")
+            logger.debug("후보 instance \(candidateID): overlap=\(overlap)")
             if overlap > bestOverlap {
                 bestOverlap = overlap
                 bestInstanceID = candidateID
@@ -328,11 +316,9 @@ actor RankerNameResolverImpl: RankerNameResolver {
         }
 
         guard let chosen = bestInstanceID, bestOverlap > 0 else {
-            print("[HG-NR-DEBUG] ❌ 어떤 후보도 WCL 영문명과 겹치지 않음 — 영문 유지")
-            logger.warning("'\(dungeonKoreanName)' 번역 실패: \(candidateIDs.count)개 후보 중 겹치는 보스 없음")
+            logger.warning("'\(dungeonKoreanName, privacy: .public)' 번역 실패: \(candidateIDs.count)개 후보 중 겹치는 보스 없음")
             return [:]
         }
-        print("[HG-NR-DEBUG] ✅ 최적 후보: instanceID=\(chosen), overlap=\(bestOverlap)")
         dungeonInstanceIDCache[dungeonKoreanName] = chosen
 
         // 3. WCL encID → 한국어 이름 매핑. 정규화 이름 기준 비교.
@@ -341,19 +327,13 @@ actor RankerNameResolverImpl: RankerNameResolver {
             uniqueKeysWithValues: bestEnToKr.map { (Self.normalizeEnglishName($0.key), $0.value) }
         )
         var result: [Int: String] = [:]
-        var unmatched: [String] = []
         for (wclEncID, englishName) in englishNames {
             let key = Self.normalizeEnglishName(englishName)
             if let korean = normalizedEnToKr[key], !korean.isEmpty {
                 result[wclEncID] = korean
-            } else {
-                unmatched.append(englishName)
             }
         }
-        print("[HG-NR-DEBUG] 최종 번역 결과: \(result.count)개 성공 / \(unmatched.count)개 실패")
-        if !unmatched.isEmpty {
-            print("[HG-NR-DEBUG]   매칭 실패 영문명: \(unmatched)")
-        }
+        logger.debug("translateEncountersToKorean: \(result.count)/\(englishNames.count) 성공")
         return result
     }
 
@@ -416,10 +396,16 @@ actor RankerNameResolverImpl: RankerNameResolver {
     }
 
     private func fetchInstanceEncounters(instanceID: Int, locale: String, token: String) async -> [JournalEncounterSummary] {
+        // SUG-3: (instanceID, locale) 조합으로 캐싱. translate 와 abilities 양쪽에서 같은 키 조회.
+        let cacheKey = "\(instanceID)/\(locale)"
+        if let cached = instanceEncountersCache[cacheKey] {
+            return cached
+        }
         do {
             let info = try await blizzardClient.fetchJournalInstance(
                 instanceID: instanceID, locale: locale, token: token
             )
+            instanceEncountersCache[cacheKey] = info.encounters
             return info.encounters
         } catch {
             logger.warning("journal-instance/\(instanceID) (\(locale, privacy: .public)) 페치 실패: \(error)")

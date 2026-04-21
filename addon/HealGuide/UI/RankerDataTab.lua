@@ -146,6 +146,8 @@ local function populateDetailFrame(detail, entry)
                     local bossLabel = spellName(bssID)
 
                     -- Phase 3: Blizzard 기믹 설명 (맥앱 수집 시 저장)
+                    -- NIT-1: string.sub 은 바이트 기준. 한국어 UTF-8 3바이트 → sub(1, N) 의 실제 글자 수 = N/3.
+                    -- description 은 160바이트 (~50자) 까지 허용. 보스명 60바이트 (~20자).
                     if type(mappings._description) == "string" and mappings._description ~= "" then
                         rowIndex = rowIndex + 1
                         local descRow = getOrCreateDetailRow(detail, rowIndex)
@@ -154,9 +156,9 @@ local function populateDetailFrame(detail, entry)
                         descRow:SetPoint("TOPLEFT",  detail, "TOPLEFT",  0, detailY)
                         descRow:SetPoint("TOPRIGHT", detail, "TOPRIGHT", 0, detailY)
                         descRow.text:SetText(string.format(
-                            "|cff88ccff📖 %s:|r %s",
-                            bossLabel:sub(1, 20),
-                            mappings._description:sub(1, 80)
+                            "|cff88ccff[설명] %s:|r %s",
+                            bossLabel:sub(1, 60),
+                            mappings._description:sub(1, 160)
                         ))
                         descRow:Show()
                         detailY = detailY - DETAIL_ROW_H

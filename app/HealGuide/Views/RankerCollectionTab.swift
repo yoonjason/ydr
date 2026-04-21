@@ -522,7 +522,7 @@ private struct BossMappingRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // 1b. 범용 힐러 가이드 (키워드 파싱)
+                // 1b. 범용 힐러 가이드 (키워드 파싱) — 매칭 없으면 섹션 자체 생략
                 let hints = HealerHintGenerator.generate(from: desc)
                 if !hints.isEmpty {
                     VStack(alignment: .leading, spacing: 1) {
@@ -539,13 +539,15 @@ private struct BossMappingRow: View {
         }
 
         // 2. 힐 스킬 리스트 (랭커 데이터)
+        // BLOCKER-2: 동일 boss 스킬에 같은 healer spellID 가 다른 delay 로 복수 등장 가능 →
+        // spellID 단독 id 는 충돌. enumerated().offset 으로 순서 기반 고유 id 사용.
         if let healerEntries = data.encounterData[entry.encounterID]?[entry.bossSpellID],
            !healerEntries.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Label("힐 스킬 (랭커 데이터)", systemImage: "cross.circle")
                     .font(.caption2)
                     .foregroundStyle(.green)
-                ForEach(healerEntries, id: \.spellID) { he in
+                ForEach(Array(healerEntries.enumerated()), id: \.offset) { _, he in
                     healerRow(he)
                 }
             }
