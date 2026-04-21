@@ -192,8 +192,9 @@ struct CooldownSimulationTab: View {
                 .padding(.leading, 14)
             }
             // 대안/스킵 (쿨타임 체크된 것)
+            // BLOCKER-1 대응: spellID 단독 id 는 같은 skipped 배열 내 중복 가능 → enumerated().offset 사용
             if !result.skipped.isEmpty {
-                ForEach(result.skipped) { sk in
+                ForEach(Array(result.skipped.enumerated()), id: \.offset) { _, sk in
                     HStack(spacing: 4) {
                         Image(systemName: "minus.circle")
                             .foregroundStyle(.gray)

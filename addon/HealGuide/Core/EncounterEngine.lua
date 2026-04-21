@@ -326,6 +326,8 @@ function EncounterEngine:OnCombatLog(
             local delay = math.max(0, rawDelay)
 
             -- 베타 쿨타임 체크: 스킬 미보유 또는 예상 시전 시점에 쿨이 안 돌 스킬은 스킵.
+            -- BLOCKER-3: GCD (전역 쿨, ~1.5s) 를 실제 쿨로 오인하지 않도록 duration > 1.5 가드.
+            -- GCD 는 모든 스킬에 균일 적용되므로 "이 스킬이 쿨" 이라고 판단하면 안 됨.
             local betaSkip = false
             if useBetaCD then
                 if IsSpellKnown and not IsSpellKnown(playerSpellID) then
@@ -334,7 +336,7 @@ function EncounterEngine:OnCombatLog(
                         tostring(playerSpellID)))
                 else
                     local cdStart, cdDuration = GetSpellCooldown(playerSpellID)
-                    if cdStart and cdDuration and cdStart > 0 then
+                    if cdStart and cdDuration and cdStart > 0 and cdDuration > 1.5 then
                         local remaining = cdStart + cdDuration - GetTime()
                         if remaining > delay then
                             betaSkip = true

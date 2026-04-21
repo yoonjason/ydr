@@ -429,10 +429,11 @@ function MainFrame:_CreateRankerTab(panel)
     reloadBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     panel.rankerReloadBtn = reloadBtn
 
-    -- 베타: 쿨타임 fallback 토글 (정책 라디오 아래)
+    -- 베타: 쿨타임 fallback 토글 (정책 라디오 아래로 앵커)
+    -- BLOCKER-2: 이전 y=-30 은 라디오 버튼 텍스트와 수직 겹침. firstRadio:BOTTOMLEFT 기준.
     local betaCB = CreateFrame("CheckButton", "HGBetaCooldownCB", panel, "UICheckButtonTemplate")
     betaCB:SetSize(22, 22)
-    betaCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -30)
+    betaCB:SetPoint("TOPLEFT", firstRadio, "BOTTOMLEFT", 0, -4)
     _G["HGBetaCooldownCBText"]:SetText("|cffffaa44베타|r 쿨타임 fallback (추천 스킬이 쿨이면 알림 스킵)")
     betaCB:SetScript("OnClick", function(self)
         addon.Storage:SetSetting("useBetaCooldownFallback", self:GetChecked() and true or false)

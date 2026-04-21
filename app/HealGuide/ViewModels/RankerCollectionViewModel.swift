@@ -394,26 +394,19 @@ final class RankerCollectionViewModel: ObservableObject {
         }
         // Phase 3b: 사용자 큐레이션 전술 가이드 매칭.
         // 매 (wclEncID, bossSpellID) 쌍에 대해, WCL 영문 보스명 + 한국어 스킬명 기준 lookup.
+        // SUGGESTION-4: generalLines (abilityName 빈 '보스 전체 주의사항') 는 각 보스의
+        // 최소 bossSpellID (정렬 기준 첫 번째) 에 prepend 해 최소 한번은 표시됨.
         if !englishEncounterNames.isEmpty {
             let dungeonID = enrichedData.meta.dungeonID
             var matched: [Int: [Int: [TacticalLine]]] = [:]
-            print("[HG-TG-DEBUG] tacticalLines 매칭 시작 — dungeonID=\(dungeonID), 영문 보스명: \(englishEncounterNames.values)")
             for (encID, bossMap) in enrichedData.encounterData {
-                guard let englishBossName = englishEncounterNames[encID] else {
-                    print("[HG-TG-DEBUG]   encID=\(encID) englishBossName 없음 — 스킵")
+                guard let englishBossName = englishEncounterNames[encID] else { continue }
+                guard TacticalGuideCatalog.bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName) != nil else {
                     continue
                 }
-                let bossGuide = TacticalGuideCatalog.bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName)
-                if bossGuide == nil {
-                    print("[HG-TG-DEBUG]   '\(englishBossName)' catalog 매칭 실패")
-                    continue
-                }
-                print("[HG-TG-DEBUG]   '\(englishBossName)' → '\(bossGuide!.koreanBossName)' 매칭 성공, \(bossGuide!.lines.count) 라인")
+                // 스킬별 매칭
                 for bossSpellID in bossMap.keys {
-                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else {
-                        print("[HG-TG-DEBUG]     bossSpellID=\(bossSpellID) 스킬 한국어명 없음")
-                        continue
-                    }
+                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else { continue }
                     let lines = TacticalGuideCatalog.matchingLines(
                         dungeonID: dungeonID,
                         englishBossName: englishBossName,
@@ -421,12 +414,18 @@ final class RankerCollectionViewModel: ObservableObject {
                     )
                     if !lines.isEmpty {
                         matched[encID, default: [:]][bossSpellID] = lines
-                        print("[HG-TG-DEBUG]     bossSpellID=\(bossSpellID) '\(spellKoreanName)' → \(lines.count) 라인 매칭")
                     }
+                }
+                // 보스 전체 주의사항 (abilityName 빈 라인) 을 최소 bossSpellID 의 라인 맨 앞에 prepend.
+                let generals = TacticalGuideCatalog.generalLines(
+                    dungeonID: dungeonID, englishBossName: englishBossName
+                )
+                if !generals.isEmpty, let firstBossSpellID = bossMap.keys.min() {
+                    let existing = matched[encID]?[firstBossSpellID] ?? []
+                    matched[encID, default: [:]][firstBossSpellID] = generals + existing
                 }
             }
             enrichedData.tacticalLines = matched
-            print("[HG-TG-DEBUG] tacticalLines 최종: \(matched.count)개 encounter")
             logger.debug("tacticalLines 매칭: \(matched.count)개 encounter")
         }
         state = .preview(enrichedPreview, enrichedData)

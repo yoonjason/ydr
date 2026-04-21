@@ -27,6 +27,8 @@ enum TacticalGuideCatalog {
 
     /// 특정 bossSpellID 의 한국어 스킬명 과 매칭되는 전술 라인(들) 반환.
     /// 한 스킬이 여러 라인에 등장 가능 (예: '억제 지대' 가 2줄에 언급됨).
+    /// SUGGESTION-2: substring fuzzy 매칭은 최소 3글자 이상에서만 허용.
+    /// 2글자 이하 ('보주' 등) 은 여러 스킬 공통 단어라 false positive 유발 → 정확 일치만.
     static func matchingLines(
         dungeonID: Int,
         englishBossName: String,
@@ -35,10 +37,15 @@ enum TacticalGuideCatalog {
         guard let bossGuide = bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName) else {
             return []
         }
+        let minFuzzyLength = 3
         return bossGuide.lines.filter { line in
             guard !line.abilityName.isEmpty else { return false }
-            return line.abilityName == spellKoreanName
-                || spellKoreanName.contains(line.abilityName)
+            // 정확 일치는 항상 허용
+            if line.abilityName == spellKoreanName { return true }
+            // 짧은 이름 (2글자 이하) 은 정확 일치만 — substring 은 과매칭 위험
+            let shorter = min(line.abilityName.count, spellKoreanName.count)
+            guard shorter >= minFuzzyLength else { return false }
+            return spellKoreanName.contains(line.abilityName)
                 || line.abilityName.contains(spellKoreanName)
         }
     }
