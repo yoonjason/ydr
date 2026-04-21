@@ -404,9 +404,29 @@ function MainFrame:_CreateRankerTab(panel)
     reloadBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     panel.rankerReloadBtn = reloadBtn
 
+    -- 베타: 쿨타임 fallback 토글 (정책 라디오 아래)
+    local betaCB = CreateFrame("CheckButton", "HGBetaCooldownCB", panel, "UICheckButtonTemplate")
+    betaCB:SetSize(22, 22)
+    betaCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -30)
+    _G["HGBetaCooldownCBText"]:SetText("|cffffaa44베타|r 쿨타임 fallback (추천 스킬이 쿨이면 알림 스킵)")
+    betaCB:SetScript("OnClick", function(self)
+        addon.Storage:SetSetting("useBetaCooldownFallback", self:GetChecked() and true or false)
+    end)
+    betaCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("|cffffaa44베타 기능|r")
+        GameTooltip:AddLine("추천 힐 스킬이 쿨타임이거나 배우지 않은 스킬이면 해당 알림을 스킵합니다.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ", 1, 1, 1, true)
+        GameTooltip:AddLine("카테고리별 대체 스킬 추천은 DiscPriest/HolyPriest 만 태깅됨.", 1, 0.8, 0.2, true)
+        GameTooltip:AddLine("체크 해제 시 기존 동작 유지 (모든 랭커 추천 알림).", 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+    end)
+    betaCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    panel.betaCooldownCB = betaCB
+
     -- 상태 배너
     local banner = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    banner:SetPoint("TOPLEFT", firstRadio, "BOTTOMLEFT", -8, -6)
+    banner:SetPoint("TOPLEFT", betaCB, "BOTTOMLEFT", -8, -6)
     banner:SetPoint("RIGHT",   panel,      "RIGHT",      -8,  0)
     banner:SetJustifyH("LEFT")
     banner:SetWordWrap(true)
@@ -437,6 +457,12 @@ function MainFrame:_RefreshRankerTab()
     local policy = addon.Storage:GetSetting("rankerPolicy") or "merge"
     for _, r in ipairs(panel._policyRadios) do
         r:SetChecked(r._policyKey == policy)
+    end
+
+    -- 베타 쿨타임 토글 동기화
+    if panel.betaCooldownCB then
+        panel.betaCooldownCB:SetChecked(
+            addon.Storage:GetSetting("useBetaCooldownFallback") == true)
     end
 
     -- 배너

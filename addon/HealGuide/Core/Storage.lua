@@ -46,6 +46,10 @@ local DEFAULTS = {
             alertSoundName = "ReadyCheck",
             -- Phase 5α: 랭커 데이터 정책 (off | merge | exclusive)
             rankerPolicy   = "merge",
+            -- Phase 5α 베타: 쿨타임 fallback. 추천 스킬이 쿨이면 같은 카테고리 내 다음
+            -- 순위 스킬 또는 다른 사용 가능 스킬로 대체. DiscPriest/HolyPriest 에 한해
+            -- 카테고리 태깅 제공됨. 기본값 off — 기존 동작 유지.
+            useBetaCooldownFallback = false,
         },
     },
 }

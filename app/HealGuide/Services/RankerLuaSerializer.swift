@@ -78,6 +78,11 @@ struct RankerLuaSerializer {
                     lines.append("                            stddev  = \(String(format: "%.2f", response.stddev)),")
                     lines.append("                            count   = \(response.count),")
                     lines.append("                            quorum  = \"\(response.quorum)\",")
+                    // 베타: 카테고리 태깅 (DiscPriest/HolyPriest 만, 나머지는 nil). 애드온 fallback 이 활용.
+                    if let spec = HealerSpec(rawValue: m.spec),
+                       let category = HealerSpellCategoryCatalog.category(for: response.spellID, spec: spec) {
+                        lines.append("                            category = \"\(category.rawValue)\",")
+                    }
                     lines.append("                        },")
                 }
                 lines.append("                    },")

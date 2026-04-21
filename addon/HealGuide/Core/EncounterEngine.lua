@@ -311,6 +311,11 @@ function EncounterEngine:OnCombatLog(
         matched and "YES" or "NO"))
 
     local leadTime = addon.Storage:GetSetting("leadTime") or 0
+    -- 베타: 쿨타임 fallback — 추천 스킬이 시전 예정 시점에 쿨이면 알림 스킵.
+    -- 카테고리 태깅된 다른 스킬로 자동 대체는 하지 않음 (랭커 데이터에 이미 여러
+    -- 순위 후보가 포함돼 있어 각각 별도 알림으로 들어감).
+    local useBetaCD = addon.Storage:GetSetting("useBetaCooldownFallback")
+
     for _, entry in ipairs(matched) do
         -- §5D: M+ 활성일 때만 minKeystone 필터 적용
         if not (self.keystoneLevel > 0 and entry.minKeystone and self.keystoneLevel < entry.minKeystone) then
@@ -319,7 +324,30 @@ function EncounterEngine:OnCombatLog(
             local meta = getSpellMeta(playerSpellID)
             local rawDelay = (entry.delay or 0) - leadTime - (meta.castTime / 1000)
             local delay = math.max(0, rawDelay)
+
+            -- 베타 쿨타임 체크: 스킬 미보유 또는 예상 시전 시점에 쿨이 안 돌 스킬은 스킵.
+            local betaSkip = false
+            if useBetaCD then
+                if IsSpellKnown and not IsSpellKnown(playerSpellID) then
+                    betaSkip = true
+                    addon.dprint(string.format("[HG-BETA] spellID=%s 미보유 — 스킵",
+                        tostring(playerSpellID)))
+                else
+                    local cdStart, cdDuration = GetSpellCooldown(playerSpellID)
+                    if cdStart and cdDuration and cdStart > 0 then
+                        local remaining = cdStart + cdDuration - GetTime()
+                        if remaining > delay then
+                            betaSkip = true
+                            addon.dprint(string.format(
+                                "[HG-BETA] spellID=%s 쿨 %.1fs 남음 (예상 delay %.1fs) — 스킵",
+                                tostring(playerSpellID), remaining, delay))
+                        end
+                    end
+                end
+            end
+
             local entryCondition = entry.condition
+            if not betaSkip then
             self:_scheduleAlert(playerSpellID, delay, "reactive", nil, function()
                 if self.paused then return end
                 if addon.ConditionEvaluator:ShouldFire(entryCondition) then
@@ -328,6 +356,7 @@ function EncounterEngine:OnCombatLog(
                     self:_statInc("conditionSkipped")
                 end
             end)
+            end  -- 베타 스킵
         end
         end  -- minKeystone 필터
     end
