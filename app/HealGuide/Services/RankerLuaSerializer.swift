@@ -55,9 +55,14 @@ struct RankerLuaSerializer {
             if let name = entry.encounterNames[encID] {
                 lines.append("                    _name = \"\(escapeLua(name))\",")
             }
+            let encAbilities = entry.abilityDescriptions[encID] ?? [:]
             for bossID in bossMap.keys.sorted() {
                 guard let responses = bossMap[bossID], !responses.isEmpty else { continue }
                 lines.append("                    [\(bossID)] = {")
+                // Phase 3: Blizzard 기믹 설명 (있으면)
+                if let desc = encAbilities[bossID], !desc.isEmpty {
+                    lines.append("                        _description = \"\(escapeLua(desc))\",")
+                }
                 for response in responses {
                     lines.append("                        {")
                     lines.append("                            spellID = \(response.spellID),")

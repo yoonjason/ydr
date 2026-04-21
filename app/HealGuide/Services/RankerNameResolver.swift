@@ -34,6 +34,18 @@ protocol RankerNameResolver {
         blizzardClientID:     String,
         blizzardClientSecret: String
     ) async -> [Int: String]
+
+    // Phase 3: 보스 스킬 (bossSpellID) 별 한국어 기믹 설명 조회.
+    // 앞선 translateEncountersToKorean 결과에 의존 (dungeonInstanceIDCache / instanceEnToKrCache 재사용).
+    // 호출 전 번역을 먼저 수행해야 함.
+    // englishEncounterNames: [wclEncID: 영문 보스명] — WCL 에서 모은 원본 (번역 전)
+    // 반환: [wclEncID: [bossSpellID: 한국어 설명]]
+    func fetchBossAbilityDescriptions(
+        dungeonKoreanName: String,
+        englishEncounterNames: [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: [Int: String]]
 }
 
 struct NameResolveResult {
@@ -163,6 +175,94 @@ actor RankerNameResolverImpl: RankerNameResolver {
                 if let (id, name) = pair { acc[id] = name }
             }
             return acc
+        }
+    }
+
+    // MARK: - Boss ability descriptions (Phase 3)
+
+    // instanceID → journalEncounterID → abilities 맵 캐시 (던전당 1회 페치).
+    // abilities: bossSpellID → 한국어 설명
+    // 구조를 편평하게 두어 인스턴스 내부 인카운터별 lazy fetch 가능.
+    private var journalEncounterAbilityCache: [Int: [Int: String]] = [:]  // journalEncounterID → abilities
+    // wclEncID → journalEncounterID 매핑 (번역 단계에서 찾은 bestInstance + 영문명 매칭 기반)
+    private var wclToJournalEncounterID: [Int: Int] = [:]
+
+    func fetchBossAbilityDescriptions(
+        dungeonKoreanName: String,
+        englishEncounterNames: [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: [Int: String]] {
+        guard !englishEncounterNames.isEmpty,
+              !blizzardClientID.isEmpty, !blizzardClientSecret.isEmpty else {
+            return [:]
+        }
+        guard let token = await ensureBlizzardToken(
+            clientID: blizzardClientID, clientSecret: blizzardClientSecret
+        ) else { return [:] }
+
+        // 1. translateEncountersToKorean 이 남긴 instanceID 캐시 활용.
+        // 이게 없으면 번역이 아직 안 됐거나 실패한 케이스 → 빈 결과.
+        guard let instanceID = dungeonInstanceIDCache[dungeonKoreanName] else {
+            print("[HG-NR-DEBUG] fetchBossAbilityDescriptions: instanceID 캐시 없음 — 번역 먼저 수행 필요")
+            return [:]
+        }
+
+        // 2. 해당 instance 의 encounters[] 를 영문 locale 로 페치해 (wclEncID → blizzardJournalEncounterID) 구축.
+        // 번역 단계에서 이미 en_US encounters 페치했을 가능성 높음 (캐시 히트).
+        let enList = await fetchInstanceEncounters(
+            instanceID: instanceID, locale: "en_US", token: token
+        )
+        // 영문 보스명 기반 매핑 (normalizeEnglishName 기준)
+        var blizzardEnToID: [String: Int] = [:]
+        for summary in enList {
+            blizzardEnToID[Self.normalizeEnglishName(summary.name)] = summary.encounterID
+        }
+
+        // 3. 각 WCL encID 에 대해 journalEncounterID 결정 후 abilities 페치.
+        var result: [Int: [Int: String]] = [:]
+        for (wclEncID, englishName) in englishEncounterNames {
+            let normalized = Self.normalizeEnglishName(englishName)
+            guard let journalEncID = blizzardEnToID[normalized] else {
+                print("[HG-NR-DEBUG]   wclEncID \(wclEncID) '\(englishName)': journalEncounterID 미발견")
+                continue
+            }
+            wclToJournalEncounterID[wclEncID] = journalEncID
+
+            let abilities: [Int: String]
+            if let cached = journalEncounterAbilityCache[journalEncID] {
+                abilities = cached
+            } else {
+                abilities = await fetchEncounterAbilities(encounterID: journalEncID, token: token)
+                journalEncounterAbilityCache[journalEncID] = abilities
+                print("[HG-NR-DEBUG]   wclEncID \(wclEncID) → journalEncID \(journalEncID): abilities \(abilities.count)개 페치")
+            }
+            if !abilities.isEmpty {
+                result[wclEncID] = abilities
+            }
+        }
+        print("[HG-NR-DEBUG] abilityDescriptions 결과: \(result.count)개 encounter")
+        return result
+    }
+
+    // journal-encounter/{encID}?locale=ko_KR → abilities[].spell.id + description 맵.
+    private func fetchEncounterAbilities(encounterID: Int, token: String) async -> [Int: String] {
+        do {
+            let (_, abilities) = try await blizzardClient.fetchJournalEncounter(
+                encounterID: encounterID, locale: "ko_KR", token: token
+            )
+            var result: [Int: String] = [:]
+            for ability in abilities {
+                // description 이 비어있으면 name 으로 폴백 (최소한의 정보 제공)
+                let desc = ability.description.isEmpty ? ability.name : ability.description
+                if !desc.isEmpty {
+                    result[ability.spellID] = desc
+                }
+            }
+            return result
+        } catch {
+            logger.warning("journal-encounter/\(encounterID) (ko_KR) 페치 실패: \(error)")
+            return [:]
         }
     }
 
@@ -428,5 +528,16 @@ final class MockRankerNameResolver: RankerNameResolver {
         blizzardClientSecret: String
     ) async -> [Int: String] {
         stubbedTranslations.filter { englishNames.keys.contains($0.key) }
+    }
+
+    var stubbedAbilityDescriptions: [Int: [Int: String]] = [:]
+
+    func fetchBossAbilityDescriptions(
+        dungeonKoreanName: String,
+        englishEncounterNames: [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: [Int: String]] {
+        stubbedAbilityDescriptions.filter { englishEncounterNames.keys.contains($0.key) }
     }
 }

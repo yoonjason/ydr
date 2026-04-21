@@ -271,28 +271,39 @@ final class RankerCollectionViewModel: ObservableObject {
         if Task.isCancelled { state = .idle; return }
         let blizzardID     = loadBlizzardClientID()
         let blizzardSecret = loadBlizzardClientSecret()
+        let dungeonKoreanName = extractKoreanName(dungeon.name)
+        // Phase 3 용으로 번역 전 영문명 복사본 보존
+        let originalEnglishNames = collectedEncounterNames
+        var abilityDescriptions: [Int: [Int: String]] = [:]
+
         print("[HG-VM-DEBUG] 번역 단계 진입 — blizzardID 비어있음=\(blizzardID.isEmpty), secret 비어있음=\(blizzardSecret.isEmpty), encounterNames 수=\(collectedEncounterNames.count)")
-        print("[HG-VM-DEBUG]   dungeon.name = '\(dungeon.name)'")
-        print("[HG-VM-DEBUG]   extractKoreanName = '\(extractKoreanName(dungeon.name))'")
-        print("[HG-VM-DEBUG]   collectedEncounterNames = \(collectedEncounterNames)")
         if !blizzardID.isEmpty && !blizzardSecret.isEmpty && !collectedEncounterNames.isEmpty {
             let translated = await nameResolver.translateEncountersToKorean(
-                dungeonKoreanName:    extractKoreanName(dungeon.name),
+                dungeonKoreanName:    dungeonKoreanName,
                 englishNames:         collectedEncounterNames,
                 blizzardClientID:     blizzardID,
                 blizzardClientSecret: blizzardSecret
             )
             print("[HG-VM-DEBUG] 번역 복귀 — \(translated.count)개 번역됨")
-            // 번역 성공한 것만 덮어씀, 실패는 영문 유지
             for (id, kr) in translated {
                 collectedEncounterNames[id] = kr
             }
-            print("[HG-VM-DEBUG] 최종 collectedEncounterNames = \(collectedEncounterNames)")
+
+            // 5b. Phase 3 — 보스 스킬 기믹 설명 조회 (번역 성공한 경우만 유의미)
+            if Task.isCancelled { state = .idle; return }
+            abilityDescriptions = await nameResolver.fetchBossAbilityDescriptions(
+                dungeonKoreanName:     dungeonKoreanName,
+                englishEncounterNames: originalEnglishNames,
+                blizzardClientID:      blizzardID,
+                blizzardClientSecret:  blizzardSecret
+            )
+            print("[HG-VM-DEBUG] abilityDescriptions \(abilityDescriptions.count)개 encounter 커버")
         } else {
-            print("[HG-VM-DEBUG] ❌ 번역 스킵 — Blizzard creds 없거나 encounterNames 비어있음")
+            print("[HG-VM-DEBUG] ❌ 번역/설명 스킵 — Blizzard creds 없음")
         }
 
-        let merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)
+        var merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)
+        merged.abilityDescriptions = abilityDescriptions
         let preview = merger.buildPreview(
             parsesCollected: rawParses.count,
             parsesFiltered:  parseResults.count,
@@ -323,7 +334,15 @@ final class RankerCollectionViewModel: ObservableObject {
         guard hasWCL || hasBlizzard else { return }
 
         let encounterIDs = Set(currentPreview.bossEntries.map(\.encounterID))
-        let spellIDs     = Set(currentPreview.bossEntries.map(\.bossSpellID))
+        // Phase 2: 보스 스킬 + 힐러 스킬 모두 해상 → UI 가 힐러 스킬명도 한국어로 표시
+        var spellIDs = Set(currentPreview.bossEntries.map(\.bossSpellID))
+        for (_, bossMap) in mergedData.encounterData {
+            for (_, entries) in bossMap {
+                for entry in entries {
+                    spellIDs.insert(entry.spellID)
+                }
+            }
+        }
 
         let resolved = await nameResolver.resolveNames(
             encounterIDs: encounterIDs,
@@ -363,6 +382,10 @@ final class RankerCollectionViewModel: ObservableObject {
         var enrichedData = data
         for (id, name) in resolved.encounterNames where !name.isEmpty {
             enrichedData.encounterNames[id] = name
+        }
+        // Phase 2: 힐러/보스 spellID 한국어 이름을 전체 맵에 주입 (UI 확장 렌더용)
+        for (id, name) in resolved.spellNames where !name.isEmpty {
+            enrichedData.spellNames[id] = name
         }
         state = .preview(enrichedPreview, enrichedData)
     }

@@ -128,11 +128,15 @@ struct HGPTRankerData {
     let encounterData: [Int: [Int: [RankerResponseEntry]]]
     // Blizzard Journal Encounter API 로 해상한 한국어 이름. 없으면 애드온이 EJ_GetEncounterInfo 로 폴백.
     var encounterNames: [Int: String]
+    // Phase 2: 힐러/보스 spellID → 한국어 스킬명 (Blizzard Spell API).
+    var spellNames: [Int: String] = [:]
+    // Phase 3: [encounterID: [bossSpellID: 한국어 기믹 설명]] (Blizzard Journal Encounter abilities).
+    var abilityDescriptions: [Int: [Int: String]] = [:]
 }
 
 extension HGPTRankerData: Codable {
     enum CodingKeys: String, CodingKey {
-        case meta, encounterData, encounterNames
+        case meta, encounterData, encounterNames, spellNames, abilityDescriptions
     }
 
     init(from decoder: Decoder) throws {
@@ -160,6 +164,25 @@ extension HGPTRankerData: Codable {
         encounterNames = rawNames.reduce(into: [:]) { acc, pair in
             if let id = Int(pair.key) { acc[id] = pair.value }
         }
+
+        // Phase 2 역호환: spellNames 없으면 빈 맵
+        let rawSpellNames = (try? container.decode([String: String].self, forKey: .spellNames)) ?? [:]
+        spellNames = rawSpellNames.reduce(into: [:]) { acc, pair in
+            if let id = Int(pair.key) { acc[id] = pair.value }
+        }
+
+        // Phase 3 역호환: abilityDescriptions 없으면 빈 맵
+        let rawAbilities = (try? container.decode([String: [String: String]].self, forKey: .abilityDescriptions)) ?? [:]
+        var abilities: [Int: [Int: String]] = [:]
+        for (encStr, bossMap) in rawAbilities {
+            guard let encID = Int(encStr) else { continue }
+            var inner: [Int: String] = [:]
+            for (bossStr, desc) in bossMap {
+                if let bossID = Int(bossStr) { inner[bossID] = desc }
+            }
+            abilities[encID] = inner
+        }
+        abilityDescriptions = abilities
     }
 
     func encode(to encoder: Encoder) throws {
@@ -178,6 +201,19 @@ extension HGPTRankerData: Codable {
 
         let stringNames = encounterNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
         try container.encode(stringNames, forKey: .encounterNames)
+
+        let stringSpellNames = spellNames.reduce(into: [String: String]()) { $0[String($1.key)] = $1.value }
+        try container.encode(stringSpellNames, forKey: .spellNames)
+
+        var stringAbilities: [String: [String: String]] = [:]
+        for (encID, bossMap) in abilityDescriptions {
+            var inner: [String: String] = [:]
+            for (bossID, desc) in bossMap {
+                inner[String(bossID)] = desc
+            }
+            stringAbilities[String(encID)] = inner
+        }
+        try container.encode(stringAbilities, forKey: .abilityDescriptions)
     }
 }
 

@@ -360,34 +360,18 @@ struct RankerCollectionTab: View {
                 .padding(8)
             }
 
-            // 보스 스킬 매핑 목록
+            // 보스 스킬 매핑 목록 — 접이식: 행 클릭 시 힐 스킬 상세 + 기믹 설명 펼침
             if !preview.bossEntries.isEmpty {
-                GroupBox(label: Text("보스별 매핑").font(.subheadline)) {
+                GroupBox(label: Text("보스별 매핑 (행 클릭 시 상세)").font(.subheadline)) {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(preview.bossEntries, id: \.compositeID) { entry in
-                                HStack {
-                                    Text(entry.encounterName ?? "Enc \(entry.encounterID)")
-                                        .font(.caption)
-                                        .frame(width: 140, alignment: .leading)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                    Text(entry.bossSpellName ?? "Boss #\(entry.bossSpellID)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .frame(maxWidth: 160, alignment: .leading)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                    Spacer()
-                                    Text("힐 스킬 \(entry.mappingCount)개")
-                                        .font(.caption)
-                                        .foregroundStyle(.green)
-                                }
+                                BossMappingRow(entry: entry, data: data)
                             }
                         }
                         .padding(6)
                     }
-                    .frame(maxHeight: 200)
+                    .frame(maxHeight: 400)
                 }
             }
 
@@ -472,4 +456,108 @@ struct RankerCollectionTab: View {
         rankingService: MockCharacterRankingsService(),
         keychain:       MockKeychain()
     ))
+}
+
+// MARK: - BossMappingRow
+
+// 보스별 매핑 행. 클릭하면 힐 스킬 + 기믹 설명 상세 펼침.
+// entry: 순위/카운트 메타, data: 힐 상세·한국어 스킬명·기믹 설명 조회용.
+private struct BossMappingRow: View {
+    let entry: RankerPreviewResult.BossEntry
+    let data: HGPTRankerData
+    @State private var expanded: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            headerRow
+            if expanded {
+                expandedDetail
+                    .padding(.leading, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
+            }
+        }
+        .padding(6)
+        .background(expanded ? Color.secondary.opacity(0.08) : Color.clear)
+        .cornerRadius(4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+        }
+    }
+
+    private var headerRow: some View {
+        HStack {
+            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(entry.encounterName ?? "Enc \(entry.encounterID)")
+                .font(.caption)
+                .frame(width: 140, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(entry.bossSpellName ?? "Boss #\(entry.bossSpellID)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 200, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            Text("힐 스킬 \(entry.mappingCount)개")
+                .font(.caption)
+                .foregroundStyle(.green)
+        }
+    }
+
+    @ViewBuilder
+    private var expandedDetail: some View {
+        // 1. 기믹 설명 (있으면)
+        if let desc = data.abilityDescriptions[entry.encounterID]?[entry.bossSpellID], !desc.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("기믹 설명", systemImage: "book")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+                Text(desc)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 4)
+        }
+
+        // 2. 힐 스킬 리스트 (랭커 데이터)
+        if let healerEntries = data.encounterData[entry.encounterID]?[entry.bossSpellID],
+           !healerEntries.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("힐 스킬 (랭커 데이터)", systemImage: "cross.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                ForEach(healerEntries, id: \.spellID) { he in
+                    healerRow(he)
+                }
+            }
+        }
+    }
+
+    private func healerRow(_ he: RankerResponseEntry) -> some View {
+        let spellName = data.spellNames[he.spellID] ?? "Spell #\(he.spellID)"
+        let delayText = String(format: "%.1f초 후", he.delay)
+        let quorumText = "\(he.quorum)명 사용"
+        let stddevText = he.stddev >= 2.0 ? " • ⚠ 편차 \(String(format: "%.1f", he.stddev))초" : ""
+        return HStack(spacing: 6) {
+            Text("•").foregroundStyle(.secondary)
+            Text(spellName)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 180, alignment: .leading)
+            Text(delayText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("(\(quorumText)\(stddevText))")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+    }
 }
