@@ -178,8 +178,6 @@ actor RankerNameResolverImpl: RankerNameResolver {
         print("[HG-NR-DEBUG]   dungeonKoreanName = '\(dungeonKoreanName)'")
         print("[HG-NR-DEBUG]   englishNames 수 = \(englishNames.count)")
         print("[HG-NR-DEBUG]   englishNames 내용 = \(englishNames)")
-        print("[HG-NR-DEBUG]   blizzardClientID 비어있음 = \(blizzardClientID.isEmpty)")
-        print("[HG-NR-DEBUG]   blizzardClientSecret 비어있음 = \(blizzardClientSecret.isEmpty)")
 
         guard !englishNames.isEmpty,
               !blizzardClientID.isEmpty, !blizzardClientSecret.isEmpty else {
@@ -192,41 +190,55 @@ actor RankerNameResolverImpl: RankerNameResolver {
             print("[HG-NR-DEBUG] ❌ Blizzard 토큰 발급 실패")
             return [:]
         }
-        print("[HG-NR-DEBUG] ✅ Blizzard 토큰 발급 성공 (첫 20자: \(String(token.prefix(20)))...)")
+        print("[HG-NR-DEBUG] ✅ Blizzard 토큰 발급 성공")
 
-        // 1. 던전 한국어명 → Blizzard instanceID (세션 캐시)
-        let instanceID: Int
-        if let cached = dungeonInstanceIDCache[dungeonKoreanName] {
-            instanceID = cached
-            print("[HG-NR-DEBUG] instanceID 캐시 히트: \(instanceID)")
-        } else {
-            guard let resolved = await findInstanceID(dungeonKoreanName: dungeonKoreanName, token: token) else {
-                print("[HG-NR-DEBUG] ❌ journal-instance/index 에서 '\(dungeonKoreanName)' 미발견")
-                logger.warning("journal-instance/index 에서 '\(dungeonKoreanName)' 미발견 — 영문 유지")
-                return [:]
+        // 1. 던전 이름 매칭되는 모든 instance 후보 수집.
+        // Blizzard 가 같은 한국어 이름으로 여러 instance 를 보유할 수 있음 (예: BC 리메이크 이슈).
+        let candidateIDs = await findInstanceIDs(dungeonKoreanName: dungeonKoreanName, token: token)
+        guard !candidateIDs.isEmpty else {
+            print("[HG-NR-DEBUG] ❌ journal-instance/index 에서 '\(dungeonKoreanName)' 미발견")
+            logger.warning("journal-instance/index 에서 '\(dungeonKoreanName)' 미발견 — 영문 유지")
+            return [:]
+        }
+        print("[HG-NR-DEBUG] '\(dungeonKoreanName)' 매칭 후보 \(candidateIDs.count)개: \(candidateIDs)")
+
+        // 2. 후보별로 EN→KR 맵 페치 후, WCL 영문명과 최대 겹침 instance 선택.
+        let requestedEnglishSet = Set(englishNames.values)
+        var bestInstanceID: Int?
+        var bestEnToKr: [String: String] = [:]
+        var bestOverlap = 0
+
+        for candidateID in candidateIDs {
+            let enToKr: [String: String]
+            if let cached = instanceEnToKrCache[candidateID] {
+                enToKr = cached
+            } else {
+                enToKr = await fetchEnToKrMap(instanceID: candidateID, token: token)
+                instanceEnToKrCache[candidateID] = enToKr
             }
-            dungeonInstanceIDCache[dungeonKoreanName] = resolved
-            instanceID = resolved
-            print("[HG-NR-DEBUG] ✅ instanceID 발견: \(instanceID)")
+            let blizzardEnglishSet = Set(enToKr.keys)
+            let overlap = requestedEnglishSet.intersection(blizzardEnglishSet).count
+            print("[HG-NR-DEBUG]   후보 \(candidateID): EN→KR \(enToKr.count)개, 영문명 \(blizzardEnglishSet) → overlap=\(overlap)")
+            if overlap > bestOverlap {
+                bestOverlap = overlap
+                bestInstanceID = candidateID
+                bestEnToKr = enToKr
+            }
         }
 
-        // 2. 영문→한국어 보스명 맵 (세션 캐시)
-        let enToKr: [String: String]
-        if let cached = instanceEnToKrCache[instanceID] {
-            enToKr = cached
-            print("[HG-NR-DEBUG] EN→KR 맵 캐시 히트: \(enToKr.count)개")
-        } else {
-            enToKr = await fetchEnToKrMap(instanceID: instanceID, token: token)
-            instanceEnToKrCache[instanceID] = enToKr
-            print("[HG-NR-DEBUG] EN→KR 맵 신규 페치: \(enToKr.count)개")
-            print("[HG-NR-DEBUG]   맵 내용: \(enToKr)")
+        guard let chosen = bestInstanceID, bestOverlap > 0 else {
+            print("[HG-NR-DEBUG] ❌ 어떤 후보도 WCL 영문명과 겹치지 않음 — 영문 유지")
+            logger.warning("'\(dungeonKoreanName)' 번역 실패: \(candidateIDs.count)개 후보 중 겹치는 보스 없음")
+            return [:]
         }
+        print("[HG-NR-DEBUG] ✅ 최적 후보: instanceID=\(chosen), overlap=\(bestOverlap)")
+        dungeonInstanceIDCache[dungeonKoreanName] = chosen
 
         // 3. WCL encID → 한국어 이름 매핑 (영문명 매칭)
         var result: [Int: String] = [:]
         var unmatched: [String] = []
         for (wclEncID, englishName) in englishNames {
-            if let korean = enToKr[englishName], !korean.isEmpty {
+            if let korean = bestEnToKr[englishName], !korean.isEmpty {
                 result[wclEncID] = korean
             } else {
                 unmatched.append(englishName)
@@ -239,7 +251,8 @@ actor RankerNameResolverImpl: RankerNameResolver {
         return result
     }
 
-    private func findInstanceID(dungeonKoreanName: String, token: String) async -> Int? {
+    // 던전 한국어명에 매칭되는 모든 instanceID 반환 (정확 일치 우선).
+    private func findInstanceIDs(dungeonKoreanName: String, token: String) async -> [Int] {
         // index 스캔 1회만
         if journalIndexKR == nil {
             do {
@@ -248,19 +261,18 @@ actor RankerNameResolverImpl: RankerNameResolver {
                 )
             } catch {
                 logger.warning("journal-instance/index 페치 실패: \(error)")
-                return nil
+                return []
             }
         }
-        guard let index = journalIndexKR else { return nil }
-        // 정확 일치 우선, 실패 시 부분 일치 (던전명에 공백/괄호 차이 방어)
-        if let exact = index.first(where: { $0.name == dungeonKoreanName }) {
-            return exact.instanceID
-        }
+        guard let index = journalIndexKR else { return [] }
         let trimmed = dungeonKoreanName.trimmingCharacters(in: .whitespaces)
-        if let partial = index.first(where: { $0.name.contains(trimmed) || trimmed.contains($0.name) }) {
-            return partial.instanceID
-        }
-        return nil
+        // 정확 일치 전부 → 부분 일치 전부 (중복 제거) 순서로 수집
+        let exactMatches = index.filter { $0.name == dungeonKoreanName }.map(\.instanceID)
+        if !exactMatches.isEmpty { return exactMatches }
+        let partialMatches = index
+            .filter { $0.name.contains(trimmed) || trimmed.contains($0.name) }
+            .map(\.instanceID)
+        return partialMatches
     }
 
     private func fetchEnToKrMap(instanceID: Int, token: String) async -> [String: String] {
