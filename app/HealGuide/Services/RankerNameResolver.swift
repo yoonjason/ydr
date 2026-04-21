@@ -3,14 +3,24 @@ import os
 
 // MARK: - Protocol
 
-// encounterID / spellID 를 Blizzard Game Data API 로 한국어 이름 해상.
-// 자격증명 미설정이면 빈 결과 반환 (에러 안 던짐) → 호출부는 숫자 fallback.
+// encounterID → WCL 자체 name, spellID → Blizzard 공식 이름 으로 해상.
+//
+// 배경: 초기 구현은 encounter 도 Blizzard journal-encounter 로 조회했지만,
+// WCL M+ 던전의 encounterID 는 WCL 자체 ID 체계라 Blizzard journal-encounter
+// ID 공간과 불일치. 결과적으로 엉뚱한 레이드 보스 이름이 반환되는 버그 발생
+// (2026-04-21 handoff 참조). 디버그 탭 실험으로 WCL worldData.encounter(id:).name
+// 경로만 정확히 동작 확인 → 해당 경로로 전환.
+//
+// spellID 는 Blizzard 공식 spellID 로 WCL/WoW/Blizzard API 모두 공통이라 그대로
+// Blizzard API 사용 (한국어 이름 품질 우수).
 protocol RankerNameResolver {
     func resolveNames(
         encounterIDs: Set<Int>,
         spellIDs:     Set<Int>,
-        clientID:     String,
-        clientSecret: String
+        wclClientID:     String,
+        wclClientSecret: String,
+        blizzardClientID:     String,
+        blizzardClientSecret: String
     ) async -> NameResolveResult
 }
 
@@ -25,34 +35,41 @@ struct NameResolveResult {
 
 // 세션 내 in-memory 캐시로 동일 ID 중복 호출 방지. actor 로 동시성 보호.
 actor RankerNameResolverImpl: RankerNameResolver {
-    private let apiClient: any BlizzardGameDataAPIClient
+    private let wclClient:      any WarcraftLogsAPIClient
+    private let blizzardClient: any BlizzardGameDataAPIClient
+
     private var encounterCache: [Int: String] = [:]
     private var spellCache:     [Int: String] = [:]
-    private var cachedToken: String?
-    private var tokenObtainedAt: Date?
+
+    // 토큰별 분리 캐시 (WCL / Blizzard 각자 OAuth 토큰 TTL 관리)
+    private var cachedWCLToken:      String?
+    private var wclTokenObtainedAt:  Date?
+    private var cachedBlizzardToken:     String?
+    private var blizzardTokenObtainedAt: Date?
+
     private let logger = Logger(subsystem: "com.yeongseok.healguide", category: "NameResolver")
 
-    // Blizzard OAuth 토큰 기본 TTL 은 24시간. 23시간 기준으로 선제 갱신.
+    // OAuth 토큰 기본 TTL 은 보통 24시간. 23시간 기준으로 선제 갱신.
     private static let tokenTTLSeconds: TimeInterval = 23 * 3600
 
-    init(apiClient: any BlizzardGameDataAPIClient = BlizzardGameDataAPIClientImpl()) {
-        self.apiClient = apiClient
+    init(
+        wclClient:      any WarcraftLogsAPIClient    = WarcraftLogsAPIClientImpl(),
+        blizzardClient: any BlizzardGameDataAPIClient = BlizzardGameDataAPIClientImpl()
+    ) {
+        self.wclClient = wclClient
+        self.blizzardClient = blizzardClient
     }
 
     func resolveNames(
         encounterIDs: Set<Int>,
         spellIDs:     Set<Int>,
-        clientID:     String,
-        clientSecret: String
+        wclClientID:     String,
+        wclClientSecret: String,
+        blizzardClientID:     String,
+        blizzardClientSecret: String
     ) async -> NameResolveResult {
-        guard !clientID.isEmpty, !clientSecret.isEmpty else {
-            return .empty
-        }
-
-        // 토큰 획득 (세션 내 재사용 + TTL 기반 선제 갱신)
-        guard let token = await ensureToken(clientID: clientID, clientSecret: clientSecret) else {
-            return .empty
-        }
+        // encounter 와 spell 은 서로 다른 API + 자격증명이라 독립 처리.
+        // 한쪽만 자격증명이 있어도 부분 결과 반환 (graceful degradation).
 
         // 캐시 히트 분리
         var encounterResult: [Int: String] = [:]
@@ -67,16 +84,23 @@ actor RankerNameResolverImpl: RankerNameResolver {
             return true
         }
 
-        // encounter / spell 조회는 서로 독립적 → async let 으로 동시 실행
-        async let encountersFetch = fetchEncountersParallel(ids: missingEncounters, token: token)
-        async let spellsFetch     = fetchSpellsParallel(ids: missingSpells, token: token)
-        let (fetchedEncounters, fetchedSpells) = await (encountersFetch, spellsFetch)
+        async let fetchedEncounters = resolveEncountersIfPossible(
+            ids: missingEncounters,
+            clientID: wclClientID,
+            clientSecret: wclClientSecret
+        )
+        async let fetchedSpells = resolveSpellsIfPossible(
+            ids: missingSpells,
+            clientID: blizzardClientID,
+            clientSecret: blizzardClientSecret
+        )
+        let (encMap, spellMap) = await (fetchedEncounters, fetchedSpells)
 
-        for (id, name) in fetchedEncounters {
+        for (id, name) in encMap {
             encounterCache[id] = name
             encounterResult[id] = name
         }
-        for (id, name) in fetchedSpells {
+        for (id, name) in spellMap {
             spellCache[id] = name
             spellResult[id] = name
         }
@@ -87,39 +111,27 @@ actor RankerNameResolverImpl: RankerNameResolver {
         )
     }
 
-    // MARK: - Token management
+    // MARK: - Encounter (WCL)
 
-    private func ensureToken(clientID: String, clientSecret: String) async -> String? {
-        if let cached = cachedToken, let obtainedAt = tokenObtainedAt,
-           Date().timeIntervalSince(obtainedAt) < Self.tokenTTLSeconds {
-            return cached
+    private func resolveEncountersIfPossible(
+        ids: Set<Int>, clientID: String, clientSecret: String
+    ) async -> [Int: String] {
+        guard !ids.isEmpty, !clientID.isEmpty, !clientSecret.isEmpty else { return [:] }
+        guard let token = await ensureWCLToken(clientID: clientID, clientSecret: clientSecret) else {
+            return [:]
         }
-        // 만료되었거나 미획득 상태 → 재발급
-        cachedToken = nil
-        tokenObtainedAt = nil
-        do {
-            let fresh = try await apiClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
-            cachedToken = fresh
-            tokenObtainedAt = Date()
-            return fresh
-        } catch {
-            logger.warning("Blizzard 토큰 발급 실패 — 이름 조회 스킵: \(error)")
-            return nil
-        }
+        return await fetchEncounterNamesParallel(ids: ids, token: token)
     }
 
-    // MARK: - Private parallel fetch
-
-    private func fetchEncountersParallel(ids: Set<Int>, token: String) async -> [Int: String] {
-        guard !ids.isEmpty else { return [:] }
+    private func fetchEncounterNamesParallel(ids: Set<Int>, token: String) async -> [Int: String] {
         return await withTaskGroup(of: (Int, String)?.self) { group in
             for id in ids {
-                group.addTask { [apiClient] in
+                group.addTask { [wclClient] in
                     do {
-                        let result = try await apiClient.fetchJournalEncounter(
-                            encounterID: id, locale: "ko_KR", token: token
-                        )
-                        return (id, result.name)
+                        if let name = try await wclClient.fetchEncounterName(encounterID: id, token: token) {
+                            return (id, name)
+                        }
+                        return nil
                     } catch {
                         return nil
                     }
@@ -133,13 +145,24 @@ actor RankerNameResolverImpl: RankerNameResolver {
         }
     }
 
+    // MARK: - Spell (Blizzard)
+
+    private func resolveSpellsIfPossible(
+        ids: Set<Int>, clientID: String, clientSecret: String
+    ) async -> [Int: String] {
+        guard !ids.isEmpty, !clientID.isEmpty, !clientSecret.isEmpty else { return [:] }
+        guard let token = await ensureBlizzardToken(clientID: clientID, clientSecret: clientSecret) else {
+            return [:]
+        }
+        return await fetchSpellsParallel(ids: ids, token: token)
+    }
+
     private func fetchSpellsParallel(ids: Set<Int>, token: String) async -> [Int: String] {
-        guard !ids.isEmpty else { return [:] }
         return await withTaskGroup(of: (Int, String)?.self) { group in
             for id in ids {
-                group.addTask { [apiClient] in
+                group.addTask { [blizzardClient] in
                     do {
-                        let info = try await apiClient.fetchSpell(
+                        let info = try await blizzardClient.fetchSpell(
                             spellID: id, locale: "ko_KR", token: token
                         )
                         return (id, info.name)
@@ -155,6 +178,44 @@ actor RankerNameResolverImpl: RankerNameResolver {
             return acc
         }
     }
+
+    // MARK: - Token management
+
+    private func ensureWCLToken(clientID: String, clientSecret: String) async -> String? {
+        if let cached = cachedWCLToken, let obtainedAt = wclTokenObtainedAt,
+           Date().timeIntervalSince(obtainedAt) < Self.tokenTTLSeconds {
+            return cached
+        }
+        cachedWCLToken = nil
+        wclTokenObtainedAt = nil
+        do {
+            let fresh = try await wclClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
+            cachedWCLToken = fresh
+            wclTokenObtainedAt = Date()
+            return fresh
+        } catch {
+            logger.warning("WCL 토큰 발급 실패 — 이름 조회 스킵: \(error)")
+            return nil
+        }
+    }
+
+    private func ensureBlizzardToken(clientID: String, clientSecret: String) async -> String? {
+        if let cached = cachedBlizzardToken, let obtainedAt = blizzardTokenObtainedAt,
+           Date().timeIntervalSince(obtainedAt) < Self.tokenTTLSeconds {
+            return cached
+        }
+        cachedBlizzardToken = nil
+        blizzardTokenObtainedAt = nil
+        do {
+            let fresh = try await blizzardClient.fetchAccessToken(clientID: clientID, clientSecret: clientSecret)
+            cachedBlizzardToken = fresh
+            blizzardTokenObtainedAt = Date()
+            return fresh
+        } catch {
+            logger.warning("Blizzard 토큰 발급 실패 — 스킬 이름 조회 스킵: \(error)")
+            return nil
+        }
+    }
 }
 
 // MARK: - Mock
@@ -166,8 +227,10 @@ final class MockRankerNameResolver: RankerNameResolver {
     func resolveNames(
         encounterIDs: Set<Int>,
         spellIDs:     Set<Int>,
-        clientID:     String,
-        clientSecret: String
+        wclClientID:     String,
+        wclClientSecret: String,
+        blizzardClientID:     String,
+        blizzardClientSecret: String
     ) async -> NameResolveResult {
         NameResolveResult(
             encounterNames: stubbedEncounters.filter { encounterIDs.contains($0.key) },

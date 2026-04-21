@@ -279,9 +279,17 @@ final class RankerCollectionViewModel: ObservableObject {
     // MARK: - 이름 해상 (Blizzard API)
 
     private func enrichPreviewNames(currentPreview: RankerPreviewResult, mergedData: HGPTRankerData) async {
-        let clientID     = loadBlizzardClientID()
-        let clientSecret = loadBlizzardClientSecret()
-        guard !clientID.isEmpty, !clientSecret.isEmpty else { return }
+        // encounter 이름은 WCL (자격증명 필수), spell 이름은 Blizzard (선택).
+        // 한쪽만 있어도 부분 결과 반환.
+        let wclID     = clientID
+        let wclSecret = clientSecret
+        let blizzardID     = loadBlizzardClientID()
+        let blizzardSecret = loadBlizzardClientSecret()
+
+        // encounter · spell 양쪽 다 자격증명 없으면 조회 의미 없음
+        let hasWCL      = !wclID.isEmpty && !wclSecret.isEmpty
+        let hasBlizzard = !blizzardID.isEmpty && !blizzardSecret.isEmpty
+        guard hasWCL || hasBlizzard else { return }
 
         let encounterIDs = Set(currentPreview.bossEntries.map(\.encounterID))
         let spellIDs     = Set(currentPreview.bossEntries.map(\.bossSpellID))
@@ -289,8 +297,10 @@ final class RankerCollectionViewModel: ObservableObject {
         let resolved = await nameResolver.resolveNames(
             encounterIDs: encounterIDs,
             spellIDs:     spellIDs,
-            clientID:     clientID,
-            clientSecret: clientSecret
+            wclClientID:     wclID,
+            wclClientSecret: wclSecret,
+            blizzardClientID:     blizzardID,
+            blizzardClientSecret: blizzardSecret
         )
 
         // enrich 도중 사용자가 다른 상태로 전환했으면 덮어쓰지 않음
