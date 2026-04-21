@@ -132,11 +132,13 @@ struct HGPTRankerData {
     var spellNames: [Int: String] = [:]
     // Phase 3: [encounterID: [bossSpellID: 한국어 기믹 설명]] (Blizzard Journal Encounter abilities).
     var abilityDescriptions: [Int: [Int: String]] = [:]
+    // Phase 3b: [encounterID: [bossSpellID: [전술 라인]]] — 사용자 큐레이션 가이드 매칭 결과.
+    var tacticalLines: [Int: [Int: [TacticalLine]]] = [:]
 }
 
 extension HGPTRankerData: Codable {
     enum CodingKeys: String, CodingKey {
-        case meta, encounterData, encounterNames, spellNames, abilityDescriptions
+        case meta, encounterData, encounterNames, spellNames, abilityDescriptions, tacticalLines
     }
 
     init(from decoder: Decoder) throws {
@@ -183,6 +185,19 @@ extension HGPTRankerData: Codable {
             abilities[encID] = inner
         }
         abilityDescriptions = abilities
+
+        // Phase 3b 역호환: tacticalLines 없으면 빈 맵
+        let rawTactics = (try? container.decode([String: [String: [TacticalLine]]].self, forKey: .tacticalLines)) ?? [:]
+        var tactics: [Int: [Int: [TacticalLine]]] = [:]
+        for (encStr, bossMap) in rawTactics {
+            guard let encID = Int(encStr) else { continue }
+            var inner: [Int: [TacticalLine]] = [:]
+            for (bossStr, lines) in bossMap {
+                if let bossID = Int(bossStr) { inner[bossID] = lines }
+            }
+            tactics[encID] = inner
+        }
+        tacticalLines = tactics
     }
 
     func encode(to encoder: Encoder) throws {
@@ -218,6 +233,17 @@ extension HGPTRankerData: Codable {
                 stringAbilities[String(encID)] = inner
             }
             try container.encode(stringAbilities, forKey: .abilityDescriptions)
+        }
+        if !tacticalLines.isEmpty {
+            var stringTactics: [String: [String: [TacticalLine]]] = [:]
+            for (encID, bossMap) in tacticalLines {
+                var inner: [String: [TacticalLine]] = [:]
+                for (bossID, lines) in bossMap {
+                    inner[String(bossID)] = lines
+                }
+                stringTactics[String(encID)] = inner
+            }
+            try container.encode(stringTactics, forKey: .tacticalLines)
         }
     }
 }

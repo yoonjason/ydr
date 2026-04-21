@@ -309,14 +309,23 @@ final class RankerCollectionViewModel: ObservableObject {
         state = .preview(preview, merged)
 
         // 이름 해상 — 백그라운드로 preview 업데이트. 자격증명 없거나 실패 시 숫자 유지.
+        // originalEnglishNames 는 tactical 가이드 매칭 (WCL 영문 보스명 ↔ 가이드 엔트리) 에 필요.
         enrichTask = Task { [weak self] in
-            await self?.enrichPreviewNames(currentPreview: preview, mergedData: merged)
+            await self?.enrichPreviewNames(
+                currentPreview: preview,
+                mergedData: merged,
+                englishEncounterNames: originalEnglishNames
+            )
         }
     }
 
     // MARK: - 이름 해상 (Blizzard API)
 
-    private func enrichPreviewNames(currentPreview: RankerPreviewResult, mergedData: HGPTRankerData) async {
+    private func enrichPreviewNames(
+        currentPreview: RankerPreviewResult,
+        mergedData: HGPTRankerData,
+        englishEncounterNames: [Int: String] = [:]
+    ) async {
         // encounter 이름은 WCL (자격증명 필수), spell 이름은 Blizzard (선택).
         // 한쪽만 있어도 부분 결과 반환.
         let wclID     = clientID
@@ -382,6 +391,28 @@ final class RankerCollectionViewModel: ObservableObject {
         // Phase 2: 힐러/보스 spellID 한국어 이름을 전체 맵에 주입 (UI 확장 렌더용)
         for (id, name) in resolved.spellNames where !name.isEmpty {
             enrichedData.spellNames[id] = name
+        }
+        // Phase 3b: 사용자 큐레이션 전술 가이드 매칭.
+        // 매 (wclEncID, bossSpellID) 쌍에 대해, WCL 영문 보스명 + 한국어 스킬명 기준 lookup.
+        if !englishEncounterNames.isEmpty {
+            let dungeonID = enrichedData.meta.dungeonID
+            var matched: [Int: [Int: [TacticalLine]]] = [:]
+            for (encID, bossMap) in enrichedData.encounterData {
+                guard let englishBossName = englishEncounterNames[encID] else { continue }
+                for bossSpellID in bossMap.keys {
+                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else { continue }
+                    let lines = TacticalGuideCatalog.matchingLines(
+                        dungeonID: dungeonID,
+                        englishBossName: englishBossName,
+                        spellKoreanName: spellKoreanName
+                    )
+                    if !lines.isEmpty {
+                        matched[encID, default: [:]][bossSpellID] = lines
+                    }
+                }
+            }
+            enrichedData.tacticalLines = matched
+            logger.debug("tacticalLines 매칭: \(matched.count)개 encounter, 총 \(matched.values.reduce(0) { $0 + $1.count })개 스킬")
         }
         state = .preview(enrichedPreview, enrichedData)
     }

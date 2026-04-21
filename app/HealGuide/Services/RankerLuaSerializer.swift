@@ -71,6 +71,18 @@ struct RankerLuaSerializer {
                         lines.append("                        },")
                     }
                 }
+                // Phase 3b: 사용자 큐레이션 전술 가이드 (매칭된 경우)
+                if let tactics = entry.tacticalLines[encID]?[bossID], !tactics.isEmpty {
+                    lines.append("                        _tactics = {")
+                    for t in tactics {
+                        lines.append("                            {")
+                        lines.append("                                priority = \"\(t.priority.rawValue)\",")
+                        lines.append("                                marker   = \"\(t.priorityMarker)\",")
+                        lines.append("                                action   = \"\(escapeLua(t.action))\",")
+                        lines.append("                            },")
+                    }
+                    lines.append("                        },")
+                }
                 for response in responses {
                     lines.append("                        {")
                     lines.append("                            spellID = \(response.spellID),")

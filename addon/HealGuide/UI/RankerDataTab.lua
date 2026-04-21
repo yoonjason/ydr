@@ -181,6 +181,31 @@ local function populateDetailFrame(detail, entry)
                         end
                     end
 
+                    -- Phase 3b: 사용자 큐레이션 전술 가이드 (★/☆/-)
+                    if type(mappings._tactics) == "table" then
+                        for _, t in ipairs(mappings._tactics) do
+                            if type(t) == "table" and type(t.action) == "string" and t.action ~= "" then
+                                rowIndex = rowIndex + 1
+                                local tRow = getOrCreateDetailRow(detail, rowIndex)
+                                tRow:SetHeight(DETAIL_ROW_H)
+                                tRow:ClearAllPoints()
+                                tRow:SetPoint("TOPLEFT",  detail, "TOPLEFT",  10, detailY)
+                                tRow:SetPoint("TOPRIGHT", detail, "TOPRIGHT", 0, detailY)
+                                local marker = (t.marker and t.marker ~= "") and (t.marker .. " ") or ""
+                                -- critical=빨강, important=주황, note=흰색
+                                local color = "|cffffffff"
+                                if t.priority == "critical" then
+                                    color = "|cffff5555"
+                                elseif t.priority == "important" then
+                                    color = "|cffffaa44"
+                                end
+                                tRow.text:SetText(color .. marker .. t.action .. "|r")
+                                tRow:Show()
+                                detailY = detailY - DETAIL_ROW_H
+                            end
+                        end
+                    end
+
                     local firstRow  = true
                     for _, m in ipairs(mappings) do
                         rowIndex = rowIndex + 1

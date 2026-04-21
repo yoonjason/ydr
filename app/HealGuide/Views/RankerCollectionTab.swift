@@ -511,6 +511,27 @@ private struct BossMappingRow: View {
 
     @ViewBuilder
     private var expandedDetail: some View {
+        // 0. 사용자 큐레이션 전술 가이드 (있으면 최상단에 우선 표시)
+        if let tactics = data.tacticalLines[entry.encounterID]?[entry.bossSpellID], !tactics.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("전술 가이드", systemImage: "scope")
+                    .font(.caption2)
+                    .foregroundStyle(.pink)
+                ForEach(Array(tactics.enumerated()), id: \.offset) { _, t in
+                    HStack(alignment: .top, spacing: 4) {
+                        Text(t.priorityMarker)
+                            .font(.caption2)
+                            .foregroundStyle(t.priority == .critical ? .red : .orange)
+                        Text(t.action)
+                            .font(.caption2)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.bottom, 4)
+        }
+
         // 1. 기믹 설명 (Blizzard API)
         if let desc = data.abilityDescriptions[entry.encounterID]?[entry.bossSpellID], !desc.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
