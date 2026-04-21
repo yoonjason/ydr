@@ -404,16 +404,28 @@ final class RankerCollectionViewModel: ObservableObject {
                 guard TacticalGuideCatalog.bossGuide(forDungeonID: dungeonID, englishBossName: englishBossName) != nil else {
                     continue
                 }
-                // 스킬별 매칭
+                // 스킬별 매칭 — Blizzard 의 2가지 소스 순차 시도:
+                // 1차: fetchSpell 반환 한국어명 (spellNames)
+                // 2차: journal-encounter.ability.name (abilityDescriptions 에 저장됨)
+                // 같은 spellID 에 대해 두 API 가 미묘하게 다른 값을 주는 케이스 방어.
                 for bossSpellID in bossMap.keys {
-                    guard let spellKoreanName = enrichedData.spellNames[bossSpellID], !spellKoreanName.isEmpty else { continue }
-                    let lines = TacticalGuideCatalog.matchingLines(
-                        dungeonID: dungeonID,
-                        englishBossName: englishBossName,
-                        spellKoreanName: spellKoreanName
-                    )
-                    if !lines.isEmpty {
-                        matched[encID, default: [:]][bossSpellID] = lines
+                    var candidates: [String] = []
+                    if let n = enrichedData.spellNames[bossSpellID], !n.isEmpty {
+                        candidates.append(n)
+                    }
+                    if let d = enrichedData.abilityDescriptions[encID]?[bossSpellID], !d.isEmpty {
+                        candidates.append(d)
+                    }
+                    for name in candidates {
+                        let lines = TacticalGuideCatalog.matchingLines(
+                            dungeonID: dungeonID,
+                            englishBossName: englishBossName,
+                            spellKoreanName: name
+                        )
+                        if !lines.isEmpty {
+                            matched[encID, default: [:]][bossSpellID] = lines
+                            break
+                        }
                     }
                 }
                 // 보스 전체 주의사항 (abilityName 빈 라인) 을 최소 bossSpellID 의 라인 맨 앞에 prepend.
