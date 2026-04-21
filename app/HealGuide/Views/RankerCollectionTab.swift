@@ -315,9 +315,16 @@ struct RankerCollectionTab: View {
                             .font(.caption2)
                             .foregroundStyle(.green)
                     }
-                    Button("지금 바로 발사 (테스트)") { scheduler.fireNow() }
-                        .buttonStyle(.bordered)
-                        .font(.caption2)
+                    HStack {
+                        Button("지금 바로 발사 (테스트)") { scheduler.fireNow() }
+                            .buttonStyle(.bordered)
+                            .font(.caption2)
+                        if let fired = scheduler.lastFireMessage {
+                            Text(fired)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
             .padding(.top, 4)

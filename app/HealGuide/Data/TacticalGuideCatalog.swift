@@ -3,6 +3,10 @@ import Foundation
 // Midnight 시즌 1 M+ 던전 8개 전술 가이드 (사용자 큐레이션).
 // 키: WCL DungeonInfo.id
 // 값: 보스 배열 (WCL 영문명 기준 매칭)
+//
+// @MainActor 격리 — mutable static var (effectiveGuides) 를 @MainActor 호출부와만
+// 공유하도록 보장. 모든 호출자(ViewModel 들)가 이미 @MainActor 라 호출 변경 없음.
+@MainActor
 enum TacticalGuideCatalog {
 
     /// 런타임 병합 결과 캐시. 초기화 시 하드코딩 default + 사용자 custom override 병합.

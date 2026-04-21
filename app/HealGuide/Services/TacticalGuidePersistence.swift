@@ -26,6 +26,23 @@ struct TacticalGuideCustomFile: Codable, Equatable {
         self.author = author
         self.customizations = customizations
     }
+
+    // ISSUE-2 방어: Swift 합성 decoder 는 선언부 기본값을 무시하므로 필드 누락 JSON
+    // (수동 편집 / 구 버전 / 다른 앱 export) 가 keyNotFound 로 전체 load 실패 → 커스텀
+    // 증발하는 위험이 있음. 개별 필드를 try? 로 받아 폴백.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version       = (try? container.decode(Int.self,    forKey: .version)) ?? 1
+        createdAt     = (try? container.decode(String.self, forKey: .createdAt))
+                         ?? ISO8601DateFormatter().string(from: Date())
+        author        = try? container.decode(String.self,  forKey: .author)
+        customizations = (try? container.decode([DungeonCustomization].self,
+                                                 forKey: .customizations)) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version, createdAt, author, customizations
+    }
 }
 
 struct DungeonCustomization: Codable, Equatable {

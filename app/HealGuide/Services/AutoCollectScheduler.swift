@@ -31,7 +31,15 @@ final class AutoCollectScheduler: ObservableObject {
     // MARK: - Published
 
     @Published var frequency: Frequency = .off {
-        didSet { persist(); reschedule() }
+        didSet {
+            // ISSUE-3: 권한 요청은 사용자가 실제로 자동 수집을 켤 때만 (off → non-off 전환).
+            // 탭 진입만으로 다이얼로그가 뜨는 HIG 위반 방지.
+            if oldValue == .off && frequency != .off {
+                requestNotificationPermission()
+            }
+            persist()
+            reschedule()
+        }
     }
     /// 0~23 시 (한국 시간 기준).
     @Published var hourOfDay: Int = 9 {
@@ -68,7 +76,7 @@ final class AutoCollectScheduler: ObservableObject {
         weekday = defaults.integer(forKey: keyWeekday)
         if weekday == 0 && defaults.object(forKey: keyWeekday) == nil { weekday = 2 }
 
-        requestNotificationPermission()
+        // ISSUE-3: init 에서 권한 요청 제거. frequency 가 off→non-off 로 바뀔 때만 요청.
         reschedule()
     }
 
@@ -96,8 +104,13 @@ final class AutoCollectScheduler: ObservableObject {
         }
     }
 
+    /// 수동 테스트 버튼용. reschedule 하지 않음 — 기존 예약 타이머 유지.
+    /// 정규 발사(fire)는 예약된 Timer 에서만 일어나고 그 때만 reschedule.
     func fireNow() {
-        fire()
+        logger.info("수동 발사 (fireNow)")
+        sendNotification()
+        lastFireMessage = "수동 발사: \(isoNow())"
+        onFire?()
     }
 
     // MARK: - Private
@@ -105,7 +118,7 @@ final class AutoCollectScheduler: ObservableObject {
     private func fire() {
         logger.info("자동 수집 Timer 발사")
         sendNotification()
-        lastFireMessage = "발사됨: \(isoNow())"
+        lastFireMessage = "자동 발사: \(isoNow())"
         onFire?()
         reschedule()
     }
