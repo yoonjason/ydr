@@ -27,6 +27,13 @@ protocol BlizzardGameDataAPIClient: Sendable {
     // M+ 전용 엔드포인트. dungeonID 는 Challenge Mode mapID 와 일치 (인게임 C_ChallengeMode.GetMapTable).
     func fetchMythicKeystoneDungeonIndex(locale: String, token: String) async throws -> Data
     func fetchMythicKeystoneDungeon(dungeonID: Int, locale: String, token: String) async throws -> Data
+    // Journal-Instance 전체 인덱스. 파싱된 리스트 반환 — 인카운터명 한국어 번역 자동 발견용.
+    func fetchJournalInstanceIndex(locale: String, token: String) async throws -> [JournalInstanceSummary]
+}
+
+struct JournalInstanceSummary: Equatable, Sendable {
+    let instanceID: Int
+    let name: String
 }
 
 struct BlizzardSpellInfo: Equatable {
@@ -275,6 +282,29 @@ final class BlizzardGameDataAPIClientImpl: BlizzardGameDataAPIClient {
             URLQueryItem(name: "locale", value: locale),
         ])
         return try await performGet(url: url, token: token)
+    }
+
+    func fetchJournalInstanceIndex(locale: String, token: String) async throws -> [JournalInstanceSummary] {
+        let url = try buildURL(path: "/data/wow/journal-instance/index", queryItems: [
+            URLQueryItem(name: "namespace", value: "static-\(region)"),
+            URLQueryItem(name: "locale", value: locale),
+        ])
+        let data = try await performGet(url: url, token: token)
+
+        struct IndexResponse: Decodable {
+            let instances: [Item]
+        }
+        struct Item: Decodable {
+            let id: Int
+            let name: String
+        }
+        do {
+            let decoded = try JSONDecoder().decode(IndexResponse.self, from: data)
+            return decoded.instances.map { JournalInstanceSummary(instanceID: $0.id, name: $0.name) }
+        } catch {
+            logger.error("journal-instance/index decoding failed: \(error)")
+            throw AppError.decodingFailed
+        }
     }
 
     // MARK: - Helpers

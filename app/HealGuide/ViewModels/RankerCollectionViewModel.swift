@@ -266,6 +266,24 @@ final class RankerCollectionViewModel: ObservableObject {
             talentFilterSimilarity: isAdvancedMode ? jaccardThreshold : 0.0
         )
 
+        // 5a. per-pull 보스명 영→한국어 번역 (Blizzard journal-instance 기반).
+        // Blizzard 자격증명 없으면 영문 유지.
+        if Task.isCancelled { state = .idle; return }
+        let blizzardID     = loadBlizzardClientID()
+        let blizzardSecret = loadBlizzardClientSecret()
+        if !blizzardID.isEmpty && !blizzardSecret.isEmpty && !collectedEncounterNames.isEmpty {
+            let translated = await nameResolver.translateEncountersToKorean(
+                dungeonKoreanName:    extractKoreanName(dungeon.name),
+                englishNames:         collectedEncounterNames,
+                blizzardClientID:     blizzardID,
+                blizzardClientSecret: blizzardSecret
+            )
+            // 번역 성공한 것만 덮어씀, 실패는 영문 유지
+            for (id, kr) in translated {
+                collectedEncounterNames[id] = kr
+            }
+        }
+
         let merged  = merger.merge(parses: parseResults, meta: meta, encounterNames: collectedEncounterNames)
         let preview = merger.buildPreview(
             parsesCollected: rawParses.count,
@@ -347,6 +365,15 @@ final class RankerCollectionViewModel: ObservableObject {
 
     private func loadBlizzardClientSecret() -> String {
         blizzardKeychain.load() ?? ""
+    }
+
+    // DungeonInfo.name 이 '윈드러너 첨탑 (Windrunner Spire)' 형식이라 한국어 부분만 추출.
+    // 괄호 + 공백 제거. 괄호 없으면 원본 반환.
+    private func extractKoreanName(_ raw: String) -> String {
+        if let idx = raw.firstIndex(of: "(") {
+            return String(raw[..<idx]).trimmingCharacters(in: .whitespaces)
+        }
+        return raw.trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - 병합 결과 저장

@@ -22,6 +22,18 @@ protocol RankerNameResolver {
         blizzardClientID:     String,
         blizzardClientSecret: String
     ) async -> NameResolveResult
+
+    // 영문 per-pull 보스명을 한국어로 치환.
+    // dungeonKoreanName: DungeonInfo.name 의 '던전명 (English)' 형식에서 한국어 부분
+    //   (예: '윈드러너 첨탑 (Windrunner Spire)' → '윈드러너 첨탑')
+    // englishNames: WCL dungeonPulls.name 에서 수집한 [wclEncID: 영문 보스명]
+    // 반환: [wclEncID: 한국어 보스명] — 매칭 실패 시 해당 encID 는 빠짐 (호출부에서 영문 fallback)
+    func translateEncountersToKorean(
+        dungeonKoreanName: String,
+        englishNames:      [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: String]
 }
 
 struct NameResolveResult {
@@ -40,6 +52,12 @@ actor RankerNameResolverImpl: RankerNameResolver {
 
     private var encounterCache: [Int: String] = [:]
     private var spellCache:     [Int: String] = [:]
+    // 한국어 던전명 → Blizzard journal-instance ID. journal-instance/index 스캔 1회 결과.
+    private var dungeonInstanceIDCache: [String: Int] = [:]
+    // instance ID → 영문→한국어 보스명 맵. 던전당 1회 페치.
+    private var instanceEnToKrCache: [Int: [String: String]] = [:]
+    // journal-instance/index 전체 (ko_KR) 를 1회만 페치.
+    private var journalIndexKR: [JournalInstanceSummary]?
 
     // 토큰별 분리 캐시 (WCL / Blizzard 각자 OAuth 토큰 TTL 관리)
     private var cachedWCLToken:      String?
@@ -148,6 +166,107 @@ actor RankerNameResolverImpl: RankerNameResolver {
         }
     }
 
+    // MARK: - Encounter KR translation (Blizzard journal-instance 기반)
+
+    func translateEncountersToKorean(
+        dungeonKoreanName: String,
+        englishNames:      [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: String] {
+        guard !englishNames.isEmpty,
+              !blizzardClientID.isEmpty, !blizzardClientSecret.isEmpty else {
+            return [:]
+        }
+        guard let token = await ensureBlizzardToken(
+            clientID: blizzardClientID, clientSecret: blizzardClientSecret
+        ) else { return [:] }
+
+        // 1. 던전 한국어명 → Blizzard instanceID (세션 캐시)
+        let instanceID: Int
+        if let cached = dungeonInstanceIDCache[dungeonKoreanName] {
+            instanceID = cached
+        } else {
+            guard let resolved = await findInstanceID(dungeonKoreanName: dungeonKoreanName, token: token) else {
+                logger.warning("journal-instance/index 에서 '\(dungeonKoreanName)' 미발견 — 영문 유지")
+                return [:]
+            }
+            dungeonInstanceIDCache[dungeonKoreanName] = resolved
+            instanceID = resolved
+        }
+
+        // 2. 영문→한국어 보스명 맵 (세션 캐시)
+        let enToKr: [String: String]
+        if let cached = instanceEnToKrCache[instanceID] {
+            enToKr = cached
+        } else {
+            enToKr = await fetchEnToKrMap(instanceID: instanceID, token: token)
+            instanceEnToKrCache[instanceID] = enToKr
+        }
+
+        // 3. WCL encID → 한국어 이름 매핑 (영문명 매칭)
+        var result: [Int: String] = [:]
+        for (wclEncID, englishName) in englishNames {
+            if let korean = enToKr[englishName], !korean.isEmpty {
+                result[wclEncID] = korean
+            }
+        }
+        return result
+    }
+
+    private func findInstanceID(dungeonKoreanName: String, token: String) async -> Int? {
+        // index 스캔 1회만
+        if journalIndexKR == nil {
+            do {
+                journalIndexKR = try await blizzardClient.fetchJournalInstanceIndex(
+                    locale: "ko_KR", token: token
+                )
+            } catch {
+                logger.warning("journal-instance/index 페치 실패: \(error)")
+                return nil
+            }
+        }
+        guard let index = journalIndexKR else { return nil }
+        // 정확 일치 우선, 실패 시 부분 일치 (던전명에 공백/괄호 차이 방어)
+        if let exact = index.first(where: { $0.name == dungeonKoreanName }) {
+            return exact.instanceID
+        }
+        let trimmed = dungeonKoreanName.trimmingCharacters(in: .whitespaces)
+        if let partial = index.first(where: { $0.name.contains(trimmed) || trimmed.contains($0.name) }) {
+            return partial.instanceID
+        }
+        return nil
+    }
+
+    private func fetchEnToKrMap(instanceID: Int, token: String) async -> [String: String] {
+        async let enFetch = fetchInstanceEncounters(instanceID: instanceID, locale: "en_US", token: token)
+        async let krFetch = fetchInstanceEncounters(instanceID: instanceID, locale: "ko_KR", token: token)
+        let (enList, krList) = await (enFetch, krFetch)
+        guard !enList.isEmpty, !krList.isEmpty else { return [:] }
+
+        // 같은 Blizzard encounterID 기준으로 매칭
+        let krByID = Dictionary(uniqueKeysWithValues: krList.map { ($0.encounterID, $0.name) })
+        var result: [String: String] = [:]
+        for en in enList {
+            if let kr = krByID[en.encounterID], !kr.isEmpty {
+                result[en.name] = kr
+            }
+        }
+        return result
+    }
+
+    private func fetchInstanceEncounters(instanceID: Int, locale: String, token: String) async -> [JournalEncounterSummary] {
+        do {
+            let info = try await blizzardClient.fetchJournalInstance(
+                instanceID: instanceID, locale: locale, token: token
+            )
+            return info.encounters
+        } catch {
+            logger.warning("journal-instance/\(instanceID) (\(locale, privacy: .public)) 페치 실패: \(error)")
+            return []
+        }
+    }
+
     // MARK: - Spell (Blizzard)
 
     private func resolveSpellsIfPossible(
@@ -226,6 +345,7 @@ actor RankerNameResolverImpl: RankerNameResolver {
 final class MockRankerNameResolver: RankerNameResolver {
     var stubbedEncounters: [Int: String] = [:]
     var stubbedSpells:     [Int: String] = [:]
+    var stubbedTranslations: [Int: String] = [:]
 
     func resolveNames(
         encounterIDs: Set<Int>,
@@ -239,5 +359,14 @@ final class MockRankerNameResolver: RankerNameResolver {
             encounterNames: stubbedEncounters.filter { encounterIDs.contains($0.key) },
             spellNames:     stubbedSpells.filter     { spellIDs.contains($0.key) }
         )
+    }
+
+    func translateEncountersToKorean(
+        dungeonKoreanName: String,
+        englishNames:      [Int: String],
+        blizzardClientID:     String,
+        blizzardClientSecret: String
+    ) async -> [Int: String] {
+        stubbedTranslations.filter { englishNames.keys.contains($0.key) }
     }
 }
