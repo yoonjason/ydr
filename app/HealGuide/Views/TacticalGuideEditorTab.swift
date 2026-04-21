@@ -159,6 +159,18 @@ struct TacticalGuideEditorTab: View {
             Button("되돌리기") { viewModel.revertCurrent() }
                 .buttonStyle(.bordered)
             Spacer()
+            Button {
+                viewModel.exportToFile()
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            Button {
+                viewModel.importFromFile()
+            } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.bordered)
         }
     }
 }

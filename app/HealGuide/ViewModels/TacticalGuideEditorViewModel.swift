@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 import os
 
 @MainActor
@@ -138,6 +139,86 @@ final class TacticalGuideEditorViewModel: ObservableObject {
     func revertCurrent() {
         rebuildEditableLines()
         lastActionResult = "저장된 상태로 되돌림"
+    }
+
+    // MARK: - Export / Import
+
+    /// 현재 저장된 커스텀 파일을 사용자 지정 경로에 복사. 없으면 빈 파일 export.
+    func exportToFile() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "HealGuide_TacticalGuide_\(shortDate()).json"
+        panel.message = "전술 가이드 커스텀 JSON 을 저장할 위치를 선택하세요"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let source = persistence.load() ?? TacticalGuideCustomFile(
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        if persistence.save(source, to: url) {
+            lastActionResult = "Export 완료: \(url.lastPathComponent)"
+        } else {
+            lastActionResult = "Export 실패"
+        }
+    }
+
+    /// 외부 JSON 파일 선택 → 현재 커스텀 파일과 병합 (같은 dungeonID+boss 는 import 가 교체).
+    func importFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "전술 가이드 커스텀 JSON 파일을 선택하세요"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        guard let imported = persistence.load(from: url) else {
+            lastActionResult = "Import 실패 — JSON 파싱 오류"
+            return
+        }
+
+        // 기존 파일과 병합
+        var current = persistence.load() ?? TacticalGuideCustomFile(
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        var mergedCount = 0
+        for dungeonIn in imported.customizations {
+            let dIdx = current.customizations.firstIndex { $0.dungeonID == dungeonIn.dungeonID }
+            var entry: DungeonCustomization
+            if let idx = dIdx {
+                entry = current.customizations[idx]
+            } else {
+                entry = DungeonCustomization(dungeonID: dungeonIn.dungeonID, bosses: [])
+            }
+            for bossIn in dungeonIn.bosses {
+                let bIdx = entry.bosses.firstIndex { $0.englishBossName == bossIn.englishBossName }
+                if let i = bIdx {
+                    entry.bosses[i] = bossIn
+                } else {
+                    entry.bosses.append(bossIn)
+                }
+                mergedCount += 1
+            }
+            if let idx = dIdx {
+                current.customizations[idx] = entry
+            } else {
+                current.customizations.append(entry)
+            }
+        }
+
+        if persistence.save(current) {
+            TacticalGuideCatalog.reloadCustom()
+            rebuildBossList()
+            rebuildEditableLines()
+            lastActionResult = "Import 완료 — \(mergedCount)개 보스 병합"
+        } else {
+            lastActionResult = "Import 병합 후 저장 실패"
+        }
+    }
+
+    private func shortDate() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyyMMdd_HHmm"
+        return fmt.string(from: Date())
     }
 }
 
