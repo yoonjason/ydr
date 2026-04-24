@@ -10,6 +10,7 @@ local TAB_DATA     = 1
 local TAB_SETTINGS = 2
 local TAB_PREVIEW  = 3
 local TAB_RANKER   = 4
+local TAB_MEMO     = 5
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ function MainFrame:_ShowTab(idx)
         self:_RefreshSettings()
     elseif idx == TAB_RANKER then
         self:_RefreshRankerTab()
+    elseif idx == TAB_MEMO then
+        self:_RefreshMemoTab()
     end
 end
 
@@ -93,7 +96,7 @@ function MainFrame:_Create()
     self:_CreateStaticPopups()
 
     local inset    = mainFrame.InsetBg
-    local tabNames = { "데이터", "설정", "미리보기", "랭커 데이터" }
+    local tabNames = { "데이터", "설정", "미리보기", "랭커 데이터", "메모" }
     local tabBtns  = {}
 
     for i, name in ipairs(tabNames) do
@@ -122,6 +125,7 @@ function MainFrame:_Create()
     self:_CreateSettingsTab(tabs[TAB_SETTINGS])
     self:_CreatePreviewTab(tabs[TAB_PREVIEW])
     self:_CreateRankerTab(tabs[TAB_RANKER])
+    self:_CreateMemoTab(tabs[TAB_MEMO])
     self:_ShowTab(TAB_DATA)
 end
 
@@ -1681,5 +1685,213 @@ function MainFrame:_MakeSlider(name, labelText, minV, maxV, step, parent, y)
     _G[name .. "Text"]:SetText(labelText .. ": " .. minV)
     sl._labelText = labelText
     return sl
+end
+
+-- ── Tab 5: 메모 ───────────────────────────────────────────────────────────────
+
+local MEMO_COLOR_PRESETS = {
+    { label = "흰",   r = 1,   g = 1,   b = 1   },
+    { label = "노랑", r = 1,   g = 1,   b = 0   },
+    { label = "주황", r = 1,   g = 0.5, b = 0   },
+    { label = "빨강", r = 1,   g = 0.2, b = 0.2 },
+    { label = "청록", r = 0,   g = 1,   b = 1   },
+    { label = "초록", r = 0.4, g = 1,   b = 0.2 },
+}
+
+function MainFrame:_CreateMemoTab(panel)
+    local ay = -10
+
+    local hdr = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    hdr:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, ay)
+    hdr:SetText("메모 내용")
+    ay = ay - 24
+
+    -- 멀티라인 스크롤 EditBox
+    local scrollBox, memoEB
+    local ok = pcall(function()
+        scrollBox = CreateFrame("ScrollFrame", "HGMemoScrollBox", panel, "InputScrollFrameTemplate")
+        memoEB = scrollBox.EditBox
+    end)
+    if not ok or not memoEB then
+        scrollBox = CreateFrame("ScrollFrame", "HGMemoScrollBox2", panel, "UIPanelScrollFrameTemplate")
+        memoEB = CreateFrame("EditBox", "HGMemoEditBox", scrollBox)
+        memoEB:SetMultiLine(true)
+        memoEB:SetFontObject("ChatFontNormal")
+        memoEB:SetWidth(490)
+        scrollBox:SetScrollChild(memoEB)
+    end
+    scrollBox:SetPoint("TOPLEFT",  panel, "TOPLEFT",  8,  ay)
+    scrollBox:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, ay)
+    scrollBox:SetHeight(130)
+    memoEB:SetAutoFocus(false)
+    memoEB:SetMaxLetters(0)
+    memoEB:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    memoEB:SetScript("OnTabPressed",    function(self) self:ClearFocus() end)
+    panel._memoEB = memoEB
+    ay = ay - 138
+
+    -- 폰트 크기 슬라이더 (10~32)
+    local fontSl = self:_MakeSlider("HGMemoFontSl", "폰트 크기", 10, 32, 1, panel, ay)
+    fontSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        local memo = addon.Storage:GetSetting("memo") or {}
+        memo.fontSize = val
+        addon.Storage:SetSetting("memo", memo)
+        if addon.MemoFrame then addon.MemoFrame:RefreshFromStorage() end
+    end)
+    panel._memoFontSl = fontSl
+    ay = ay - 52
+
+    -- 글자 색상 프리셋
+    local colorLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    colorLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, ay)
+    colorLabel:SetText("글자 색상:")
+
+    panel._memoSelectedColor = { r = 1, g = 1, b = 1 }
+    local colorBtns = {}
+
+    local function updateColorSelection()
+        local sel = panel._memoSelectedColor
+        for i, btn in ipairs(colorBtns) do
+            local p = MEMO_COLOR_PRESETS[i]
+            local match = (math.abs(p.r - sel.r) < 0.02 and
+                           math.abs(p.g - sel.g) < 0.02 and
+                           math.abs(p.b - sel.b) < 0.02)
+            btn._border:SetColorTexture(match and 1 or 0.35, match and 0.85 or 0.35, 0, 1)
+        end
+    end
+
+    for i, preset in ipairs(MEMO_COLOR_PRESETS) do
+        local btn = CreateFrame("Button", nil, panel)
+        btn:SetSize(38, 22)
+        btn:SetPoint("TOPLEFT", panel, "TOPLEFT", 8 + (i - 1) * 42, ay - 20)
+
+        local border = btn:CreateTexture(nil, "BACKGROUND")
+        border:SetAllPoints()
+        border:SetColorTexture(0.35, 0.35, 0.35, 1)
+        btn._border = border
+
+        local swatch = btn:CreateTexture(nil, "ARTWORK")
+        swatch:SetPoint("TOPLEFT",     btn, "TOPLEFT",     2, -2)
+        swatch:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2,  2)
+        swatch:SetColorTexture(preset.r, preset.g, preset.b, 1)
+
+        local p = preset
+        btn:SetScript("OnClick", function()
+            panel._memoSelectedColor = { r = p.r, g = p.g, b = p.b }
+            updateColorSelection()
+            local memo = addon.Storage:GetSetting("memo") or {}
+            memo.fontColor = panel._memoSelectedColor
+            addon.Storage:SetSetting("memo", memo)
+            if addon.MemoFrame then addon.MemoFrame:RefreshFromStorage() end
+        end)
+        colorBtns[i] = btn
+    end
+    panel._memoColorBtns = colorBtns
+    panel._updateColorSelection = updateColorSelection
+    ay = ay - 50
+
+    -- 배경 투명도 슬라이더 (0~100)
+    local bgSl = self:_MakeSlider("HGMemoBgSl", "배경 투명도", 0, 100, 1, panel, ay)
+    bgSl:SetScript("OnValueChanged", function(self, val)
+        val = math.floor(val)
+        _G[self:GetName() .. "Text"]:SetText(self._labelText .. ": " .. val)
+        local memo = addon.Storage:GetSetting("memo") or {}
+        memo.bgAlpha = val
+        addon.Storage:SetSetting("memo", memo)
+        if addon.MemoFrame then addon.MemoFrame:RefreshFromStorage() end
+    end)
+    panel._memoBgSl = bgSl
+    ay = ay - 52
+
+    -- 표시/숨김 체크박스
+    local showChk = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    showChk:SetSize(24, 24)
+    showChk:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, ay)
+    local showLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    showLbl:SetPoint("LEFT", showChk, "RIGHT", 2, 0)
+    showLbl:SetText("메모 프레임 표시")
+    panel._memoShowChk = showChk
+    showChk:SetScript("OnClick", function(self)
+        local memo = addon.Storage:GetSetting("memo") or {}
+        memo.show = self:GetChecked() and true or false
+        addon.Storage:SetSetting("memo", memo)
+        if addon.MemoFrame then addon.MemoFrame:SetVisible(memo.show) end
+    end)
+    ay = ay - 30
+
+    -- 드래그 잠금 체크박스
+    local lockChk = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    lockChk:SetSize(24, 24)
+    lockChk:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, ay)
+    local lockLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lockLbl:SetPoint("LEFT", lockChk, "RIGHT", 2, 0)
+    lockLbl:SetText("드래그 잠금 (위치 고정)")
+    panel._memoLockChk = lockChk
+    lockChk:SetScript("OnClick", function(self)
+        local memo = addon.Storage:GetSetting("memo") or {}
+        memo.locked = self:GetChecked() and true or false
+        addon.Storage:SetSetting("memo", memo)
+    end)
+    ay = ay - 36
+
+    -- 저장 버튼
+    local saveBtn = CreateFrame("Button", nil, panel, "GameMenuButtonTemplate")
+    saveBtn:SetSize(100, 26)
+    saveBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, ay)
+    saveBtn:SetText("저장")
+    saveBtn:SetScript("OnClick", function()
+        local memo = addon.Storage:GetSetting("memo") or {}
+
+        local rawText = memoEB:GetText()
+        local lines   = {}
+        for line in (rawText .. "\n"):gmatch("(.-)\n") do
+            lines[#lines + 1] = line
+        end
+        while #lines > 0 and lines[#lines] == "" do
+            lines[#lines] = nil
+        end
+
+        memo.lines     = lines
+        memo.updatedAt = time()
+        addon.Storage:SetSetting("memo", memo)
+
+        if addon.MemoFrame then
+            addon.MemoFrame:RefreshFromStorage()
+        end
+    end)
+
+    self:_RefreshMemoTab()
+end
+
+function MainFrame:_RefreshMemoTab()
+    local panel = tabs[TAB_MEMO]
+    if not panel or not panel._memoEB then return end
+
+    local ok, err = pcall(function()
+        local memo  = addon.Storage:GetSetting("memo") or {}
+        local lines = type(memo.lines) == "table" and memo.lines or {}
+
+        panel._memoEB:SetText(table.concat(lines, "\n"))
+        panel._memoShowChk:SetChecked(memo.show ~= false)
+        panel._memoLockChk:SetChecked(memo.locked == true)
+
+        if panel._memoFontSl then
+            panel._memoFontSl:SetValue(memo.fontSize or 14)
+        end
+        if panel._memoBgSl then
+            panel._memoBgSl:SetValue(memo.bgAlpha or 60)
+        end
+
+        local fc = memo.fontColor or { r = 1, g = 1, b = 1 }
+        panel._memoSelectedColor = { r = fc.r or 1, g = fc.g or 1, b = fc.b or 1 }
+        if panel._updateColorSelection then
+            panel._updateColorSelection()
+        end
+    end)
+    if not ok then
+        addon.dprint("_RefreshMemoTab error:", err)
+    end
 end
 

@@ -16,6 +16,40 @@ local clFrame    = CreateFrame("Frame")
 -- 실제 함수 본문은 아래쪽의 StaticPopup 블록에서 할당.
 local _hgInstallPopupBlocker
 
+-- 옵션 2: updatedAt 비교 후 Mac 앱 버전이 더 최신이면 lines 만 동기화.
+-- UI 설정(show/locked/point)은 기존 DB 값을 보존하여 사용자 경험 유지.
+local function seedMemoFromExternal()
+    if type(HGPT_Memo) ~= "table" then return end
+    local memo  = addon.Storage:GetSetting("memo")
+    local dbAt  = memo and type(memo.updatedAt) == "number" and memo.updatedAt or 0
+    local appAt = type(HGPT_Memo.updatedAt) == "number" and HGPT_Memo.updatedAt or 0
+    if appAt <= dbAt then return end
+
+    -- lines / updatedAt 만 덮어쓰고 show/locked/point 등 나머지 키는 보존
+    -- (테이블 통째 교체 시 향후 DEFAULTS 에 추가된 키를 기존 사용자가 못 받는 문제 방지)
+    local src = type(HGPT_Memo.lines) == "table" and HGPT_Memo.lines or {}
+    local m   = memo or {}
+    local lines = {}
+    for i = 1, #src do
+        lines[i] = type(src[i]) == "string" and src[i] or ""
+    end
+    m.lines     = lines
+    m.updatedAt = appAt
+    if type(HGPT_Memo.fontSize) == "number" then
+        m.fontSize = math.max(10, math.min(32, HGPT_Memo.fontSize))
+    end
+    if type(HGPT_Memo.fontColor) == "table" then
+        local fc = HGPT_Memo.fontColor
+        if type(fc.r) == "number" and type(fc.g) == "number" and type(fc.b) == "number" then
+            m.fontColor = { r = fc.r, g = fc.g, b = fc.b }
+        end
+    end
+    if type(HGPT_Memo.bgAlpha) == "number" then
+        m.bgAlpha = math.max(0, math.min(100, HGPT_Memo.bgAlpha))
+    end
+    addon.Storage:SetSetting("memo", m)
+end
+
 local function autoImportGeneratedData()
     if type(HealGuide_Generated) ~= "table" then return end
     local data = HealGuide_Generated
@@ -36,6 +70,7 @@ local function onAddonLoaded(name)
     end
     if name ~= addonName then return end
     addon.Storage:Init()
+    seedMemoFromExternal()  -- Storage 초기화 직후, UI 생성 전에 실행
     addon.SpecMatcher:Init()
     addon.AlertFrame:Init()
     addon.MainFrame:Init()
@@ -47,6 +82,9 @@ local function onAddonLoaded(name)
     end
     if addon.TimelineFrame and addon.TimelineFrame.Init then
         addon.TimelineFrame:Init()
+    end
+    if addon.MemoFrame and addon.MemoFrame.Init then
+        addon.MemoFrame:Init()
     end
     autoImportGeneratedData()
     print("|cff00ff00HealGuide|r 로드 완료. /hg 로 설정")
@@ -375,6 +413,23 @@ SlashCmdList["HEALGUIDE"] = function(msg)
         else
             print("|cff00ff00HealGuide|r 사용법: /hg policy <off|merge|exclusive>")
         end
+    elseif cmd == "memo" then
+        if addon.MemoFrame then
+            local sub  = args:match("^(%S+)")
+            local m    = addon.Storage:GetSetting("memo") or {}
+            local show
+            if sub == "show" then
+                show = true
+            elseif sub == "hide" then
+                show = false
+            else
+                show = not (m.show ~= false)
+            end
+            m.show = show
+            addon.Storage:SetSetting("memo", m)
+            addon.MemoFrame:SetVisible(show)
+            print("|cff00ff00HealGuide|r 메모: " .. (show and "표시" or "숨김"))
+        end
     elseif cmd == "timeline" then
         local sub = args:match("^(%S+)")
         if sub == "on" then
@@ -402,6 +457,7 @@ SlashCmdList["HEALGUIDE"] = function(msg)
               "/hg tts <on|off>, /hg sound <on|off>, /hg label <on|off>, " ..
               "/hg policy <off|merge|exclusive>, " ..
               "/hg timeline <on|off|horizontal|vertical|reset>, " ..
+              "/hg memo [show|hide], " ..
               "/hg debug, /hg pause, /hg resume, /hg history, /hg reload")
     end
 end

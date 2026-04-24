@@ -51,6 +51,17 @@ local DEFAULTS = {
             -- 순위 스킬 또는 다른 사용 가능 스킬로 대체. DiscPriest/HolyPriest 에 한해
             -- 카테고리 태깅 제공됨. 기본값 off — 기존 동작 유지.
             useBetaCooldownFallback = false,
+            -- 메모 프레임
+            memo = {
+                lines     = { "", "", "" },
+                show      = true,
+                locked    = false,
+                point     = { point = "CENTER", relPoint = "CENTER", x = 0, y = 200 },
+                updatedAt = 0,
+                fontSize  = 14,
+                fontColor = { r = 1, g = 1, b = 1 },
+                bgAlpha   = 60,
+            },
         },
     },
 }
@@ -96,6 +107,9 @@ function Storage:Init()
         if addon.TimelineFrame and addon.TimelineFrame.ApplyTheme then
             addon.TimelineFrame:ApplyTheme()
         end
+        if addon.MemoFrame and addon.MemoFrame.RefreshFromStorage then
+            addon.MemoFrame:RefreshFromStorage()
+        end
     end)
 
     db.RegisterCallback(self, "OnProfileReset", function(target, event, database, profileName)
@@ -112,6 +126,9 @@ function Storage:Init()
         end
         if addon.TimelineFrame and addon.TimelineFrame.ApplyTheme then
             addon.TimelineFrame:ApplyTheme()
+        end
+        if addon.MemoFrame and addon.MemoFrame.RefreshFromStorage then
+            addon.MemoFrame:RefreshFromStorage()
         end
     end)
 

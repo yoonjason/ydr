@@ -134,11 +134,28 @@ function EncounterEngine:OnEncounterStart(encounterID, encounterName)
         self:ScheduleTimeline(specData.timeline)
     end
 
-    -- 보스 전체 주의사항 (_shared 전술) 로드
+    -- 보스 전체 주의사항 로드: _shared 라인 + 모든 bossSpellID 의 priority='note' 라인을 병합해 전투 내내 표시
     if addon.AlertFrame and addon.AlertFrame.SetSharedTactics then
         local tactics = bossData.tactics
-        local shared  = type(tactics) == "table" and tactics["_shared"]
-        addon.AlertFrame:SetSharedTactics(type(shared) == "table" and shared or nil)
+        if type(tactics) == "table" then
+            local sharedLines = {}
+            local existing = tactics["_shared"]
+            if type(existing) == "table" then
+                for _, t in ipairs(existing) do sharedLines[#sharedLines + 1] = t end
+            end
+            for key, lines in pairs(tactics) do
+                if key ~= "_shared" and type(lines) == "table" then
+                    for _, t in ipairs(lines) do
+                        if type(t) == "table" and t.priority == "note" then
+                            sharedLines[#sharedLines + 1] = t
+                        end
+                    end
+                end
+            end
+            addon.AlertFrame:SetSharedTactics(#sharedLines > 0 and sharedLines or nil)
+        else
+            addon.AlertFrame:SetSharedTactics(nil)
+        end
     end
 end
 
@@ -701,7 +718,10 @@ function EncounterEngine:_ShowBossTactics(bossSpellID)
 
     local lines = {}
     for _, t in ipairs(spellLines) do
-        if type(t) == "table" and type(t.action) == "string" and t.action ~= "" then
+        -- priority=='note' 라인은 OnEncounterStart 에서 이미 sharedTacticLines 로 상시 표시 중이므로
+        -- per-cast 채널에서 제외 (중복 렌더링 방지)
+        if type(t) == "table" and type(t.action) == "string" and t.action ~= ""
+           and t.priority ~= "note" then
             lines[#lines + 1] = t
         end
     end

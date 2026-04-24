@@ -41,6 +41,9 @@ struct HealGuideApp: App {
 
                 TacticalGuideEditorTab()
                     .tabItem { Label("전술 편집", systemImage: "pencil.and.scribble") }
+
+                MemoEditorTab()
+                    .tabItem { Label("상시 메모", systemImage: "note.text") }
             }
         }
     }

@@ -17,6 +17,7 @@ Data/DungeonMappings.lua
 Data/TrashWhitelist.lua
 Data/HealGuide_Generated.lua
 Data/HGPT_RankerData.lua
+Data/HGPT_Memo.lua
 Core/Init.lua
 Core/Storage.lua
 Core/SpecMatcher.lua
@@ -30,5 +31,6 @@ UI/TimelineFrame.lua
 UI/MinimapButton.lua
 UI/CombatHistoryFrame.lua
 UI/ImportDialog.lua
+UI/MemoFrame.lua
 UI/MainFrame.lua
 UI/RankerDataTab.lua
