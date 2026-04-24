@@ -6,6 +6,7 @@
 - [2026-04-17 핸드오프](handoff_20260417.md) — 타임라인 UI 통합 + Midnight M+ MVP 커밋 2건. 3회 리뷰 사이클 PASS. 실기 검증 + 데이터 수집이 다음
 - [2026-04-21 핸드오프](handoff_20260421.md) — Phase 5α 코드 커밋 5455d53 / 푸시 보류 / _name 매핑 버그 → 다음은 던전 보스 이름 API 조사부터
 - [2026-04-22 핸드오프](handoff_20260422.md) — 랭커 3단 대체 추천 + 전술 패널 + 리뷰 18건 반영. 인게임 실기 검증이 다음
+- [2026-04-24 핸드오프](handoff_20260424.md) — 상시 메모 신설 (맥앱+애드온 탭, 독립 프레임, priority=note 상시 표시). 다음은 맥앱 ColorPreset RGB 통일 + save 경합 + 캐릭터별 편집
 - [WeakAuras 사용 불가](weakauras_deprecated.md) — Midnight(12.0)에서 위크오라 차단. 설계에서 언급 금지
 - [스킬 선택 기본값 전체 해제](feedback_spell_selection_default.md) — 로그 분석 탭 주문 선택 진입 시 빈 선택으로 시작. 과거 요청이 반영 안 돼 재요청됨
 - [dmg는 명시적 요청 시에만](feedback_dmg_on_request.md) — 코드 수정 후 dmg 자동 생성/재생성 제안 금지. 사용자가 "떨궈줘" 라 할 때만
