@@ -69,10 +69,12 @@ function Bridge:OnEventAdded(eventInfo)
     -- 2단 fallback: eventInfo.spellName 으로 _bossNames 역조회
     if not reactions and policy ~= "off" and addon.RankerDataLoader and activeSpec then
         local spellName = eventInfo.spellName
-        if type(spellName) == "string" and spellName ~= "" then
+        -- spellName 이 secret string 이면 ~= "" 비교 자체가 taint 유발.
+        -- addon._safeStringNonempty 는 비교를 pcall 로 감싸 taint 를 차단.
+        if addon._safeStringNonempty(spellName) then
             reactions = addon.RankerDataLoader:LookupByBossSpellName(activeSpec, engine.activeEncounterID, spellName)
             if reactions then
-                addon.dprint(string.format("[HG-NT] 2단 이름매칭: spellID=%d name=%s", bossSpellID, spellName))
+                addon.dprint(string.format("[HG-NT] 2단 이름매칭: spellID=%d", bossSpellID))
             end
         end
     end

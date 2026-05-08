@@ -56,6 +56,23 @@ local function safeIndex(tbl, key)
 end
 addon._safeIndex = safeIndex
 
+-- 12.0 secret string 방어: s ~= "" 비교 자체가 taint 트리거.
+-- type() 체크는 안전하지만 비교/인덱싱은 pcall 보호 필요.
+local function safeStringNonempty(s)
+    if type(s) ~= "string" then return false end
+    local ok, result = pcall(function() return s ~= "" end)
+    return ok and result == true
+end
+addon._safeStringNonempty = safeStringNonempty
+
+-- 한쪽(또는 양쪽)이 secret string 일 때 s1 == s2 를 안전하게 비교.
+local function safeStringEq(s1, s2)
+    if type(s1) ~= "string" or type(s2) ~= "string" then return false end
+    local ok, result = pcall(function() return s1 == s2 end)
+    return ok and result == true
+end
+addon._safeStringEq = safeStringEq
+
 function EncounterEngine:_statInc(key)
     self.stats[key] = (self.stats[key] or 0) + 1
 end
@@ -324,10 +341,10 @@ function EncounterEngine:OnCombatLog(
         if C_Spell and C_Spell.GetSpellInfo then
             local ok, spellInfo = pcall(C_Spell.GetSpellInfo, bossSpellID)
             local bossSpellName = ok and spellInfo and spellInfo.name
-            if bossSpellName and bossSpellName ~= "" then
+            if safeStringNonempty(bossSpellName) then
                 matched = addon.RankerDataLoader:LookupByBossSpellName(activeSpec, self.activeEncounterID, bossSpellName)
                 if matched then
-                    addon.dprint(string.format("[HG-CL] 2단 이름매칭: bossSpellID=%s name=%s", tostring(bossSpellID), bossSpellName))
+                    addon.dprint(string.format("[HG-CL] 2단 이름매칭: bossSpellID=%s", tostring(bossSpellID)))
                 end
             end
         end

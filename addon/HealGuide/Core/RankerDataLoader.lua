@@ -120,7 +120,7 @@ function RankerDataLoader:LookupByBossSpellName(spec, encID, bossSpellName)
                 local bossNames = encData._bossNames  -- string key: safeIndex 불필요
                 if type(bossNames) == "table" then
                     for bossSpellID, name in pairs(bossNames) do
-                        if name == bossSpellName then
+                        if addon._safeStringEq(name, bossSpellName) then
                             local matched = safeIndex(encData, bossSpellID)
                             if matched then return matched end
                         end
