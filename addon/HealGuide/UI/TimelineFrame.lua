@@ -367,6 +367,14 @@ function TimelineFrame:ApplyTheme()
     local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
     local fontSize = addon.Storage:GetSetting("alertFontSize") or 14
     local fontPath = LSM and LSM:Fetch("font", fontName, true)
+    -- koKR/zhCN/zhTW 에서 LSM 기본 폰트(Friz Quadrata TT)는 CJK 미지원이라 ㅁㅁㅁ 으로 깨짐
+    do
+        local locale = GetLocale and GetLocale() or "enUS"
+        if (locale == "koKR" or locale == "zhCN" or locale == "zhTW")
+            and fontName == "Friz Quadrata TT" and STANDARD_TEXT_FONT then
+            fontPath = STANDARD_TEXT_FONT
+        end
+    end
     if not fontPath then return end
     for _, ic in ipairs(pool) do
         if ic.timeText then

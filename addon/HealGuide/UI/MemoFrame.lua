@@ -14,7 +14,17 @@ local function resolveFontPath(size)
     local LSM      = getLSM()
     local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
     local path     = LSM and LSM:Fetch("font", fontName, true)
-    return path or "Fonts\\FRIZQT__.TTF", math.max(10, math.min(32, size or 14))
+
+    -- koKR/zhCN/zhTW 클라이언트에서 기본 폰트(LSM Friz Quadrata TT)는
+    -- 한글/한자를 ㅁㅁㅁ 으로 렌더링한다. 사용자가 커스텀 폰트를 고르지 않은 경우
+    -- WoW 가 로케일별 CJK 폰트로 매핑해 주는 STANDARD_TEXT_FONT 를 우선 사용.
+    local locale = GetLocale and GetLocale() or "enUS"
+    local cjk    = locale == "koKR" or locale == "zhCN" or locale == "zhTW"
+    if cjk and fontName == "Friz Quadrata TT" and STANDARD_TEXT_FONT then
+        path = STANDARD_TEXT_FONT
+    end
+
+    return path or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", math.max(10, math.min(32, size or 14))
 end
 
 -- ── Public API ───────────────────────────────────────────────────────────────

@@ -130,6 +130,14 @@ function AlertFrame:_CreateSlot(index)
     local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
     local fontSize = addon.Storage:GetSetting("alertFontSize") or 14
     local fontPath = LSM and LSM:Fetch("font", fontName, true)
+    -- koKR/zhCN/zhTW 에서 LSM 기본 폰트(Friz Quadrata TT)는 CJK 미지원이라 ㅁㅁㅁ 으로 깨짐
+    do
+        local locale = GetLocale and GetLocale() or "enUS"
+        if (locale == "koKR" or locale == "zhCN" or locale == "zhTW")
+            and fontName == "Friz Quadrata TT" and STANDARD_TEXT_FONT then
+            fontPath = STANDARD_TEXT_FONT
+        end
+    end
 
     local nameText = frame:CreateFontString(nil, "OVERLAY")
     if fontPath then
@@ -327,6 +335,13 @@ function AlertFrame:InitTacticPanel()
     local fontName = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
     local fontSize = math.max(10, (addon.Storage:GetSetting("alertFontSize") or 14) - 2)
     local fontPath = LSM and LSM:Fetch("font", fontName, true)
+    do
+        local locale = GetLocale and GetLocale() or "enUS"
+        if (locale == "koKR" or locale == "zhCN" or locale == "zhTW")
+            and fontName == "Friz Quadrata TT" and STANDARD_TEXT_FONT then
+            fontPath = STANDARD_TEXT_FONT
+        end
+    end
     local lineH    = fontSize + 4
 
     tacticPanel = CreateFrame("Frame", "HealGuideTacticPanel", UIParent)
@@ -529,6 +544,13 @@ function AlertFrame:ApplyTheme()
     local fontName  = addon.Storage:GetSetting("alertFontName") or "Friz Quadrata TT"
     local fontSize  = addon.Storage:GetSetting("alertFontSize") or 14
     local fontPath  = LSM and LSM:Fetch("font", fontName, true)
+    do
+        local locale = GetLocale and GetLocale() or "enUS"
+        if (locale == "koKR" or locale == "zhCN" or locale == "zhTW")
+            and fontName == "Friz Quadrata TT" and STANDARD_TEXT_FONT then
+            fontPath = STANDARD_TEXT_FONT
+        end
+    end
     local bgColor   = addon.Storage:GetSetting("alertBgColor")   or { r = 0, g = 0, b = 0,   a = 0.75 }
     local textColor = addon.Storage:GetSetting("alertTextColor") or { r = 1, g = 1, b = 1,   a = 1.0  }
 

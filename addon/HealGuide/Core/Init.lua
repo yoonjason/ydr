@@ -16,37 +16,74 @@ local clFrame    = CreateFrame("Frame")
 -- 실제 함수 본문은 아래쪽의 StaticPopup 블록에서 할당.
 local _hgInstallPopupBlocker
 
--- 옵션 2: updatedAt 비교 후 Mac 앱 버전이 더 최신이면 lines 만 동기화.
--- UI 설정(show/locked/point)은 기존 DB 값을 보존하여 사용자 경험 유지.
-local function seedMemoFromExternal()
-    if type(HGPT_Memo) ~= "table" then return end
-    local memo  = addon.Storage:GetSetting("memo")
-    local dbAt  = memo and type(memo.updatedAt) == "number" and memo.updatedAt or 0
-    local appAt = type(HGPT_Memo.updatedAt) == "number" and HGPT_Memo.updatedAt or 0
-    if appAt <= dbAt then return end
-
-    -- lines / updatedAt 만 덮어쓰고 show/locked/point 등 나머지 키는 보존
-    -- (테이블 통째 교체 시 향후 DEFAULTS 에 추가된 키를 기존 사용자가 못 받는 문제 방지)
-    local src = type(HGPT_Memo.lines) == "table" and HGPT_Memo.lines or {}
-    local m   = memo or {}
+-- seedMemoFromExternal: Mac 앱이 쓴 시드 파일(HGPT_Memo.lua) 을 SavedVariables 로 흡수.
+-- 신스키마(shared/characters) 와 레거시 단일 스키마 모두 인식.
+-- show/locked/point 등 인게임 UI 설정은 건드리지 않음.
+local function _applyMemoSection(src, memo)
+    if type(src) ~= "table" then return end
+    local srcLines = type(src.lines) == "table" and src.lines or {}
     local lines = {}
-    for i = 1, #src do
-        lines[i] = type(src[i]) == "string" and src[i] or ""
+    for i = 1, #srcLines do
+        lines[i] = type(srcLines[i]) == "string" and srcLines[i] or ""
     end
-    m.lines     = lines
-    m.updatedAt = appAt
-    if type(HGPT_Memo.fontSize) == "number" then
-        m.fontSize = math.max(10, math.min(32, HGPT_Memo.fontSize))
+    memo.lines     = lines
+    memo.updatedAt = type(src.updatedAt) == "number" and src.updatedAt or memo.updatedAt or 0
+    if type(src.fontSize) == "number" then
+        memo.fontSize = math.max(10, math.min(32, src.fontSize))
     end
-    if type(HGPT_Memo.fontColor) == "table" then
-        local fc = HGPT_Memo.fontColor
+    if type(src.fontColor) == "table" then
+        local fc = src.fontColor
         if type(fc.r) == "number" and type(fc.g) == "number" and type(fc.b) == "number" then
-            m.fontColor = { r = fc.r, g = fc.g, b = fc.b }
+            memo.fontColor = { r = fc.r, g = fc.g, b = fc.b }
+            if type(fc.preset) == "string" then
+                memo.fontColor.preset = fc.preset
+            end
         end
     end
-    if type(HGPT_Memo.bgAlpha) == "number" then
-        m.bgAlpha = math.max(0, math.min(100, HGPT_Memo.bgAlpha))
+    if type(src.bgAlpha) == "number" then
+        memo.bgAlpha = math.max(0, math.min(100, src.bgAlpha))
     end
+end
+
+local function seedMemoFromExternal()
+    if type(HGPT_Memo) ~= "table" then return end
+
+    local memo = addon.Storage:GetSetting("memo")
+    local dbAt = memo and type(memo.updatedAt) == "number" and memo.updatedAt or 0
+    local m    = memo or {}
+
+    -- 신스키마 판별: shared 또는 characters 필드 존재 여부
+    local isNewSchema = (type(HGPT_Memo.shared) == "table" or type(HGPT_Memo.characters) == "table")
+
+    local src = nil
+    if isNewSchema then
+        -- 1) 캐릭터 전용 섹션 우선 (PLAYER_LOGIN 이후에만 UnitName 확정)
+        -- 캐릭터 섹션이 존재하면 shared 는 무시. 캐릭터 섹션이 없는 캐릭터만 shared 시드를 받는다.
+        local hasCharSection = false
+        local playerName = UnitName and UnitName("player")
+        if playerName and playerName ~= "Unknown" and playerName ~= "" then
+            local realmName  = GetRealmName and GetRealmName() or ""
+            local selfKey    = playerName .. "-" .. realmName:gsub(" ", "")
+            if HGPT_Memo.characters and type(HGPT_Memo.characters[selfKey]) == "table" then
+                hasCharSection = true
+                local charSection = HGPT_Memo.characters[selfKey]
+                local charAt = type(charSection.updatedAt) == "number" and charSection.updatedAt or 0
+                if charAt > dbAt then src = charSection end
+            end
+        end
+        -- 2) 캐릭터 섹션이 아예 없는 경우에만 shared 로 폴백
+        if not src and not hasCharSection and type(HGPT_Memo.shared) == "table" then
+            local sharedAt = type(HGPT_Memo.shared.updatedAt) == "number" and HGPT_Memo.shared.updatedAt or 0
+            if sharedAt > dbAt then src = HGPT_Memo.shared end
+        end
+    else
+        -- 레거시 단일 스키마
+        local appAt = type(HGPT_Memo.updatedAt) == "number" and HGPT_Memo.updatedAt or 0
+        if appAt > dbAt then src = HGPT_Memo end
+    end
+
+    if not src then return end
+    _applyMemoSection(src, m)
     addon.Storage:SetSetting("memo", m)
 end
 
@@ -96,6 +133,8 @@ local function onPlayerLogin()
     if addon.DungeonMappings and addon.DungeonMappings.ValidateActiveSeason then
         addon.DungeonMappings:ValidateActiveSeason()
     end
+    -- 캐릭터 키(UnitName)가 확정되는 PLAYER_LOGIN 시점에 캐릭터별 시드를 재검사
+    seedMemoFromExternal()
     _hgInstallPopupBlocker()
 end
 
@@ -416,6 +455,17 @@ SlashCmdList["HEALGUIDE"] = function(msg)
     elseif cmd == "memo" then
         if addon.MemoFrame then
             local sub  = args:match("^(%S+)")
+            if sub == "seedinfo" and addon.Storage:GetSetting("debugMode") then
+                local playerName = UnitName and UnitName("player") or "?"
+                local realmName  = GetRealmName and GetRealmName() or "?"
+                local selfKey    = playerName .. "-" .. realmName:gsub(" ", "")
+                local memo       = addon.Storage:GetSetting("memo") or {}
+                local dbAt       = memo.updatedAt or 0
+                local hasSeed    = type(HGPT_Memo) == "table"
+                print(string.format("|cff00ff00HealGuide|r [seedinfo] key=%s dbAt=%d hasSeed=%s",
+                    selfKey, dbAt, tostring(hasSeed)))
+                return
+            end
             local m    = addon.Storage:GetSetting("memo") or {}
             local show
             if sub == "show" then

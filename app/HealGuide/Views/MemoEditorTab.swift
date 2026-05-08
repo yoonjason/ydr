@@ -8,6 +8,10 @@ struct MemoEditorTab: View {
             VStack(alignment: .leading, spacing: 16) {
                 headerSection
                 pathSection
+                characterPickerSection
+                if viewModel.isCurrentSectionEmpty {
+                    emptyCharacterSection
+                }
                 editorSection
                 settingsSection
                 Divider()
@@ -15,8 +19,15 @@ struct MemoEditorTab: View {
             }
             .padding()
         }
-        .frame(minWidth: 600, minHeight: 420)
+        .frame(minWidth: 600, minHeight: 480)
         .onAppear { viewModel.onAppear() }
+        .alert("저장하지 않은 변경 사항", isPresented: $viewModel.showDirtyConfirmation) {
+            Button("저장 후 전환") { Task { await viewModel.confirmSwitchWithSaving() } }
+            Button("저장하지 않고 전환", role: .destructive) { viewModel.confirmSwitchWithoutSaving() }
+            Button("취소", role: .cancel) { viewModel.cancelSwitch() }
+        } message: {
+            Text("현재 섹션에 저장되지 않은 내용이 있습니다.")
+        }
     }
 
     // MARK: - Sections
@@ -27,10 +38,10 @@ struct MemoEditorTab: View {
             VStack(alignment: .leading, spacing: 4) {
                 Label("상시 메모", systemImage: "note.text")
                     .font(.headline)
-                Text("인게임 애드온과 공유되는 메모입니다. 저장하면 HGPT_Memo.lua 에 기록됩니다.")
+                Text("공통(shared) 메모는 모든 캐릭터에 적용되며, 캐릭터별 메모는 해당 캐릭터 접속 시 우선 적용됩니다.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text("애드온에서도 편집 가능하며, /reload 직후에는 SavedVariables(HealGuideDB.memo)가 우선합니다.")
+                Text("저장하면 HGPT_Memo.lua 에 기록됩니다. 인게임 /reload 후 반영.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -61,6 +72,91 @@ struct MemoEditorTab: View {
     }
 
     @ViewBuilder
+    private var characterPickerSection: some View {
+        GroupBox(label: HStack {
+            Text("섹션").font(.subheadline)
+            Spacer()
+            Button(action: { viewModel.refreshCharacters() }) {
+                Label("캐릭터 새로고침", systemImage: "arrow.clockwise")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    sectionButton(key: "shared", label: "공통")
+
+                    if !viewModel.availableCharacters.isEmpty {
+                        Divider()
+                            .frame(height: 20)
+                    }
+
+                    ForEach(viewModel.availableCharacters, id: \.key) { char in
+                        sectionButton(key: char.key, label: char.name)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
+            }
+            if let msg = viewModel.lastScanMessage, viewModel.availableCharacters.isEmpty {
+                Text(msg)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionButton(key: String, label: String) -> some View {
+        let isSelected = viewModel.selectedKey == key
+        Button {
+            viewModel.selectKey(key)
+        } label: {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption.bold())
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(isSelected ? Color.accentColor.opacity(0.15) : Color(.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isSelected ? Color.accentColor : Color.secondary.opacity(0.3),
+                        lineWidth: isSelected ? 1.5 : 1
+                    )
+            )
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var emptyCharacterSection: some View {
+        GroupBox {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("이 캐릭터는 공통 메모를 사용합니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("공통에서 복사하여 시작") {
+                        viewModel.copyFromShared()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.link)
+                }
+                Spacer()
+            }
+            .padding(6)
+        }
+    }
+
+    @ViewBuilder
     private var editorSection: some View {
         GroupBox(label: Text("메모 내용").font(.subheadline)) {
             autoGrowingEditor
@@ -71,7 +167,6 @@ struct MemoEditorTab: View {
     @ViewBuilder
     private var autoGrowingEditor: some View {
         ZStack(alignment: .topLeading) {
-            // 텍스트 높이를 드라이브하는 숨겨진 복본
             Text(viewModel.memoText.isEmpty ? " " : viewModel.memoText)
                 .font(.system(size: CGFloat(viewModel.fontSize)))
                 .opacity(0)
